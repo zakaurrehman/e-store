@@ -1,0 +1,30 @@
+import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaClient } from "@/generated/prisma/client";
+
+const globalForPrisma = globalThis as unknown as { __veyoraPrisma?: PrismaClient };
+
+function createClient(connectionString = process.env.DATABASE_URL) {
+  if (!connectionString) throw new Error("DATABASE_URL is not set");
+  const adapter = new PrismaPg({
+    connectionString,
+    max: Number(process.env.DATABASE_POOL_MAX ?? 10),
+    // Prisma stores DateTime as UTC in `timestamp` columns; pin the session so raw SQL now() agrees
+    // regardless of the server's configured TimeZone.
+    options: "-c TimeZone=UTC",
+  });
+  return new PrismaClient({
+    adapter,
+    log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
+  });
+}
+
+/** Shared Prisma client (one pool per server instance; reused across hot reloads in development). */
+export const db: PrismaClient = globalForPrisma.__veyoraPrisma ?? createClient();
+
+if (process.env.NODE_ENV !== "production") globalForPrisma.__veyoraPrisma = db;
+
+/** Interactive-transaction client type. */
+export type Tx = Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0];
+export type DbClient = PrismaClient | Tx;
+
+export { createClient as createPrismaClient };

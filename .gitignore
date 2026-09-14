@@ -1,0 +1,34 @@
+# dependencies
+node_modules/
+
+# next.js
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# prisma generated client
+src/generated/
+
+# local runtime data (embedded postgres, uploads, dev mailbox, caches)
+var/
+.cache/
+
+# testing
+coverage/
+playwright-report/
+test-results/
+blob-report/
+# Playwright saved sessions contain live session cookies
+e2e/.auth/
+
+# env files — never commit secrets
+.env
+.env.*
+!.env.example
+
+# misc
+.DS_Store
+*.log
+npm-debug.log*
+.vercel

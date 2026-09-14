@@ -1,0 +1,399 @@
+import type { Prisma } from "@/generated/prisma/client";
+import { DeliveryStatus, NotificationAudience, NotificationChannel } from "@/generated/prisma/enums";
+import type { EmailBrand, RenderedEmail } from "@/emails/layout";
+import * as templates from "@/emails/templates";
+import type { OrderEmailData } from "@/emails/templates";
+import { isAddressSnapshot } from "@/lib/address";
+import type { Permission } from "@/lib/permissions";
+import { loadSettings } from "@/features/settings/service";
+import { db } from "@/server/db";
+import { getEmailProvider } from "@/server/email/provider";
+import { env } from "@/server/env";
+import { hmacSha256 } from "@/server/security/crypto";
+import { formatMoney } from "@/utils/money";
+import { getPushProvider, getSmsProvider } from "./channels";
+
+export type NotificationEvent =
+  | { type: "user.registered"; userId: string; verificationToken: string }
+  | { type: "user.verification-requested"; userId: string; verificationToken: string }
+  | { type: "user.password-reset-requested"; userId: string; token: string }
+  | { type: "order.confirmed"; orderId: string }
+  | { type: "order.payment-received"; orderId: string }
+  | { type: "order.payment-failed"; orderId: string; reason?: string }
+  | { type: "order.shipped"; orderId: string; shipmentId: string }
+  | { type: "order.delivered"; orderId: string }
+  | { type: "order.refunded"; orderId: string; amountCents: number }
+  | { type: "order.cancelled"; orderId: string; reason?: string; refunded: boolean }
+  | { type: "inventory.low-stock"; variantIds: string[] }
+  | { type: "review.submitted"; reviewId: string }
+  | { type: "contact.received"; messageId: string };
+
+const MAX_ATTEMPTS = 5;
+const BACKOFF_MINUTES = [1, 5, 30, 120, 720];
+
+/** Signed token allowing a guest to open their order page from an email link. */
+export function orderAccessToken(order: { number: string; email: string }) {
+  return hmacSha256(`order-access:${order.number}:${order.email.toLowerCase()}`);
+}
+
+export function orderUrl(order: { number: string; email: string; userId: string | null }) {
+  const base = env.APP_URL;
+  if (order.userId) return new URL(`/account/orders/${order.number}`, base).toString();
+  return new URL(`/orders/${order.number}?token=${orderAccessToken(order)}`, base).toString();
+}
+
+async function getBrand(): Promise<EmailBrand> {
+  const settings = await loadSettings();
+  return {
+    storeName: settings.store.name,
+    legalName: settings.store.legalName,
+    supportEmail: settings.store.supportEmail,
+    address: settings.store.address,
+    appUrl: env.APP_URL,
+  };
+}
+
+async function loadOrderEmailData(orderId: string) {
+  const order = await db.order.findUniqueOrThrow({
+    where: { id: orderId },
+    include: { items: true, user: { select: { firstName: true } } },
+  });
+  const shipping = isAddressSnapshot(order.shippingAddress) ? order.shippingAddress : null;
+  if (!shipping) throw new Error(`Order ${order.number} has an invalid shipping address snapshot`);
+  const paymentLabels: Record<string, string> = {
+    stripe: "Card (Stripe)",
+    paypal: "PayPal",
+    cod: "Cash on delivery",
+    sandbox: "Test card (sandbox)",
+  };
+  const data: OrderEmailData = {
+    number: order.number,
+    placedAt: order.placedAt,
+    currency: order.currency,
+    customerFirstName: order.user?.firstName ?? shipping.firstName,
+    items: order.items.map((item) => ({
+      name: item.productName,
+      variantTitle: item.variantTitle,
+      quantity: item.quantity,
+      totalCents: item.totalCents,
+    })),
+    subtotalCents: order.subtotalCents,
+    discountCents: order.discountCents,
+    shippingCents: order.shippingCents,
+    taxCents: order.taxCents,
+    totalCents: order.totalCents,
+    couponCode: order.couponCode,
+    shippingAddress: shipping,
+    shippingMethodName: order.shippingMethodName,
+    paymentLabel: paymentLabels[order.paymentProvider] ?? order.paymentProvider,
+  };
+  return { order, data, url: orderUrl(order) };
+}
+
+async function staffRecipients(permission: Permission) {
+  const users = await db.user.findMany({
+    where: {
+      status: "ACTIVE",
+      deletedAt: null,
+      role: { isStaff: true, permissions: { some: { permission: { key: permission } } } },
+    },
+    select: { id: true, email: true },
+  });
+  return users;
+}
+
+type Planned = {
+  inApp?: { audience: NotificationAudience; userId: string | null; type: string; title: string; body: string; href?: string; data?: Prisma.InputJsonValue };
+  emails?: Array<{ to: string; template: string; rendered: RenderedEmail }>;
+};
+
+async function plan(event: NotificationEvent): Promise<Planned[]> {
+  const brand = await getBrand();
+  const app = (path: string) => new URL(path, env.APP_URL).toString();
+
+  switch (event.type) {
+    case "user.registered":
+    case "user.verification-requested": {
+      const user = await db.user.findUniqueOrThrow({ where: { id: event.userId } });
+      const verifyUrl = app(`/verify-email?token=${encodeURIComponent(event.verificationToken)}`);
+      const rendered =
+        event.type === "user.registered"
+          ? templates.welcomeEmail(brand, { firstName: user.firstName, verifyUrl })
+          : templates.verifyEmailEmail(brand, { firstName: user.firstName, verifyUrl });
+      return [{ emails: [{ to: user.email, template: event.type, rendered }] }];
+    }
+
+    case "user.password-reset-requested": {
+      const user = await db.user.findUniqueOrThrow({ where: { id: event.userId } });
+      const resetUrl = app(`/reset-password?token=${encodeURIComponent(event.token)}`);
+      return [{ emails: [{ to: user.email, template: event.type, rendered: templates.passwordResetEmail(brand, { firstName: user.firstName, resetUrl }) }] }];
+    }
+
+    case "order.confirmed": {
+      const { order, data, url } = await loadOrderEmailData(event.orderId);
+      const staff = await staffRecipients("orders.view");
+      const paid = order.paymentStatus === "PAID";
+      return [
+        {
+          inApp: order.userId
+            ? { audience: NotificationAudience.CUSTOMER, userId: order.userId, type: event.type, title: `Order ${order.number} confirmed`, body: "We're preparing your order.", href: `/account/orders/${order.number}` }
+            : undefined,
+          emails: [{ to: order.email, template: event.type, rendered: templates.orderConfirmationEmail(brand, { order: data, orderUrl: url, paid }) }],
+        },
+        {
+          inApp: {
+            audience: NotificationAudience.STAFF,
+            userId: null,
+            type: "order.new",
+            title: `New order ${order.number}`,
+            body: `${data.items.reduce((sum, item) => sum + item.quantity, 0)} items · ${formatMoney(order.totalCents, order.currency)}`,
+            href: `/admin/orders/${order.id}`,
+          },
+          emails: staff.map((member) => ({
+            to: member.email,
+            template: "staff.order-new",
+            rendered: templates.staffAlertEmail(brand, {
+              title: `New order ${order.number}`,
+              lines: [`${order.email} placed an order.`, `Payment: ${data.paymentLabel} (${order.paymentStatus.toLowerCase()})`],
+              href: app(`/admin/orders/${order.id}`),
+              cta: "Open order",
+            }),
+          })),
+        },
+      ];
+    }
+
+    case "order.payment-received": {
+      const { order, data, url } = await loadOrderEmailData(event.orderId);
+      return [
+        {
+          inApp: order.userId
+            ? { audience: NotificationAudience.CUSTOMER, userId: order.userId, type: event.type, title: `Payment received for ${order.number}`, body: "Thank you — your payment is confirmed.", href: `/account/orders/${order.number}` }
+            : undefined,
+          emails: [{ to: order.email, template: event.type, rendered: templates.paymentConfirmationEmail(brand, { order: data, orderUrl: url }) }],
+        },
+      ];
+    }
+
+    case "order.payment-failed": {
+      const { order, data, url } = await loadOrderEmailData(event.orderId);
+      return [
+        {
+          inApp: { audience: NotificationAudience.STAFF, userId: null, type: event.type, title: `Payment failed for ${order.number}`, body: event.reason ?? "The payment provider declined the payment.", href: `/admin/orders/${order.id}` },
+          emails: [{ to: order.email, template: event.type, rendered: templates.paymentFailedEmail(brand, { order: data, retryUrl: url, reason: event.reason }) }],
+        },
+      ];
+    }
+
+    case "order.shipped": {
+      const { order, data, url } = await loadOrderEmailData(event.orderId);
+      const shipment = await db.shipment.findUniqueOrThrow({ where: { id: event.shipmentId } });
+      return [
+        {
+          inApp: order.userId
+            ? { audience: NotificationAudience.CUSTOMER, userId: order.userId, type: event.type, title: `Order ${order.number} has shipped`, body: shipment.trackingNumber ? `Tracking: ${shipment.trackingNumber}` : "Your parcel is on its way.", href: `/account/orders/${order.number}` }
+            : undefined,
+          emails: [
+            {
+              to: order.email,
+              template: event.type,
+              rendered: templates.shippingConfirmationEmail(brand, { order: data, orderUrl: url, carrier: shipment.carrier, trackingNumber: shipment.trackingNumber, trackingUrl: shipment.trackingUrl }),
+            },
+          ],
+        },
+      ];
+    }
+
+    case "order.delivered": {
+      const { order, data, url } = await loadOrderEmailData(event.orderId);
+      const firstProduct = order.items[0]?.productSlug;
+      const reviewUrl = order.userId ? app(`/account/reviews`) : firstProduct ? app(`/p/${firstProduct}#reviews`) : url;
+      return [
+        {
+          inApp: order.userId
+            ? { audience: NotificationAudience.CUSTOMER, userId: order.userId, type: event.type, title: `Order ${order.number} delivered`, body: "Enjoy! Tell us what you think with a review.", href: `/account/orders/${order.number}` }
+            : undefined,
+          emails: [{ to: order.email, template: event.type, rendered: templates.deliveryConfirmationEmail(brand, { order: data, orderUrl: url, reviewUrl }) }],
+        },
+      ];
+    }
+
+    case "order.refunded": {
+      const { order, data, url } = await loadOrderEmailData(event.orderId);
+      return [
+        {
+          inApp: order.userId
+            ? { audience: NotificationAudience.CUSTOMER, userId: order.userId, type: event.type, title: `Refund issued for ${order.number}`, body: "Your refund is on its way to your original payment method.", href: `/account/orders/${order.number}` }
+            : undefined,
+          emails: [{ to: order.email, template: event.type, rendered: templates.refundEmail(brand, { order: data, amountCents: event.amountCents, orderUrl: url }) }],
+        },
+      ];
+    }
+
+    case "order.cancelled": {
+      const { order, data, url } = await loadOrderEmailData(event.orderId);
+      return [
+        {
+          inApp: order.userId
+            ? { audience: NotificationAudience.CUSTOMER, userId: order.userId, type: event.type, title: `Order ${order.number} cancelled`, body: event.reason ?? "Your order was cancelled.", href: `/account/orders/${order.number}` }
+            : undefined,
+          emails: [{ to: order.email, template: event.type, rendered: templates.cancellationEmail(brand, { order: data, reason: event.reason, orderUrl: url, refunded: event.refunded }) }],
+        },
+      ];
+    }
+
+    case "inventory.low-stock": {
+      const variants = await db.productVariant.findMany({
+        where: { id: { in: event.variantIds } },
+        include: { product: { select: { id: true, name: true } } },
+      });
+      if (variants.length === 0) return [];
+      const staff = await staffRecipients("inventory.update");
+      const lines = variants.map((variant) => `${variant.product.name}${variant.title !== "Default" ? ` — ${variant.title}` : ""}: ${variant.stockQuantity} left`);
+      return [
+        {
+          inApp: { audience: NotificationAudience.STAFF, userId: null, type: event.type, title: `Low stock: ${variants.length} item${variants.length === 1 ? "" : "s"}`, body: lines.slice(0, 3).join(" · "), href: "/admin/inventory?filter=low" },
+          emails: staff.map((member) => ({
+            to: member.email,
+            template: "staff.low-stock",
+            rendered: templates.staffAlertEmail(brand, { title: "Low stock alert", lines, href: app("/admin/inventory?filter=low"), cta: "Review inventory" }),
+          })),
+        },
+      ];
+    }
+
+    case "review.submitted": {
+      const review = await db.review.findUniqueOrThrow({ where: { id: event.reviewId }, include: { product: { select: { name: true } } } });
+      return [
+        {
+          inApp: { audience: NotificationAudience.STAFF, userId: null, type: event.type, title: `New ${review.rating}★ review`, body: `${review.product.name}: “${review.title}”`, href: `/admin/reviews?status=${review.status}` },
+        },
+      ];
+    }
+
+    case "contact.received": {
+      const message = await db.contactMessage.findUniqueOrThrow({ where: { id: event.messageId } });
+      return [
+        {
+          inApp: { audience: NotificationAudience.STAFF, userId: null, type: event.type, title: `Message from ${message.name}`, body: message.subject, href: `/admin/messages/${message.id}` },
+        },
+      ];
+    }
+  }
+}
+
+/**
+ * Records in-app notifications and queues external deliveries. Returns the delivery ids so the caller can
+ * send them after the response (Next.js `after`) or synchronously (scripts, tests).
+ */
+export async function dispatchNotification(event: NotificationEvent): Promise<string[]> {
+  const planned = await plan(event);
+  const deliveryIds: string[] = [];
+  for (const item of planned) {
+    const notification = item.inApp
+      ? await db.notification.create({
+          data: {
+            audience: item.inApp.audience,
+            userId: item.inApp.userId,
+            type: item.inApp.type,
+            title: item.inApp.title,
+            body: item.inApp.body,
+            href: item.inApp.href,
+            data: item.inApp.data,
+          },
+        })
+      : null;
+    for (const email of item.emails ?? []) {
+      const delivery = await db.notificationDelivery.create({
+        data: {
+          notificationId: notification?.id,
+          channel: NotificationChannel.EMAIL,
+          recipient: email.to,
+          template: email.template,
+          subject: email.rendered.subject,
+          payload: { html: email.rendered.html, text: email.rendered.text } satisfies Prisma.InputJsonValue,
+        },
+      });
+      deliveryIds.push(delivery.id);
+    }
+  }
+  return deliveryIds;
+}
+
+/** Sends queued deliveries. Never throws — failures are recorded and retried with backoff. */
+export async function sendDeliveries(ids: string[]) {
+  for (const id of ids) {
+    const claimed = await db.notificationDelivery.updateMany({
+      where: { id, status: { in: [DeliveryStatus.PENDING, DeliveryStatus.FAILED] }, attempts: { lt: MAX_ATTEMPTS } },
+      data: { attempts: { increment: 1 }, nextAttemptAt: new Date(Date.now() + 10 * 60_000) },
+    });
+    if (claimed.count === 0) continue;
+    const delivery = await db.notificationDelivery.findUniqueOrThrow({ where: { id } });
+    try {
+      const payload = delivery.payload as { html?: string; text?: string; body?: string; title?: string; href?: string };
+      let providerMessageId: string | null = null;
+      if (delivery.channel === NotificationChannel.EMAIL) {
+        const result = await getEmailProvider().send({
+          to: delivery.recipient,
+          subject: delivery.subject ?? "",
+          html: payload.html ?? "",
+          text: payload.text ?? "",
+          tag: delivery.template,
+        });
+        providerMessageId = result.id;
+      } else if (delivery.channel === NotificationChannel.SMS) {
+        const provider = getSmsProvider();
+        if (!provider) {
+          await db.notificationDelivery.update({ where: { id }, data: { status: DeliveryStatus.SKIPPED, lastError: "No SMS provider configured" } });
+          continue;
+        }
+        providerMessageId = (await provider.send({ to: delivery.recipient, body: payload.body ?? payload.text ?? "" })).id;
+      } else if (delivery.channel === NotificationChannel.PUSH) {
+        const provider = getPushProvider();
+        if (!provider) {
+          await db.notificationDelivery.update({ where: { id }, data: { status: DeliveryStatus.SKIPPED, lastError: "No push provider configured" } });
+          continue;
+        }
+        providerMessageId = (await provider.send({ to: delivery.recipient, title: payload.title ?? delivery.subject ?? "", body: payload.body ?? "", href: payload.href })).id;
+      }
+      await db.notificationDelivery.update({
+        where: { id },
+        data: { status: DeliveryStatus.SENT, sentAt: new Date(), providerMessageId, lastError: null },
+      });
+    } catch (error) {
+      const attempt = delivery.attempts;
+      const exhausted = attempt >= MAX_ATTEMPTS;
+      const minutes = BACKOFF_MINUTES[Math.min(attempt - 1, BACKOFF_MINUTES.length - 1)];
+      await db.notificationDelivery.update({
+        where: { id },
+        data: {
+          status: DeliveryStatus.FAILED,
+          lastError: error instanceof Error ? error.message.slice(0, 1000) : String(error),
+          nextAttemptAt: exhausted ? new Date("9999-12-31") : new Date(Date.now() + minutes * 60_000),
+        },
+      });
+      console.error(`[notifications] delivery ${id} failed (attempt ${attempt})`, error);
+    }
+  }
+}
+
+/** Cron entry point: retries due deliveries. */
+export async function processDueDeliveries(limit = 50) {
+  const due = await db.notificationDelivery.findMany({
+    where: { status: { in: [DeliveryStatus.PENDING, DeliveryStatus.FAILED] }, attempts: { lt: MAX_ATTEMPTS }, nextAttemptAt: { lte: new Date() } },
+    orderBy: { nextAttemptAt: "asc" },
+    take: limit,
+    select: { id: true },
+  });
+  await sendDeliveries(due.map((row) => row.id));
+  return due.length;
+}
+
+/** Dispatch and send immediately (scripts/tests or when `after` is unavailable). */
+export async function notifyNow(event: NotificationEvent) {
+  try {
+    await sendDeliveries(await dispatchNotification(event));
+  } catch (error) {
+    console.error(`[notifications] failed to dispatch ${event.type}`, error);
+  }
+}

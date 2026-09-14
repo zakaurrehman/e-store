@@ -1,0 +1,260 @@
+@import "tailwindcss";
+
+/*
+ * Veyora design tokens.
+ * The default Tailwind palette is intentionally reset so every colour in the product comes from
+ * the brand system documented in BRAND.md.
+ */
+@theme {
+  --color-*: initial;
+  --color-white: #ffffff;
+  --color-black: #000000;
+
+  /* Ink — text, primary actions, dark surfaces */
+  --color-ink-950: #0b0c0e;
+  --color-ink-900: #16181c;
+  --color-ink-800: #25282e;
+  --color-ink-700: #3a3d44;
+  --color-ink-600: #52565e;
+  --color-ink-500: #676b74;
+  --color-ink-400: #92969e;
+  --color-ink-300: #c3c6cb;
+  --color-ink-200: #dcdee1;
+
+  /* Neutrals — page, surfaces, hairlines */
+  --color-canvas: #f5f4f0;
+  --color-canvas-deep: #ecebe5;
+  --color-surface: #ffffff;
+  --color-line: #e6e5df;
+  --color-line-strong: #d3d2cb;
+
+  /* Iris — brand accent (links, focus, highlights). Use sparingly. */
+  --color-iris-700: #2f22c9;
+  --color-iris-600: #3e30ec;
+  --color-iris-500: #5446ff;
+  --color-iris-100: #e9e7ff;
+  --color-iris-50: #f4f3ff;
+
+  /* Semantic */
+  --color-sale: #c2361a;
+  --color-sale-soft: #fcebe6;
+  --color-success: #0f7556;
+  --color-success-soft: #e3f4ee;
+  --color-warning: #9a5a06;
+  --color-warning-soft: #fdf3dc;
+  --color-danger: #be2a2a;
+  --color-danger-soft: #fbe9e9;
+  --color-info: #1f5fbf;
+  --color-info-soft: #e7effb;
+
+  --font-sans: var(--font-instrument-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: var(--font-instrument-serif), ui-serif, Georgia, "Times New Roman", serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+
+  --radius-xs: 3px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+
+  --shadow-hairline: 0 0 0 1px rgb(11 12 14 / 0.06);
+  --shadow-card: 0 1px 2px rgb(11 12 14 / 0.04), 0 2px 8px -2px rgb(11 12 14 / 0.06);
+  --shadow-pop: 0 1px 2px rgb(11 12 14 / 0.05), 0 12px 32px -8px rgb(11 12 14 / 0.18);
+  --shadow-sheet: 0 -8px 40px -12px rgb(11 12 14 / 0.25);
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out-quint: cubic-bezier(0.83, 0, 0.17, 1);
+
+  --breakpoint-3xl: 1720px;
+
+  --animate-fade-in: fade-in 240ms var(--ease-out-expo) both;
+  --animate-rise-in: rise-in 480ms var(--ease-out-expo) both;
+  --animate-slide-in-right: slide-in-right 380ms var(--ease-out-expo) both;
+  --animate-slide-in-left: slide-in-left 380ms var(--ease-out-expo) both;
+  --animate-slide-in-up: slide-in-up 420ms var(--ease-out-expo) both;
+  --animate-shimmer: shimmer 1.6s linear infinite;
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes rise-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes slide-in-right {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+  }
+  @keyframes slide-in-left {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(0); }
+  }
+  @keyframes slide-in-up {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+  @keyframes shimmer {
+    from { background-position: -200% 0; }
+    to { background-position: 200% 0; }
+  }
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+    scroll-padding-top: 5rem;
+  }
+
+  body {
+    background-color: var(--color-surface);
+    color: var(--color-ink-950);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  ::selection {
+    background-color: var(--color-iris-100);
+    color: var(--color-ink-950);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-iris-500);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  input[type="search"]::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+  }
+
+  dialog::backdrop {
+    background: rgb(11 12 14 / 0.42);
+    backdrop-filter: blur(2px);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 1ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 1ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@utility container-page {
+  width: 100%;
+  max-width: 1480px;
+  margin-inline: auto;
+  padding-inline: 1rem;
+  @media (width >= 48rem) {
+    padding-inline: 2rem;
+  }
+  @media (width >= 80rem) {
+    padding-inline: 3rem;
+  }
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@utility text-balance {
+  text-wrap: balance;
+}
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility skeleton {
+  background: linear-gradient(90deg, var(--color-canvas) 25%, var(--color-canvas-deep) 50%, var(--color-canvas) 75%);
+  background-size: 200% 100%;
+  animation: var(--animate-shimmer);
+}
+
+/* Long-form content rendered from Markdown (CMS pages, product descriptions) */
+@utility prose-veyora {
+  color: var(--color-ink-700);
+  line-height: 1.7;
+  & > * + * {
+    margin-top: 1em;
+  }
+  & h2 {
+    color: var(--color-ink-950);
+    font-size: 1.375rem;
+    line-height: 1.3;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin-top: 2em;
+  }
+  & h3 {
+    color: var(--color-ink-950);
+    font-size: 1.0625rem;
+    font-weight: 600;
+    margin-top: 1.6em;
+  }
+  & a {
+    color: var(--color-ink-950);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    text-decoration-color: var(--color-ink-300);
+  }
+  & a:hover {
+    text-decoration-color: var(--color-ink-950);
+  }
+  & ul {
+    list-style: disc;
+    padding-left: 1.25em;
+  }
+  & ol {
+    list-style: decimal;
+    padding-left: 1.25em;
+  }
+  & li + li {
+    margin-top: 0.35em;
+  }
+  & strong {
+    color: var(--color-ink-950);
+    font-weight: 600;
+  }
+  & table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9375rem;
+  }
+  & th,
+  & td {
+    border-bottom: 1px solid var(--color-line);
+    padding: 0.6em 0.75em 0.6em 0;
+    text-align: left;
+  }
+  & blockquote {
+    border-left: 2px solid var(--color-line-strong);
+    padding-left: 1em;
+    color: var(--color-ink-600);
+  }
+}
