@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { defineConfig, env } from "prisma/config";
+import { defineConfig } from "prisma/config";
 
 export default defineConfig({
   schema: "db/schema.prisma",
@@ -9,6 +9,8 @@ export default defineConfig({
     seed: "tsx --conditions=react-server db/seed/index.ts",
   },
   datasource: {
-    url: env("DATABASE_URL"),
+    // Optional so `prisma generate` works without a database (e.g. CI or a Vercel build before env vars are set);
+    // migrate, seed and the app still require DATABASE_URL and fail with a clear error when it is missing.
+    url: process.env.DATABASE_URL,
   },
 });

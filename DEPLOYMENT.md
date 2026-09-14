@@ -1,6 +1,6 @@
 # Deployment
 
-Veyora runs anywhere Node.js 20.9+ can run `next start` (a VM, container or managed Node host) or on Vercel. It needs a managed PostgreSQL database and, for more than one server instance or any serverless host, S3-compatible object storage.
+Veyora runs anywhere Node.js 22.12+ can run `next start` (a VM, container or managed Node host) or on Vercel. It needs a managed PostgreSQL database and, for more than one server instance or any serverless host, S3-compatible object storage.
 
 > **Status:** the production build (`next build`) and production server (`next start`) have been verified locally, including an end-to-end test run against it. Veyora has not yet been deployed to a hosting platform, and Stripe, PayPal, S3 and SMTP/Resend have not been tested with real accounts. Test each of them in the provider's test mode before taking real orders.
 
@@ -47,7 +47,11 @@ npm run build                # prisma generate + next build
 npm run start                # or your platform's start command
 ```
 
-On Vercel, set the build command to `npm run db:deploy && npm run build`.
+On Vercel:
+
+- Set **Build Command** to `npm run db:deploy && npm run build`, and add the environment variables from step 2 to the Production environment (and Preview, if you use it). They are available during the build, which needs `DATABASE_URL` to migrate and prerender.
+- The filesystem is read-only, so `STORAGE_DRIVER=s3` and `EMAIL_DRIVER=smtp` or `resend` are **required**. The `local` storage and `log` email drivers write to disk and only work on a server with a writable filesystem.
+- Run the first-time seed (step 4) from your own machine with the production `DATABASE_URL` and S3 variables set, so the starter banner and category images are uploaded to your bucket.
 
 ## 4. First-time data
 

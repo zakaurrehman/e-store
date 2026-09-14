@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Node.js 20.9 or newer (developed on Node 24) and npm
+- Node.js 22.12 or newer (developed on Node 24) and npm
 - No Docker or system PostgreSQL needed: `npm run db:local` runs a real PostgreSQL server from npm
 - About 1 GB of disk for dependencies, the local database and cached demo photos
 - Internet access for the first `npm run db:seed` (demo photos are downloaded from Unsplash once and cached in `.cache/seed-media`)
