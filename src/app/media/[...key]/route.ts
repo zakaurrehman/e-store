@@ -9,9 +9,9 @@ const CONTENT_TYPES: Record<string, string> = {
   gif: "image/gif",
 };
 
-/** Serves locally stored media in development / single-server deployments. With S3 storage media is served by the CDN. */
+/** Serves locally stored media in development / single-server deployments. S3 and Vercel Blob serve media from their own URLs. */
 export async function GET(_request: Request, { params }: RouteContext<"/media/[...key]">) {
-  if (process.env.STORAGE_DRIVER === "s3") return new Response("Not found", { status: 404 });
+  if (process.env.STORAGE_DRIVER && process.env.STORAGE_DRIVER !== "local") return new Response("Not found", { status: 404 });
   const { key } = await params;
   const storageKey = key.join("/");
   const extension = storageKey.split(".").pop()?.toLowerCase() ?? "";

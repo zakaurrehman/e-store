@@ -61,8 +61,8 @@ Full instructions: [SETUP.md](SETUP.md).
 Checked on the development machine with the local database:
 
 - Typecheck and lint clean; production build succeeds (`next build`), and the built app was served with `next start` and smoke-tested (pages, redirects, cron authorisation, security headers).
-- 25 unit tests and 30 integration tests pass (payment verification, idempotency, stock reservation, coupons, authentication, importer, RBAC).
+- 36 unit tests and 30 integration tests pass (pricing, deployment configuration, payment verification, idempotency, stock reservation, coupons, authentication, importer, RBAC).
 - The Playwright suite covering 20 customer and admin flows passes against the production build.
 - Additional scripted browser QA in `scripts/qa/` (admin sections, customer/admin loops, account journey).
 
-**Not verified** — these are implemented against the providers' documented APIs but have not been exercised with real accounts: Stripe and PayPal payments and refunds, S3-compatible storage, SMTP and Resend email delivery. SMS and push notifications exist only as provider interfaces; no provider is implemented. Veyora has not yet been deployed to a hosting platform.
+**Not verified** — these are implemented against the providers' documented APIs but have not been exercised with real accounts: Stripe and PayPal payments and refunds, Vercel Blob and S3-compatible storage, SMTP and Resend email delivery. SMS and push notifications exist only as provider interfaces; no provider is implemented. Veyora has not yet been deployed to a hosting platform.

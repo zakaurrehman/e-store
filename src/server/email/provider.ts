@@ -16,18 +16,30 @@ export interface EmailProvider {
   send(message: EmailMessage): Promise<{ id: string | null }>;
 }
 
-/** Development/test driver: writes every email to var/mail and appends an index line to mailbox.jsonl. */
+/**
+ * Development/test driver: writes every email to var/mail and appends an index line to mailbox.jsonl.
+ * Vercel's filesystem is read-only: preview deployments print the email to the server log instead, and
+ * production deployments refuse to send (bodies contain sign-in and reset links that must never reach logs),
+ * so the delivery is recorded as failed until EMAIL_DRIVER=smtp or resend is configured.
+ */
 class LogEmailProvider implements EmailProvider {
   readonly name = "log";
   constructor(private readonly directory = path.resolve(process.cwd(), "var/mail")) {}
 
   async send(message: EmailMessage) {
-    await mkdir(this.directory, { recursive: true });
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const links = Array.from(message.html.matchAll(/href="([^"]+)"/g), (match) => match[1].replaceAll("&amp;", "&"));
+    if (process.env.VERCEL) {
+      if (process.env.VERCEL_ENV === "production") {
+        throw new Error("Email not sent: no email provider configured (EMAIL_DRIVER=log on a Vercel production deployment)");
+      }
+      console.info(`[email:log] → ${message.to} · ${message.subject}\n${message.text}\nLinks: ${links.join(" ")}`);
+      return { id };
+    }
+    await mkdir(this.directory, { recursive: true });
     const slug = message.subject.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 50);
     const file = `${id}-${slug}.html`;
     await writeFile(path.join(this.directory, file), message.html, "utf8");
-    const links = Array.from(message.html.matchAll(/href="([^"]+)"/g), (match) => match[1].replaceAll("&amp;", "&"));
     await appendFile(
       path.join(this.directory, "mailbox.jsonl"),
       `${JSON.stringify({ id, at: new Date().toISOString(), to: message.to, subject: message.subject, tag: message.tag, file, links, text: message.text })}\n`,

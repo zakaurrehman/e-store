@@ -48,7 +48,7 @@ Client components import only from `lib/`, `utils/`, `components/` and client-sa
 ## Other subsystems
 
 - **Search** — a `SearchProvider` interface; the PostgreSQL implementation uses a weighted `tsvector` document per product plus trigram similarity for typo tolerance and "did you mean" corrections.
-- **Media** — uploads are validated, re-encoded to WebP with `sharp` (metadata stripped), de-duplicated by checksum and stored through a `StorageProvider` (local disk served from `/media`, or S3-compatible storage).
+- **Media** — uploads are validated, re-encoded to WebP with `sharp` (metadata stripped), de-duplicated by checksum and stored through a `StorageProvider` (local disk served from `/media`, Vercel Blob, or S3-compatible storage).
 - **Notifications** — domain events create in-app notifications and an email delivery outbox with retries and backoff. Email drivers: `log`, `smtp`, `resend`. SMS and push are provider interfaces only.
 - **Background jobs** — `GET /api/cron` (bearer `CRON_SECRET`) or `npm run jobs:run`: email retries, unpaid-order expiry, cleanup of expired sessions, tokens, guest carts, rate-limit buckets and old webhook events.
 - **Rate limiting** — fixed windows in PostgreSQL (single atomic upsert, UTC timestamps), or in memory for tests; fails open on infrastructure errors.

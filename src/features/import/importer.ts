@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { resolveSiteUrl } from "@/lib/site-url";
 import type { Prisma } from "@/generated/prisma/client";
 import { AttributeType, InventoryReason, ProductStatus } from "@/generated/prisma/enums";
 import { saveProduct, type VariantInput } from "@/features/catalog/service";
@@ -62,7 +63,7 @@ export async function runImport(options: ImportOptions): Promise<{ runId: string
   const importImage = async (url: string, alt: string, folder: string): Promise<string | null> => {
     if (imageCache.has(url)) return imageCache.get(url)!;
     // Our own media (e.g. from a Veyora CSV export) maps straight back to the existing asset.
-    const appUrl = (process.env.APP_URL ?? "").replace(/\/$/, "");
+    const appUrl = resolveSiteUrl();
     const ownUrls = [url, ...(appUrl && url.startsWith(appUrl + "/") ? [url.slice(appUrl.length)] : [])];
     const own = await db.mediaAsset.findFirst({ where: { url: { in: ownUrls }, deletedAt: null }, select: { id: true } });
     if (own) {

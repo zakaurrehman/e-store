@@ -10,5 +10,6 @@ export default function setup() {
   if (!name.endsWith("_test")) {
     throw new Error(`Refusing to run integration tests against "${name}": TEST_DATABASE_URL must point at a *_test database.`);
   }
-  execSync("npx prisma migrate deploy", { stdio: "pipe", env: { ...process.env, DATABASE_URL: url } });
+  // Point every URL prisma.config.ts may read at the test database, so pulled Vercel variables can never redirect it.
+  execSync("npx prisma migrate deploy", { stdio: "pipe", env: { ...process.env, DATABASE_URL: url, DATABASE_URL_UNPOOLED: url, POSTGRES_URL_NON_POOLING: "", POSTGRES_URL: "" } });
 }

@@ -1,5 +1,6 @@
 import { toProductCsv, type ProductCsvRow } from "@/features/import/csv";
 import { hasPermission } from "@/lib/permissions";
+import { resolveSiteUrl } from "@/lib/site-url";
 import { getCurrentUser } from "@/server/auth/session";
 import { db } from "@/server/db";
 
@@ -21,7 +22,7 @@ export async function GET() {
       variants: { orderBy: { position: "asc" }, include: { image: { select: { url: true } }, options: { include: { attributeValue: { include: { attribute: { select: { name: true } } } } } } } },
     },
   });
-  const base = (process.env.APP_URL ?? "").replace(/\/$/, "");
+  const base = resolveSiteUrl();
   const absolute = (url: string) => (url.startsWith("/") ? `${base}${url}` : url);
   const rows: ProductCsvRow[] = products.flatMap((product) =>
     product.variants.map((variant) => ({

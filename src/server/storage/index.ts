@@ -3,13 +3,14 @@ import path from "node:path";
 
 export interface StorageProvider {
   readonly name: string;
-  put(key: string, body: Buffer, contentType: string): Promise<void>;
+  /** Stores the object and returns the public URL it is served from. */
+  put(key: string, body: Buffer, contentType: string): Promise<string>;
   delete(key: string): Promise<void>;
   read(key: string): Promise<Buffer | null>;
-  publicUrl(key: string): string;
 }
 
 const KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9/_.-]{0,300}$/;
+const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
 
 export function assertValidKey(key: string) {
   if (!KEY_PATTERN.test(key) || key.includes("..") || key.includes("//")) {
@@ -17,6 +18,7 @@ export function assertValidKey(key: string) {
   }
 }
 
+/** Files on local disk, served by the /media route. For development and single long-running servers. */
 export class LocalStorageProvider implements StorageProvider {
   readonly name = "local";
   private readonly root: string;
@@ -37,6 +39,7 @@ export class LocalStorageProvider implements StorageProvider {
     const file = this.resolve(key);
     await mkdir(path.dirname(file), { recursive: true });
     await writeFile(file, body);
+    return `/media/${key}`;
   }
 
   async delete(key: string) {
@@ -50,12 +53,9 @@ export class LocalStorageProvider implements StorageProvider {
       return null;
     }
   }
-
-  publicUrl(key: string) {
-    return `/media/${key}`;
-  }
 }
 
+/** Any S3-compatible object store (AWS S3, Cloudflare R2, MinIO), served from MEDIA_PUBLIC_BASE_URL. */
 export class S3StorageProvider implements StorageProvider {
   readonly name = "s3";
   private client: Promise<import("@aws-sdk/client-s3").S3Client> | undefined;
@@ -85,9 +85,10 @@ export class S3StorageProvider implements StorageProvider {
         Key: key,
         Body: body,
         ContentType: contentType,
-        CacheControl: "public, max-age=31536000, immutable",
+        CacheControl: `public, max-age=${ONE_YEAR_SECONDS}, immutable`,
       }),
     );
+    return `${(process.env.MEDIA_PUBLIC_BASE_URL ?? "").replace(/\/$/, "")}/${key}`;
   }
 
   async delete(key: string) {
@@ -107,15 +108,52 @@ export class S3StorageProvider implements StorageProvider {
       return null;
     }
   }
+}
 
-  publicUrl(key: string) {
-    return `${(process.env.MEDIA_PUBLIC_BASE_URL ?? "").replace(/\/$/, "")}/${key}`;
+/**
+ * Vercel Blob (use a public store). On Vercel a connected store authenticates automatically through OIDC;
+ * outside Vercel (e.g. seeding from a laptop) BLOB_READ_WRITE_TOKEN is used.
+ * Objects are stored under their key — keys are already random, so no extra suffix — and served from the Blob CDN.
+ */
+export class VercelBlobStorageProvider implements StorageProvider {
+  readonly name = "blob";
+
+  /** Only pass a token when one is configured, so the SDK can otherwise resolve OIDC credentials itself. */
+  private get credentials() {
+    const token = process.env.BLOB_READ_WRITE_TOKEN;
+    return token ? { token } : {};
+  }
+
+  async put(key: string, body: Buffer, contentType: string) {
+    assertValidKey(key);
+    const { put } = await import("@vercel/blob");
+    const result = await put(key, body, { access: "public", contentType, addRandomSuffix: false, cacheControlMaxAge: ONE_YEAR_SECONDS, ...this.credentials });
+    return result.url;
+  }
+
+  async delete(key: string) {
+    assertValidKey(key);
+    const { del } = await import("@vercel/blob");
+    await del(key, this.credentials);
+  }
+
+  async read(key: string) {
+    assertValidKey(key);
+    const { head } = await import("@vercel/blob");
+    try {
+      const { url } = await head(key, this.credentials);
+      const response = await fetch(url);
+      return response.ok ? Buffer.from(await response.arrayBuffer()) : null;
+    } catch {
+      return null;
+    }
   }
 }
 
 let provider: StorageProvider | undefined;
 
 export function getStorage(): StorageProvider {
-  provider ??= process.env.STORAGE_DRIVER === "s3" ? new S3StorageProvider() : new LocalStorageProvider();
+  provider ??=
+    process.env.STORAGE_DRIVER === "s3" ? new S3StorageProvider() : process.env.STORAGE_DRIVER === "blob" ? new VercelBlobStorageProvider() : new LocalStorageProvider();
   return provider;
 }

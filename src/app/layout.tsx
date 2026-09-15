@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Instrument_Sans, Instrument_Serif } from "next/font/google";
 import { ToastProvider } from "@/components/ui/toast";
+import { resolveSiteUrl } from "@/lib/site-url";
 import "./globals.css";
 
 const sans = Instrument_Sans({
@@ -18,7 +19,7 @@ const serif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.APP_URL ?? "http://localhost:3000"),
+  metadataBase: new URL(resolveSiteUrl()),
   title: { default: "Veyora", template: "%s · Veyora" },
   applicationName: "Veyora",
   formatDetection: { telephone: false, email: false, address: false },

@@ -1,6 +1,7 @@
 import type { StoreSettings } from "@/features/settings/schema";
+import { resolveSiteUrl } from "@/lib/site-url";
 
-const baseUrl = () => (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
+const baseUrl = () => resolveSiteUrl();
 export const absolute = (path: string) => (path.startsWith("http") ? path : `${baseUrl()}${path.startsWith("/") ? "" : "/"}${path}`);
 
 /** Serialises structured data safely (escapes `<` so content can never close the script tag). */

@@ -1,4 +1,6 @@
 import type { NextConfig } from "next";
+import { PHASE_PRODUCTION_BUILD, PHASE_PRODUCTION_SERVER } from "next/constants";
+import { environmentProblems } from "./src/server/env";
 
 const isDev = process.env.NODE_ENV !== "production";
 
@@ -21,6 +23,12 @@ if (process.env.MEDIA_PUBLIC_BASE_URL) {
     port: url.port,
     pathname: `${url.pathname.replace(/\/$/, "")}/**`,
   });
+}
+
+// Vercel Blob serves public files from <store-id>.public.blob.vercel-storage.com.
+if (process.env.STORAGE_DRIVER === "blob") {
+  mediaOrigins.push("https://*.public.blob.vercel-storage.com");
+  remotePatterns.push({ protocol: "https", hostname: "*.public.blob.vercel-storage.com", pathname: "/**" });
 }
 
 const paymentOrigins = [
@@ -83,4 +91,15 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default function config(phase: string): NextConfig {
+  // Fail production builds and starts once, with every missing or invalid setting listed,
+  // instead of one cryptic error per deploy.
+  if (phase === PHASE_PRODUCTION_BUILD || phase === PHASE_PRODUCTION_SERVER) {
+    const problems = environmentProblems();
+    if (problems.length > 0) {
+      const lines = ["Veyora's environment is incomplete:", ...problems.map((problem) => `  • ${problem}`), "See DEPLOYMENT.md (section 2) and .env.example."];
+      throw new Error(lines.join("\n"));
+    }
+  }
+  return nextConfig;
+}

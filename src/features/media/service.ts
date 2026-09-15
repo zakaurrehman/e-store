@@ -61,13 +61,13 @@ export async function ingestImage(input: IngestImageInput) {
   const now = new Date();
   const storageKey = `${folder}/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, "0")}/${randomToken(12).toLowerCase().replace(/[^a-z0-9]/g, "")}.webp`;
   const storage = getStorage();
-  await storage.put(storageKey, data, "image/webp");
+  const url = await storage.put(storageKey, data, "image/webp");
 
   try {
     return await db.mediaAsset.create({
       data: {
         storageKey,
-        url: storage.publicUrl(storageKey),
+        url,
         filename: sanitiseFilename(input.filename),
         mimeType: "image/webp",
         sizeBytes: data.length,

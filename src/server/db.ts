@@ -3,8 +3,8 @@ import { PrismaClient } from "@/generated/prisma/client";
 
 const globalForPrisma = globalThis as unknown as { __veyoraPrisma?: PrismaClient };
 
-function createClient(connectionString = process.env.DATABASE_URL) {
-  if (!connectionString) throw new Error("DATABASE_URL is not set");
+function createClient(connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL) {
+  if (!connectionString) throw new Error("DATABASE_URL is not set (or connect a Vercel Postgres database)");
   const adapter = new PrismaPg({
     connectionString,
     max: Number(process.env.DATABASE_POOL_MAX ?? 10),

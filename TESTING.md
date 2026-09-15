@@ -11,7 +11,7 @@
 
 ## Unit tests — `tests/unit`
 
-Pure logic with no database: the pricing engine (discount allocation, tax, shipping thresholds, rounding) and utilities (money parsing and formatting, slugs).
+Pure logic with no database: the pricing engine (discount allocation, tax, shipping thresholds, rounding), utilities (money parsing and formatting, slugs) and deployment configuration (the site URL fallback on Vercel, and the environment check that lists every missing or unsafe setting).
 
 ## Integration tests — `tests/integration`
 

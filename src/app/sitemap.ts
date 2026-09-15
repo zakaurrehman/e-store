@@ -1,12 +1,13 @@
 import type { MetadataRoute } from "next";
 import { connection } from "next/server";
 import { ProductStatus, PublishStatus } from "@/generated/prisma/enums";
+import { resolveSiteUrl } from "@/lib/site-url";
 import { db } from "@/server/db";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Generated per request so newly published products, categories and pages appear without a rebuild.
   await connection();
-  const base = (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
+  const base = resolveSiteUrl();
   const [products, categories, brands, collections, pages] = await Promise.all([
     db.product.findMany({ where: { status: ProductStatus.ACTIVE, deletedAt: null }, select: { slug: true, updatedAt: true }, orderBy: { updatedAt: "desc" }, take: 5000 }),
     db.category.findMany({ where: { isActive: true, deletedAt: null }, select: { slug: true, updatedAt: true } }),
