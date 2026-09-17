@@ -1,5 +1,6 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { cleanEnvValue, envFlag, envOption } from "@/lib/env-value";
 
 export interface StorageProvider {
   readonly name: string;
@@ -66,7 +67,7 @@ export class S3StorageProvider implements StorageProvider {
         new S3Client({
           region: process.env.S3_REGION || "auto",
           endpoint: process.env.S3_ENDPOINT || undefined,
-          forcePathStyle: process.env.S3_FORCE_PATH_STYLE === "true",
+          forcePathStyle: envFlag(process.env.S3_FORCE_PATH_STYLE),
           credentials: {
             accessKeyId: process.env.S3_ACCESS_KEY_ID ?? "",
             secretAccessKey: process.env.S3_SECRET_ACCESS_KEY ?? "",
@@ -120,7 +121,7 @@ export class VercelBlobStorageProvider implements StorageProvider {
 
   /** Only pass a token when one is configured, so the SDK can otherwise resolve OIDC credentials itself. */
   private get credentials() {
-    const token = process.env.BLOB_READ_WRITE_TOKEN;
+    const token = cleanEnvValue(process.env.BLOB_READ_WRITE_TOKEN);
     return token ? { token } : {};
   }
 
@@ -153,7 +154,7 @@ export class VercelBlobStorageProvider implements StorageProvider {
 let provider: StorageProvider | undefined;
 
 export function getStorage(): StorageProvider {
-  provider ??=
-    process.env.STORAGE_DRIVER === "s3" ? new S3StorageProvider() : process.env.STORAGE_DRIVER === "blob" ? new VercelBlobStorageProvider() : new LocalStorageProvider();
+  const driver = envOption(process.env.STORAGE_DRIVER);
+  provider ??= driver === "s3" ? new S3StorageProvider() : driver === "blob" ? new VercelBlobStorageProvider() : new LocalStorageProvider();
   return provider;
 }

@@ -1,10 +1,15 @@
 import { z } from "zod";
+import { cleanEnvValue, envOption } from "../lib/env-value";
 import { resolveSiteUrl } from "../lib/site-url";
 
-const emptyToUndefined = (value: unknown) => (value === "" ? undefined : value);
+// Variables created but left empty (or holding only whitespace) count as unset.
+const emptyToUndefined = (value: unknown) => (typeof value === "string" && value.trim() === "" ? undefined : value);
 const optionalString = z.preprocess(emptyToUndefined, z.string().optional());
+/** An enum option that tolerates case, whitespace and quotes, and names the value it received when invalid. */
+const option = <const T extends readonly [string, ...string[]]>(values: T, fallback: T[number]) =>
+  z.preprocess(envOption, z.enum(values, { error: (issue) => `expected one of ${values.join(", ")} (got ${JSON.stringify(issue.input)})` }).default(fallback));
 const booleanFlag = z
-  .preprocess(emptyToUndefined, z.enum(["true", "false", "1", "0"]).optional())
+  .preprocess(envOption, z.enum(["true", "false", "1", "0"], { error: (issue) => `expected true or false (got ${JSON.stringify(issue.input)})` }).optional())
   .transform((value) => value === "true" || value === "1");
 
 /** Individual variables. Rules that depend on several variables live in crossFieldIssues below. */
@@ -21,7 +26,7 @@ const fields = z.object({
     z.string({ error: "required — connect a Vercel Postgres database or set DATABASE_URL" }).min(1),
   ),
 
-  STORAGE_DRIVER: z.enum(["local", "s3", "blob"]).default("local"),
+  STORAGE_DRIVER: option(["local", "s3", "blob"], "local"),
   STORAGE_LOCAL_DIR: z.string().default("var/uploads"),
   MEDIA_PUBLIC_BASE_URL: z.preprocess(emptyToUndefined, z.url().optional()),
   S3_BUCKET: optionalString,
@@ -32,7 +37,7 @@ const fields = z.object({
   S3_FORCE_PATH_STYLE: booleanFlag,
   BLOB_READ_WRITE_TOKEN: optionalString,
 
-  EMAIL_DRIVER: z.enum(["log", "smtp", "resend"]).default("log"),
+  EMAIL_DRIVER: option(["log", "smtp", "resend"], "log"),
   EMAIL_FROM: z.string().default("Veyora <hello@localhost>"),
   SMTP_HOST: optionalString,
   SMTP_PORT: z.coerce.number().int().default(587),
@@ -42,8 +47,7 @@ const fields = z.object({
   RESEND_API_KEY: optionalString,
 
   PAYMENT_PROVIDERS: z
-    .string()
-    .default("sandbox,cod")
+    .preprocess(cleanEnvValue, z.string().default("sandbox,cod"))
     .transform((value) =>
       value
         .split(",")
@@ -54,13 +58,13 @@ const fields = z.object({
   SANDBOX_PAYMENTS_SECRET: optionalString,
   STRIPE_SECRET_KEY: optionalString,
   STRIPE_WEBHOOK_SECRET: optionalString,
-  PAYPAL_MODE: z.enum(["sandbox", "live"]).default("sandbox"),
+  PAYPAL_MODE: option(["sandbox", "live"], "sandbox"),
   PAYPAL_CLIENT_ID: optionalString,
   PAYPAL_CLIENT_SECRET: optionalString,
   PAYPAL_WEBHOOK_ID: optionalString,
 
   CRON_SECRET: optionalString,
-  RATE_LIMIT_DRIVER: z.enum(["postgres", "memory"]).default("postgres"),
+  RATE_LIMIT_DRIVER: option(["postgres", "memory"], "postgres"),
 });
 
 type FieldValues = z.infer<typeof fields>;

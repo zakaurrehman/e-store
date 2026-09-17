@@ -1,3 +1,4 @@
+import { envOption } from "@/lib/env-value";
 import { db } from "@/server/db";
 
 export type RateLimitResult = { success: boolean; remaining: number; resetAt: Date };
@@ -70,7 +71,7 @@ class PostgresStore implements RateLimitStore {
 let store: RateLimitStore | undefined;
 
 function getStore(): RateLimitStore {
-  store ??= process.env.RATE_LIMIT_DRIVER === "memory" ? new MemoryStore() : new PostgresStore();
+  store ??= envOption(process.env.RATE_LIMIT_DRIVER) === "memory" ? new MemoryStore() : new PostgresStore();
   return store;
 }
 

@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import { PHASE_PRODUCTION_BUILD, PHASE_PRODUCTION_SERVER } from "next/constants";
+import { envOption } from "./src/lib/env-value";
 import { environmentProblems } from "./src/server/env";
 
 const isDev = process.env.NODE_ENV !== "production";
@@ -26,7 +27,7 @@ if (process.env.MEDIA_PUBLIC_BASE_URL) {
 }
 
 // Vercel Blob serves public files from <store-id>.public.blob.vercel-storage.com.
-if (process.env.STORAGE_DRIVER === "blob") {
+if (envOption(process.env.STORAGE_DRIVER) === "blob") {
   mediaOrigins.push("https://*.public.blob.vercel-storage.com");
   remotePatterns.push({ protocol: "https", hostname: "*.public.blob.vercel-storage.com", pathname: "/**" });
 }

@@ -81,6 +81,15 @@ describe("environmentProblems", () => {
     expect(problemsFor({ PAYMENT_PROVIDERS: "sandbox,cod", SANDBOX_PAYMENTS_SECRET: "s".repeat(20), ALLOW_SANDBOX_PAYMENTS: "true" })).toEqual([]);
   });
 
+  it("accepts option values pasted with quotes, spaces, capitals or Windows line endings, and treats empty ones as unset", () => {
+    vi.stubEnv("VERCEL", "");
+    expect(problemsFor({ STORAGE_DRIVER: ' "Blob"\r', EMAIL_DRIVER: "RESEND ", PAYPAL_MODE: "", RATE_LIMIT_DRIVER: "   ", TRUST_PROXY: "TRUE" })).toEqual([]);
+  });
+
+  it("names the value it received when an option is invalid", () => {
+    expect(problemsFor({ STORAGE_DRIVER: "disk" })).toContain('STORAGE_DRIVER: expected one of local, s3, blob (got "disk")');
+  });
+
   it("lists every problem at once", () => {
     vi.stubEnv("VERCEL", "1");
     vi.stubEnv("POSTGRES_URL", "");

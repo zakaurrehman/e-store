@@ -1,3 +1,4 @@
+import { envOption } from "@/lib/env-value";
 import { getStorage } from "@/server/storage";
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -11,7 +12,8 @@ const CONTENT_TYPES: Record<string, string> = {
 
 /** Serves locally stored media in development / single-server deployments. S3 and Vercel Blob serve media from their own URLs. */
 export async function GET(_request: Request, { params }: RouteContext<"/media/[...key]">) {
-  if (process.env.STORAGE_DRIVER && process.env.STORAGE_DRIVER !== "local") return new Response("Not found", { status: 404 });
+  const driver = envOption(process.env.STORAGE_DRIVER);
+  if (driver && driver !== "local") return new Response("Not found", { status: 404 });
   const { key } = await params;
   const storageKey = key.join("/");
   const extension = storageKey.split(".").pop()?.toLowerCase() ?? "";

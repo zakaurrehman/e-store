@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import { envFlag } from "@/lib/env-value";
 
 export type RequestMeta = { ipAddress: string; userAgent: string | null };
 
@@ -12,7 +13,7 @@ export async function getRequestMeta(): Promise<RequestMeta> {
 }
 
 export function extractRequestMeta(list: Headers): RequestMeta {
-  const trustProxy = process.env.TRUST_PROXY === "true" || process.env.TRUST_PROXY === "1";
+  const trustProxy = envFlag(process.env.TRUST_PROXY);
   let ipAddress = "unknown";
   if (trustProxy) {
     const forwarded = list.get("x-forwarded-for")?.split(",")[0]?.trim();
