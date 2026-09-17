@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { resolveDatabaseUrl } from "../lib/database-url";
 import { cleanEnvValue, envOption } from "../lib/env-value";
 import { resolveSiteUrl } from "../lib/site-url";
 
@@ -20,10 +21,15 @@ const fields = z.object({
   AUTH_SECRET: z.string().min(32, "AUTH_SECRET must be at least 32 characters"),
   TRUST_PROXY: booleanFlag,
 
-  // Vercel Postgres (Neon) provides DATABASE_URL; older integrations provide POSTGRES_URL.
+  // DATABASE_URL, or the names Vercel storage integrations add (POSTGRES_URL, STORAGE_POSTGRES_URL…). Accelerate URLs are skipped.
   DATABASE_URL: z.preprocess(
-    (value) => emptyToUndefined(value) ?? emptyToUndefined(process.env.POSTGRES_URL),
-    z.string({ error: "required — connect a Vercel Postgres database or set DATABASE_URL" }).min(1),
+    (value) => resolveDatabaseUrl({ ...process.env, DATABASE_URL: typeof value === "string" ? value : undefined }),
+    z
+      .string({
+        error:
+          "required — a direct postgres:// connection string in DATABASE_URL (Vercel may name it STORAGE_POSTGRES_URL); prisma+postgres:// Accelerate URLs are not supported",
+      })
+      .min(1),
   ),
 
   STORAGE_DRIVER: option(["local", "s3", "blob"], "local"),

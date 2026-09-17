@@ -23,7 +23,7 @@ Set these on the host for **both the build and runtime**. `.env.example` documen
 | `APP_URL` | Your public `https://` origin, no trailing slash. On Vercel, an unset or empty value falls back to the deployment URL. |
 | `AUTH_SECRET` | 32+ random characters, unique per environment |
 | `TRUST_PROXY` | `true` behind Vercel or a reverse proxy, so client IPs come from `X-Forwarded-For` |
-| `DATABASE_URL` | PostgreSQL connection string. Connecting Vercel Postgres adds it, together with `DATABASE_URL_UNPOOLED`, which migrations use automatically. `DATABASE_POOL_MAX` sets the pool size (default 10). |
+| `DATABASE_URL` | A direct `postgres://` connection string. Databases connected in Vercel's Storage tab are found automatically, including under Vercel's default `STORAGE_` prefix (`STORAGE_POSTGRES_URL`, `STORAGE_DATABASE_URL`); Neon's direct `…_UNPOOLED` URL is used for migrations when present. Prisma Accelerate (`prisma+postgres://`) URLs are not supported. `DATABASE_POOL_MAX` sets the pool size (default 10). |
 | `STORAGE_DRIVER` | `blob` for Vercel Blob: on Vercel, connecting a **public** Blob store adds `BLOB_STORE_ID` and the SDK authenticates automatically; outside Vercel (for example when seeding from your machine) set `BLOB_READ_WRITE_TOKEN` from the store's settings. Or `s3` with `S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_FORCE_PATH_STYLE` |
 | `MEDIA_PUBLIC_BASE_URL` | With `s3` only: the bucket's public origin, also allowed for `next/image` at build time |
 | `EMAIL_DRIVER` | `smtp` (`SMTP_*`) or `resend` (`RESEND_API_KEY`), plus `EMAIL_FROM`. The `log` driver cannot write files on Vercel: preview deployments print emails to the server log, and production deployments record them as failed (never logging their links) until a real provider is set. |
@@ -49,7 +49,7 @@ npm run start                # or your platform's start command
 
 ### Vercel
 
-1. In the project's **Storage** tab, connect a **Postgres** database, and create and connect a **Blob** store with **public** access (the access mode can't be changed later). Vercel adds `DATABASE_URL` (pooled), `DATABASE_URL_UNPOOLED` (direct, used by migrations) and `BLOB_STORE_ID` to the project.
+1. In the project's **Storage** tab, connect a **Postgres** database, and create and connect a **Blob** store with **public** access (the access mode can't be changed later). Vercel adds the connection variables to the project, sometimes with a `STORAGE_` prefix; Veyora finds them either way. Prisma Postgres and Neon both work.
 2. Under **Settings → Environment Variables**, add the rest of step 2 for Production (and Preview, if you use it). The minimum for a first deploy is `AUTH_SECRET`, `CRON_SECRET`, `TRUST_PROXY=true`, `STORAGE_DRIVER=blob` and `PAYMENT_PROVIDERS`; set `APP_URL` once you have a domain.
 3. Under **Settings → Build and Deployment**, set **Build Command** to `npm run db:deploy && npm run build`.
 4. Redeploy. If anything is still missing, the build stops at the start and lists it.

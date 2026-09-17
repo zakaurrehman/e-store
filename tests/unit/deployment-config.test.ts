@@ -71,9 +71,23 @@ describe("environmentProblems", () => {
 
   it("requires a database URL, accepting Vercel's POSTGRES_URL as a fallback", () => {
     vi.stubEnv("POSTGRES_URL", "");
+    vi.stubEnv("STORAGE_POSTGRES_URL", "");
     expect(fields(problemsFor({ DATABASE_URL: "" }))).toContain("DATABASE_URL");
     vi.stubEnv("POSTGRES_URL", "postgresql://user:pass@neon.example.com:5432/store");
     expect(fields(problemsFor({ DATABASE_URL: "" }))).not.toContain("DATABASE_URL");
+  });
+
+  it("finds a Prisma Postgres database connected with Vercel's default STORAGE_ prefix", () => {
+    vi.stubEnv("POSTGRES_URL", "");
+    vi.stubEnv("STORAGE_PRISMA_DATABASE_URL", "prisma+postgres://accelerate.prisma-data.net/?api_key=example");
+    vi.stubEnv("STORAGE_POSTGRES_URL", "postgres://user:pass@db.prisma.io:5432/postgres?sslmode=require");
+    expect(fields(problemsFor({ DATABASE_URL: "" }))).not.toContain("DATABASE_URL");
+  });
+
+  it("rejects a Prisma Accelerate URL as the only database connection", () => {
+    vi.stubEnv("POSTGRES_URL", "");
+    vi.stubEnv("STORAGE_POSTGRES_URL", "");
+    expect(fields(problemsFor({ DATABASE_URL: "prisma+postgres://accelerate.prisma-data.net/?api_key=example" }))).toContain("DATABASE_URL");
   });
 
   it("refuses the sandbox payment gateway in production unless explicitly allowed for staging", () => {

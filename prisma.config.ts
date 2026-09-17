@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
+import { resolveMigrationDatabaseUrl } from "./src/lib/database-url";
 
 export default defineConfig({
   schema: "db/schema.prisma",
@@ -9,8 +10,8 @@ export default defineConfig({
     seed: "tsx --conditions=react-server db/seed/index.ts",
   },
   datasource: {
-    // Optional so `prisma generate` works without a database. Migrations prefer a direct (non-pooled) connection,
-    // which Vercel Postgres (Neon) provides as DATABASE_URL_UNPOOLED or POSTGRES_URL_NON_POOLING.
-    url: process.env.DATABASE_URL_UNPOOLED || process.env.POSTGRES_URL_NON_POOLING || process.env.DATABASE_URL || process.env.POSTGRES_URL,
+    // Optional so `prisma generate` works without a database. Migrations prefer a direct (non-pooled) connection;
+    // Vercel-prefixed names (STORAGE_…) are accepted too — see src/lib/database-url.ts.
+    url: resolveMigrationDatabaseUrl(),
   },
 });
