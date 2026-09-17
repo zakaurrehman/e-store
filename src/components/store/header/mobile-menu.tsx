@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { Dialog } from "@/components/ui/dialog";
 import type { NavCategory } from "@/features/catalog/queries";
 
-export const OPEN_MOBILE_MENU_EVENT = "veyora:open-menu";
+export const OPEN_MOBILE_MENU_EVENT = "zendropship:open-menu";
 
 export function MobileMenu({ categories, extraLinks }: { categories: NavCategory[]; extraLinks: Array<{ label: string; href: string; highlight?: boolean }> }) {
   const [open, setOpen] = useState(false);

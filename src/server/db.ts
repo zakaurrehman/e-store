@@ -2,7 +2,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
 import { resolveDatabaseUrl } from "@/lib/database-url";
 
-const globalForPrisma = globalThis as unknown as { __veyoraPrisma?: PrismaClient };
+const globalForPrisma = globalThis as unknown as { __zendropshipPrisma?: PrismaClient };
 
 function createClient(connectionString = resolveDatabaseUrl()) {
   if (!connectionString) throw new Error("No PostgreSQL connection string: set DATABASE_URL to a direct postgres:// URL (or connect a Vercel database)");
@@ -20,9 +20,9 @@ function createClient(connectionString = resolveDatabaseUrl()) {
 }
 
 /** Shared Prisma client (one pool per server instance; reused across hot reloads in development). */
-export const db: PrismaClient = globalForPrisma.__veyoraPrisma ?? createClient();
+export const db: PrismaClient = globalForPrisma.__zendropshipPrisma ?? createClient();
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.__veyoraPrisma = db;
+if (process.env.NODE_ENV !== "production") globalForPrisma.__zendropshipPrisma = db;
 
 /** Interactive-transaction client type. */
 export type Tx = Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0];

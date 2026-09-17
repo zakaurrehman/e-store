@@ -5,7 +5,7 @@ import { getProductCardsAction, trackProductViewAction } from "@/features/catalo
 import type { ProductCardData } from "@/features/catalog/queries";
 import { ProductCard } from "./product-card";
 
-const KEY = "veyora:recently-viewed";
+const KEY = "zendropship:recently-viewed";
 
 function read(): string[] {
   try {

@@ -22,7 +22,7 @@ async function LoginContent({ searchParams }: PageProps<"/login">) {
       description="Sign in to track orders, save your details and check out faster."
       footer={
         <>
-          New to Veyora?{" "}
+          New to Zendropship?{" "}
           <Link href={registerHref} className="font-medium text-ink-950 underline underline-offset-4">
             Create an account
           </Link>

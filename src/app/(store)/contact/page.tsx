@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/misc";
 import { getStoreSettings } from "@/features/settings/queries";
 import { getCurrentUser } from "@/server/auth/session";
 
-export const metadata: Metadata = { title: "Contact us", description: "Get in touch with the Veyora customer care team.", alternates: { canonical: "/contact" } };
+export const metadata: Metadata = { title: "Contact us", description: "Get in touch with the Zendropship customer care team.", alternates: { canonical: "/contact" } };
 
 async function ContactContent({ searchParams }: PageProps<"/contact">) {
   const [query, user, settings] = await Promise.all([searchParams, getCurrentUser(), getStoreSettings()]);

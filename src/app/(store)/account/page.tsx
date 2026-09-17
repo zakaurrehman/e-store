@@ -27,7 +27,7 @@ async function Overview({ searchParams }: PageProps<"/account">) {
   return (
     <div className="space-y-12">
       {query.welcome === "1" && (
-        <Alert tone="success" title="Welcome to Veyora">
+        <Alert tone="success" title="Welcome to Zendropship">
           Your account is ready. We&rsquo;ve sent a confirmation link to {user.email} — confirm it to unlock reviews and order updates.
         </Alert>
       )}

@@ -98,7 +98,7 @@ export default function config(phase: string): NextConfig {
   if (phase === PHASE_PRODUCTION_BUILD || phase === PHASE_PRODUCTION_SERVER) {
     const problems = environmentProblems();
     if (problems.length > 0) {
-      const lines = ["Veyora's environment is incomplete:", ...problems.map((problem) => `  • ${problem}`), "See DEPLOYMENT.md (section 2) and .env.example."];
+      const lines = ["Zendropship's environment is incomplete:", ...problems.map((problem) => `  • ${problem}`), "See DEPLOYMENT.md (section 2) and .env.example."];
       throw new Error(lines.join("\n"));
     }
   }

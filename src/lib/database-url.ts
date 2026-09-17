@@ -12,7 +12,7 @@ export const DATABASE_URL_NAMES = ["DATABASE_URL", "POSTGRES_URL", "STORAGE_DATA
 /** Direct (non-pooled) connections, preferred for migrations. Neon provides these alongside its pooled URL. */
 const DIRECT_DATABASE_URL_NAMES = ["DATABASE_URL_UNPOOLED", "POSTGRES_URL_NON_POOLING", "STORAGE_DATABASE_URL_UNPOOLED", "STORAGE_POSTGRES_URL_NON_POOLING"] as const;
 
-/** prisma+postgres:// (Prisma Accelerate) URLs need the Accelerate client; Veyora connects with node-postgres. */
+/** prisma+postgres:// (Prisma Accelerate) URLs need the Accelerate client; Zendropship connects with node-postgres. */
 export const isAccelerateUrl = (url: string) => /^prisma(\+postgres)?:\/\//i.test(url);
 
 function firstUsable(names: readonly string[], env: EnvSource) {

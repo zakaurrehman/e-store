@@ -37,7 +37,7 @@ export function ReviewActions({ review }: { review: { id: string; status: string
       <ActionButton size="xs" variant="ghost" className="text-danger hover:bg-danger-soft" action={() => moderateReviewAction(review.id, "delete")} confirm={{ title: "Delete this review?", destructive: true, confirmLabel: "Delete" }}>
         Delete
       </ActionButton>
-      <Dialog open={replyOpen} onClose={() => setReplyOpen(false)} title="Public reply" description="Shown under the review as “Response from Veyora”.">
+      <Dialog open={replyOpen} onClose={() => setReplyOpen(false)} title="Public reply" description="Shown under the review as “Response from Zendropship”.">
         <ActionForm action={replyToReviewAction.bind(null, review.id)} submitLabel="Save reply" onSuccess={() => setReplyOpen(false)}>
           <Textarea name="reply" rows={4} defaultValue={review.adminReply ?? ""} maxLength={1000} placeholder="Thank you for your feedback…" />
         </ActionForm>

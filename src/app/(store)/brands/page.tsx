@@ -5,7 +5,7 @@ import { listBrands } from "@/features/catalog/queries";
 
 export const metadata: Metadata = {
   title: "Our labels",
-  description: "Discover the independent labels and house brands available at Veyora.",
+  description: "Discover the independent labels and house brands available at Zendropship.",
   alternates: { canonical: "/brands" },
 };
 
@@ -21,7 +21,7 @@ export default async function BrandsPage() {
       <Breadcrumbs items={[{ name: "Brands", href: "/brands" }]} />
       <header className="mt-6 max-w-2xl">
         <h1 className="text-4xl font-semibold tracking-[-0.03em] text-ink-950 md:text-5xl">Our labels</h1>
-        <p className="mt-3 text-base leading-relaxed text-ink-600">Every label on Veyora is reviewed for materials, construction and how it treats the people who make it.</p>
+        <p className="mt-3 text-base leading-relaxed text-ink-600">Every label on Zendropship is reviewed for materials, construction and how it treats the people who make it.</p>
       </header>
 
       <section aria-label="Featured labels" className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

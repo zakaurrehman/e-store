@@ -6,7 +6,7 @@ import { NextResponse, type NextRequest } from "next/server";
  * server action and route handler still validates the session and permissions on the server.
  * Cookie names are inlined because proxy must not depend on application modules.
  */
-const SESSION_COOKIES = ["__Host-veyora_session", "veyora_session"];
+const SESSION_COOKIES = ["__Host-zendropship_session", "zendropship_session"];
 
 export function proxy(request: NextRequest) {
   if (SESSION_COOKIES.some((name) => request.cookies.has(name))) return NextResponse.next();

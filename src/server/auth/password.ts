@@ -34,7 +34,7 @@ let dummyHash: Promise<string> | undefined;
  */
 export async function verifyPassword(passwordHash: string | null | undefined, password: string) {
   if (!passwordHash) {
-    dummyHash ??= hash("veyora-timing-equaliser", ARGON2_OPTIONS);
+    dummyHash ??= hash("zendropship-timing-equaliser", ARGON2_OPTIONS);
     await verify(await dummyHash, password).catch(() => false);
     return false;
   }

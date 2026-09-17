@@ -4,7 +4,7 @@ import { getCurrentUser } from "@/server/auth/session";
 import { createGuestCart, findGuestCart, GUEST_CART_TTL_MS, getOrCreateUserCart, loadCart, mergeGuestCartIntoUser } from "./service";
 
 const isProduction = process.env.NODE_ENV === "production";
-export const CART_COOKIE = isProduction ? "__Host-veyora_cart" : "veyora_cart";
+export const CART_COOKIE = isProduction ? "__Host-zendropship_cart" : "zendropship_cart";
 
 /** Read-only: the current visitor's cart id, without creating one. Safe during rendering. */
 export async function getCurrentCartId(): Promise<string | null> {

@@ -1,8 +1,8 @@
 # Deployment
 
-Veyora runs anywhere Node.js 22.12+ can run `next start` (a VM, container or managed Node host) or on Vercel. It needs a managed PostgreSQL database and — for Vercel, any serverless host or more than one server instance — object storage: Vercel Blob or an S3-compatible bucket.
+Zendropship runs anywhere Node.js 22.12+ can run `next start` (a VM, container or managed Node host) or on Vercel. It needs a managed PostgreSQL database and — for Vercel, any serverless host or more than one server instance — object storage: Vercel Blob or an S3-compatible bucket.
 
-> **Status:** the production build (`next build`) and production server (`next start`) have been verified locally, including an end-to-end test run against it. Veyora has not yet been fully deployed to a hosting platform, and Stripe, PayPal, Vercel Blob, S3 and SMTP/Resend have not been tested with real accounts. Test each of them in test mode before taking real orders.
+> **Status:** the production build (`next build`) and production server (`next start`) have been verified locally, including an end-to-end test run against it. Zendropship has not yet been fully deployed to a hosting platform, and Stripe, PayPal, Vercel Blob, S3 and SMTP/Resend have not been tested with real accounts. Test each of them in test mode before taking real orders.
 
 ## 1. Provision services
 
@@ -49,7 +49,7 @@ npm run start                # or your platform's start command
 
 ### Vercel
 
-1. In the project's **Storage** tab, connect a **Postgres** database, and create and connect a **Blob** store with **public** access (the access mode can't be changed later). Vercel adds the connection variables to the project, sometimes with a `STORAGE_` prefix; Veyora finds them either way. Prisma Postgres and Neon both work.
+1. In the project's **Storage** tab, connect a **Postgres** database, and create and connect a **Blob** store with **public** access (the access mode can't be changed later). Vercel adds the connection variables to the project, sometimes with a `STORAGE_` prefix; Zendropship finds them either way. Prisma Postgres and Neon both work.
 2. Under **Settings → Environment Variables**, add the rest of step 2 for Production (and Preview, if you use it). The minimum for a first deploy is `AUTH_SECRET`, `CRON_SECRET`, `TRUST_PROXY=true` and `STORAGE_DRIVER=blob`; set `PAYMENT_PROVIDERS` when you add Stripe or PayPal, and `APP_URL` once you have a domain.
 3. Nothing to set for the build command: `vercel.json` already runs `npm run db:deploy && npm run build`, so migrations are applied before every build. Preview deployments that share the production database apply the same committed migrations.
 4. Redeploy. If anything is still missing, the build stops at the start and lists it.
@@ -94,7 +94,13 @@ Customers return through `/checkout/return/<provider>` automatically. Place a te
 
   It returns JSON with `"ok": true`, and 401 without the correct secret.
 
-## 7. Post-deploy checks
+## 7. Custom domain
+
+In the Vercel project, open **Settings → Domains** and add `zendropship.io` (and `www.zendropship.io`, redirecting to the apex). Vercel shows the DNS records to create at your registrar: an `A` record for the apex and a `CNAME` for `www`. Once the domain is verified, Vercel issues the TLS certificate and makes it the production domain.
+
+Zendropship builds absolute links (emails, sitemap, payment return URLs) from `APP_URL`, or, when that is unset on Vercel, from the project's production domain, so the custom domain is picked up automatically on the next deployment. Set `EMAIL_FROM` to an address on the domain (for example `Zendropship <hello@zendropship.io>`) and verify the domain with your email provider.
+
+## 8. Post-deploy checks
 
 - `/` loads and the response carries `Content-Security-Policy` and `Strict-Transport-Security` headers.
 - `/robots.txt` and `/sitemap.xml` list your production domain.

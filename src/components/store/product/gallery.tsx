@@ -8,7 +8,7 @@ import { cn } from "@/utils/cn";
 
 type GalleryImage = { id: string; url: string; alt: string; width: number; height: number };
 
-export const GALLERY_SELECT_EVENT = "veyora:gallery-select";
+export const GALLERY_SELECT_EVENT = "zendropship:gallery-select";
 
 export function ProductGallery({ images, productName }: { images: GalleryImage[]; productName: string }) {
   const [index, setIndex] = useState(0);

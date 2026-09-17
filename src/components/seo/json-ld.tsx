@@ -17,7 +17,7 @@ export function organizationJsonLd(settings: StoreSettings) {
     name: settings.store.name,
     legalName: settings.store.legalName,
     url: baseUrl(),
-    logo: absolute("/brand/veyora-mark.svg"),
+    logo: absolute("/brand/zendropship-mark.svg"),
     ...(sameAs.length ? { sameAs } : {}),
     ...(settings.store.supportEmail ? { contactPoint: { "@type": "ContactPoint", contactType: "customer service", email: settings.store.supportEmail } } : {}),
   };

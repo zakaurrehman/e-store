@@ -1,4 +1,4 @@
-# Veyora — Discovery & Requirements
+# Zendropship — Discovery & Requirements
 
 Internal document. Produced from a hands-on audit of `https://atzstore.store/` on 2026-09-13
 before any implementation work. Every "source" claim below was observed directly (raw HTML,
@@ -28,7 +28,7 @@ seller"* deposit fraud pattern:
 
 ### Decisions that follow
 
-1. **Veyora is a legitimate B2C retailer.** We replicate the *legitimate* surface of the source
+1. **Zendropship is a legitimate B2C retailer.** We replicate the *legitimate* surface of the source
    (multi-category catalogue, category browsing, sort, product pages, reviews, account, orders)
    and build the retail flows the source lacks (cart, checkout, payments, fulfilment, policies).
 2. **Not reproduced, by design:** seller/"store" registration, government-ID upload, invitation
@@ -38,7 +38,7 @@ seller"* deposit fraud pattern:
 3. **The source catalogue is not imported by default.** The importer is fully built and can pull
    from any WooCommerce Store API or CSV the operator is authorised to use, but the source's
    products are third-party trademarks and images whose rights the source operator could not
-   grant. Veyora ships an original launch catalogue (own copy, own house brands, photography
+   grant. Zendropship ships an original launch catalogue (own copy, own house brands, photography
    under the Unsplash License — see `CREDITS.md`).
 
 ---
@@ -72,9 +72,9 @@ visitors and were not inspected further. No account was created: registration re
 submitting government ID, which we will not do. Nothing here is inferred about those screens
 beyond their titles and publicly shipped CSS/JS.
 
-## 2. Page structure → Veyora route map
+## 2. Page structure → Zendropship route map
 
-| Source | Veyora |
+| Source | Zendropship |
 |---|---|
 | `/` | `/` CMS-driven homepage |
 | `/shop/` | `/shop` all products with filters |
@@ -99,7 +99,7 @@ description, prices{regular, sale, currency}, on_sale, images[], categories[], t
 attributes[], variations[], weight, dimensions, stock, average_rating, review_count}; category
 {id, name, slug, parent, count, image}; review {rating 1–5, text, name, email}.
 
-Veyora (full schema in `DATABASE.md`): User, Role, Permission, RolePermission, Session,
+Zendropship (full schema in `DATABASE.md`): User, Role, Permission, RolePermission, Session,
 VerificationToken, Address, Category (self-referencing tree), Brand, Collection, Tag,
 Product, ProductImage, MediaAsset, ProductVariant, Attribute, AttributeValue,
 VariantOptionValue, ProductAttributeValue, InventoryMovement, Cart, CartItem, Wishlist,
@@ -154,7 +154,7 @@ through RBAC (SUPER_ADMIN, ADMIN, MANAGER, CUSTOMER).
   pages (`/admin-order-page/`, `/withdraw/`).
 - No accessible dialogs; "Withdrawal" modal is injected on every page.
 
-## 7. Veyora improvements
+## 7. Zendropship improvements
 
 - Real commerce core: persistent carts, one-page accordion checkout, provider-agnostic
   payments with webhook-verified status, shipments, refunds, taxes, coupons.

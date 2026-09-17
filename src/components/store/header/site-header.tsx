@@ -99,7 +99,7 @@ export async function SiteHeader() {
           </Suspense>
           <SearchButton className={cn(iconButton, "lg:hidden")} />
         </div>
-        <Link href="/" className="shrink-0 rounded-xs" aria-label="Veyora home">
+        <Link href="/" className="shrink-0 rounded-xs" aria-label="Zendropship home">
           <Logo className="hidden sm:inline-flex" />
           <Logo className="sm:hidden" markClassName="size-6" />
         </Link>

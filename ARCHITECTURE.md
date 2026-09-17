@@ -1,6 +1,6 @@
 # Architecture
 
-Veyora is a single Next.js 16 application (App Router, Turbopack, Cache Components) backed by PostgreSQL through Prisma 7. There is no separate API service: pages and server actions call feature services directly, and Route Handlers exist only where an HTTP endpoint is required (webhooks, cron, uploads, exports, media, search suggestions).
+Zendropship is a single Next.js 16 application (App Router, Turbopack, Cache Components) backed by PostgreSQL through Prisma 7. There is no separate API service: pages and server actions call feature services directly, and Route Handlers exist only where an HTTP endpoint is required (webhooks, cron, uploads, exports, media, search suggestions).
 
 ## Repository layout
 

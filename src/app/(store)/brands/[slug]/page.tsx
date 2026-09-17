@@ -9,7 +9,7 @@ export async function generateMetadata({ params }: PageProps<"/brands/[slug]">):
   const { slug } = await params;
   const brand = await getBrandBySlug(slug);
   if (!brand) return { title: "Brand not found", robots: { index: false } };
-  const description = brand.seoDescription ?? brand.description ?? `Shop ${brand.name} at Veyora.`;
+  const description = brand.seoDescription ?? brand.description ?? `Shop ${brand.name} at Zendropship.`;
   return { title: brand.seoTitle ?? brand.name, description, alternates: { canonical: `/brands/${slug}` }, openGraph: { title: brand.name, description } };
 }
 

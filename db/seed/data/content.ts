@@ -3,11 +3,11 @@
 export const PAGES = [
   {
     slug: "about",
-    title: "About Veyora",
+    title: "About Zendropship",
     excerpt: "Fewer, better things — from independent labels we know personally.",
-    content: `Veyora started with a simple frustration: it had become harder, not easier, to buy things that last. Endless marketplaces, copied designs and anonymous sellers made every purchase a gamble.
+    content: `Zendropship started with a simple frustration: it had become harder, not easier, to buy things that last. Endless marketplaces, copied designs and anonymous sellers made every purchase a gamble.
 
-So we built the opposite. **Veyora is a curated store of house labels and independent makers**, each chosen for how they design, what they make things from and who makes them.
+So we built the opposite. **Zendropship is a curated store of house labels and independent makers**, each chosen for how they design, what they make things from and who makes them.
 
 ## What we believe
 
@@ -17,7 +17,7 @@ So we built the opposite. **Veyora is a curated store of house labels and indepe
 
 ## How we choose what we sell
 
-Every label on Veyora goes through the same review: materials and construction, factory standards, durability testing and a close look at how the product will age. If we wouldn't buy it ourselves, we don't list it.
+Every label on Zendropship goes through the same review: materials and construction, factory standards, durability testing and a close look at how the product will age. If we wouldn't buy it ourselves, we don't list it.
 
 ## Our promise
 
@@ -80,7 +80,7 @@ If something arrives damaged, faulty or isn't what you ordered, contact us withi
     slug: "terms",
     title: "Terms & conditions",
     excerpt: "The terms that apply when you use this website and place an order.",
-    content: `These terms apply to your use of this website and to any order you place with Veyora ("we", "us"). By placing an order you agree to them.
+    content: `These terms apply to your use of this website and to any order you place with Zendropship ("we", "us"). By placing an order you agree to them.
 
 ## 1. Orders and contract
 
@@ -176,7 +176,7 @@ We reply to messages within one business day, Monday to Friday. Messages receive
 
 ## What we'll never ask for
 
-Veyora will **never** ask you for your password, full card number, security codes, or for payment by gift card, cryptocurrency or bank transfer outside our checkout. We will never ask you to "deposit" money to unlock orders or withdrawals. If you receive a message like this claiming to be from us, don't respond — report it to our team.
+Zendropship will **never** ask you for your password, full card number, security codes, or for payment by gift card, cryptocurrency or bank transfer outside our checkout. We will never ask you to "deposit" money to unlock orders or withdrawals. If you receive a message like this claiming to be from us, don't respond — report it to our team.
 
 ## Complaints
 
@@ -193,7 +193,7 @@ export const FAQ = [
   { group: "Returns & refunds", question: "What is your returns policy?", answer: "Most items can be returned within 30 days of delivery in original, unused condition. Returns in the US are free. See our returns policy for details and exclusions." },
   { group: "Returns & refunds", question: "When will I get my refund?", answer: "We refund your original payment method within 3 business days of receiving your return. Banks can take 5–10 business days to show the refund." },
   { group: "Payments", question: "Which payment methods do you accept?", answer: "Accepted methods are shown at checkout and in the footer of every page. Payments are processed securely by our payment partners and your order is confirmed only once payment is verified." },
-  { group: "Payments", question: "Is it safe to pay on Veyora?", answer: "Yes. Card payments are handled by PCI-compliant payment providers over encrypted connections — we never see or store your full card details." },
+  { group: "Payments", question: "Is it safe to pay on Zendropship?", answer: "Yes. Card payments are handled by PCI-compliant payment providers over encrypted connections — we never see or store your full card details." },
   { group: "Payments", question: "My payment failed — what should I do?", answer: "No money is taken when a payment fails. Open your order from the confirmation email or your account and try again with the same or a different payment method." },
   { group: "Account & privacy", question: "I forgot my password.", answer: "Use “Forgot password” on the sign-in page. We'll email you a secure link that's valid for one hour." },
   { group: "Account & privacy", question: "How do I delete my account?", answer: "Contact our team from the email address on your account and we'll delete your personal data, keeping only the order records we're legally required to retain." },
@@ -208,7 +208,7 @@ export const MENUS = {
     { label: "FAQ", href: "/faq" },
   ],
   "footer-company": [
-    { label: "About Veyora", href: "/pages/about" },
+    { label: "About Zendropship", href: "/pages/about" },
     { label: "Our labels", href: "/brands" },
     { label: "New arrivals", href: "/collections/new-arrivals" },
     { label: "The Gift Edit", href: "/collections/the-gift-edit" },

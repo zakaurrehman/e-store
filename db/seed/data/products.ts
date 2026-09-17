@@ -1,5 +1,5 @@
 /**
- * Veyora launch catalogue — original product copy for house-label products.
+ * Zendropship launch catalogue — original product copy for house-label products.
  * `photos` are Unsplash photo ids (Unsplash License). The first photo is the main image; when only one
  * photo is listed the seed adds a close-up crop of it as the second gallery image.
  */

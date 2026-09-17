@@ -1,8 +1,8 @@
-# Veyora
+# Zendropship
 
 A multi-category B2C online store — fashion, beauty, watches, jewellery, bags, tech and home — built with Next.js 16, React 19, TypeScript, Tailwind CSS v4 and PostgreSQL (Prisma 7).
 
-Veyora started from a review of a reference site. That site turned out to be a fake-seller deposit scheme (seller sign-up with government ID, "distribution" buttons, wallets, deposits and blocked withdrawals), so Veyora is a **legitimate single-merchant store**: none of those mechanics exist here, and the reference catalogue was not imported. See [REQUIREMENTS.md](REQUIREMENTS.md).
+Zendropship started from a review of a reference site. That site turned out to be a fake-seller deposit scheme (seller sign-up with government ID, "distribution" buttons, wallets, deposits and blocked withdrawals), so Zendropship is a **legitimate single-merchant store**: none of those mechanics exist here, and the reference catalogue was not imported. See [REQUIREMENTS.md](REQUIREMENTS.md).
 
 ## What's included
 
@@ -32,7 +32,7 @@ Full instructions: [SETUP.md](SETUP.md).
 
 | Document | For |
 | --- | --- |
-| [SETUP.md](SETUP.md) | Running Veyora locally |
+| [SETUP.md](SETUP.md) | Running Zendropship locally |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | How the code is organised and why |
 | [DATABASE.md](DATABASE.md) | Schema, conventions, migrations and seeding |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Production deployment checklist |
@@ -65,4 +65,4 @@ Checked on the development machine with the local database:
 - The Playwright suite covering 20 customer and admin flows passes against the production build.
 - Additional scripted browser QA in `scripts/qa/` (admin sections, customer/admin loops, account journey).
 
-**Not verified** — these are implemented against the providers' documented APIs but have not been exercised with real accounts: Stripe and PayPal payments and refunds, Vercel Blob and S3-compatible storage, SMTP and Resend email delivery. SMS and push notifications exist only as provider interfaces; no provider is implemented. Veyora has not yet been deployed to a hosting platform.
+**Not verified** — these are implemented against the providers' documented APIs but have not been exercised with real accounts: Stripe and PayPal payments and refunds, Vercel Blob and S3-compatible storage, SMTP and Resend email delivery. SMS and push notifications exist only as provider interfaces; no provider is implemented. Zendropship has not yet been deployed to a hosting platform.

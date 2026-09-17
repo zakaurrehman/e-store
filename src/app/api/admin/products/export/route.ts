@@ -65,6 +65,6 @@ export async function GET() {
   );
   const csv = toProductCsv(rows);
   return new Response(`﻿${csv}`, {
-    headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="veyora-products-${new Date().toISOString().slice(0, 10)}.csv"`, "Cache-Control": "private, no-store" },
+    headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="zendropship-products-${new Date().toISOString().slice(0, 10)}.csv"`, "Cache-Control": "private, no-store" },
   });
 }

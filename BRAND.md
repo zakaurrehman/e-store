@@ -1,12 +1,12 @@
-# Veyora brand
+# Zendropship brand
 
-Veyora is a calm, considered department store: a limited palette, generous space and editorial photography. The interface should get out of the way of the products.
+Zendropship is a calm, considered department store: a limited palette, generous space and editorial photography. The interface should get out of the way of the products.
 
 All tokens below are defined once in `src/app/globals.css` (`@theme`) and used through Tailwind utilities. The default Tailwind palette is intentionally removed, so off-brand colours can't creep in.
 
 ## Logo
 
-- **Wordmark and mark:** `src/components/brand/logo.tsx` (the `Logo` and `LogoMark` components, drawn as SVG paths so they render crisply at any size)
+- **Wordmark and mark:** `src/components/brand/logo.tsx`. The wordmark is the word Zendropship set in Instrument Sans, semibold, capitals, tracked 0.2em (`Wordmark`). The mark is a Z in a rounded ink square: white horizontal strokes and an iris diagonal (`LogoMark`), drawn as SVG so it renders crisply at any size.
 - **Favicon:** `src/app/icon.svg`
 - Use the wordmark on light surfaces in ink, and the mark alone where space is tight (mobile header, admin, favicon). Don't recolour, stretch or add effects.
 

@@ -7,7 +7,7 @@ import { getFaqItems } from "@/features/cms/queries";
 
 export const metadata: Metadata = {
   title: "Help & FAQ",
-  description: "Answers about orders, delivery, returns, payments and your Veyora account.",
+  description: "Answers about orders, delivery, returns, payments and your Zendropship account.",
   alternates: { canonical: "/faq" },
 };
 

@@ -396,8 +396,8 @@ export function ProductEditor({ product, options, canDelete }: { product: Editor
           </Field>
           <div className="rounded-md bg-canvas p-4">
             <p className="text-[0.75rem] text-ink-500">Preview</p>
-            <p className="mt-1 text-[1.0625rem] text-[#1a0dab]">{(form.seoTitle || form.name || "Product title").slice(0, 70)} · Veyora</p>
-            <p className="text-[0.8125rem] text-success">veyora.com › p › {form.slug || "slug"}</p>
+            <p className="mt-1 text-[1.0625rem] text-[#1a0dab]">{(form.seoTitle || form.name || "Product title").slice(0, 70)} · Zendropship</p>
+            <p className="text-[0.8125rem] text-success">zendropship.io › p › {form.slug || "slug"}</p>
             <p className="mt-1 text-[0.875rem] text-ink-700">{(form.seoDescription || form.shortDescription || "Meta description").slice(0, 160)}</p>
           </div>
         </SectionCard>

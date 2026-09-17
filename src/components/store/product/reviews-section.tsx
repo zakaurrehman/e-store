@@ -146,7 +146,7 @@ export async function ReviewsSection({ product, page, sort }: { product: Pick<Pr
                   </p>
                   {review.adminReply && (
                     <div className="mt-4 rounded-sm bg-canvas px-4 py-3 text-[0.875rem] text-ink-700">
-                      <p className="text-[0.75rem] font-semibold uppercase tracking-[0.08em] text-ink-500">Response from Veyora</p>
+                      <p className="text-[0.75rem] font-semibold uppercase tracking-[0.08em] text-ink-500">Response from Zendropship</p>
                       <p className="mt-1">{review.adminReply}</p>
                     </div>
                   )}

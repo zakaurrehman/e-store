@@ -22,7 +22,7 @@ export async function generateMetadata({ params }: PageProps<"/p/[slug]">): Prom
   const product = await getProductBySlug(slug);
   if (!product) return { title: "Product not found", robots: { index: false } };
   const title = product.seoTitle ?? `${product.name}${product.brand ? ` by ${product.brand.name}` : ""}`;
-  const description = product.seoDescription ?? product.shortDescription ?? `Shop ${product.name} at Veyora.`;
+  const description = product.seoDescription ?? product.shortDescription ?? `Shop ${product.name} at Zendropship.`;
   const image = product.images[0];
   return {
     title,

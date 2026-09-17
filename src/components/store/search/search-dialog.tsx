@@ -11,8 +11,8 @@ import type { Suggestions } from "@/features/search/suggest";
 import { cn } from "@/utils/cn";
 import { formatMoney } from "@/utils/money";
 
-export const OPEN_SEARCH_EVENT = "veyora:open-search";
-const HISTORY_KEY = "veyora:search-history";
+export const OPEN_SEARCH_EVENT = "zendropship:open-search";
+const HISTORY_KEY = "zendropship:search-history";
 
 function readHistory(): string[] {
   try {

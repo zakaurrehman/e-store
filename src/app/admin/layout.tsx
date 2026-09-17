@@ -5,7 +5,7 @@ import { ToastProvider } from "@/components/ui/toast";
 import { requireStaff } from "@/server/auth/guards";
 import { db } from "@/server/db";
 
-export const metadata: Metadata = { title: { default: "Admin", template: "%s · Veyora Admin" }, robots: { index: false, follow: false } };
+export const metadata: Metadata = { title: { default: "Admin", template: "%s · Zendropship Admin" }, robots: { index: false, follow: false } };
 
 async function AdminShell({ children }: { children: React.ReactNode }) {
   const user = await requireStaff("/admin");

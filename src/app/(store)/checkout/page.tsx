@@ -48,7 +48,7 @@ export default function CheckoutPage() {
     <div className="container-page pb-20 pt-8">
       <div className="mb-8 flex items-center justify-between">
         <h1 className="text-3xl font-semibold tracking-[-0.025em] md:text-4xl">Checkout</h1>
-        <Link href="/" className="hidden sm:block" aria-label="Veyora home">
+        <Link href="/" className="hidden sm:block" aria-label="Zendropship home">
           <Logo />
         </Link>
       </div>

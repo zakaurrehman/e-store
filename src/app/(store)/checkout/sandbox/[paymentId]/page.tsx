@@ -39,7 +39,7 @@ async function SandboxContent({ params, searchParams }: PageProps<"/checkout/san
         <dl className="tabular mt-6 space-y-2 text-sm">
           <div className="flex justify-between">
             <dt className="text-ink-500">Merchant</dt>
-            <dd>Veyora</dd>
+            <dd>Zendropship</dd>
           </div>
           <div className="flex justify-between">
             <dt className="text-ink-500">Order</dt>

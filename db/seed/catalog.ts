@@ -103,7 +103,7 @@ async function seedBrands() {
 async function seedCategories() {
   const ids = new Map<string, string>();
   for (const [position, category] of CATEGORIES.entries()) {
-    const image = category.photo ? await ingestPhoto(category.photo, "full", `${category.name} at Veyora`, "categories") : null;
+    const image = category.photo ? await ingestPhoto(category.photo, "full", `${category.name} at Zendropship`, "categories") : null;
     const parent = await db.category.upsert({
       where: { slug: category.slug },
       create: { slug: category.slug, name: category.name, description: category.description, position, imageId: image?.id },

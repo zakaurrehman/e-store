@@ -116,7 +116,7 @@ export class WooCommerceStoreSource implements ImportSource {
 
   private async json<T>(path: string): Promise<{ data: T; totalPages: number }> {
     const doFetch = this.options.fetchImpl ?? fetch;
-    const response = await doFetch(`${this.base}/wp-json/wc/store/v1${path}`, { headers: { "User-Agent": "Veyora-Importer/1.0" }, signal: AbortSignal.timeout(60_000) });
+    const response = await doFetch(`${this.base}/wp-json/wc/store/v1${path}`, { headers: { "User-Agent": "Zendropship-Importer/1.0" }, signal: AbortSignal.timeout(60_000) });
     if (!response.ok) throw new Error(`Source responded ${response.status} for ${path}`);
     return { data: (await response.json()) as T, totalPages: Number(response.headers.get("x-wp-totalpages") ?? 1) };
   }
@@ -198,7 +198,7 @@ export class WooCommerceStoreSource implements ImportSource {
   }
 }
 
-/** Reads the Veyora product CSV (the same format /api/admin/products/export produces). */
+/** Reads the Zendropship product CSV (the same format /api/admin/products/export produces). */
 export class CsvSource implements ImportSource {
   readonly key: string;
   readonly matchExistingBySlug = true;

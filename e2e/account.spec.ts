@@ -3,7 +3,7 @@ import { ADMIN_STATE, pathOf, toast, unique, waitForMail } from "./helpers";
 
 test.describe.serial("customer account", () => {
   const email = `e2e.customer.${unique()}@example.com`;
-  const password = "Veyora-E2E-2026!";
+  const password = "Zendropship-E2E-2026!";
   const reviewTitle = `Holds its shape ${unique()}`;
   let context: BrowserContext;
   let page: Page;

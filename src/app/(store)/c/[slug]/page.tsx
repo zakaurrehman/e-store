@@ -14,7 +14,7 @@ export async function generateMetadata({ params, searchParams }: PageProps<"/c/[
   if (!category) return { title: "Category not found", robots: { index: false } };
   const filters = parseListingFilters(query);
   const title = category.seoTitle ?? (category.parent ? `${category.parent.name}'s ${category.name}`.replace("Women's", "Women’s").replace("Men's", "Men’s") : category.name);
-  const description = category.seoDescription ?? category.description ?? `Shop ${category.name} at Veyora.`;
+  const description = category.seoDescription ?? category.description ?? `Shop ${category.name} at Zendropship.`;
   const filtered = activeFilterCount(filters) > 0 || filters.sort !== "featured";
   return {
     title,

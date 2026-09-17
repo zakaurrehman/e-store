@@ -1,9 +1,9 @@
 {
-  "name": "veyora",
+  "name": "zendropship",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Veyora — multi-category commerce platform",
+  "description": "Zendropship — multi-category commerce platform",
   "engines": {
     "node": ">=22.12"
   },

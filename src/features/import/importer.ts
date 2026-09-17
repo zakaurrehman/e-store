@@ -32,7 +32,7 @@ async function fetchImage(url: string): Promise<{ buffer: Buffer; filename: stri
     const path = url.slice(5);
     return { buffer: await readFile(path), filename: path.split(/[\\/]/).pop() ?? "image" };
   }
-  const response = await fetch(url, { headers: { "User-Agent": "Veyora-Importer/1.0" }, signal: AbortSignal.timeout(45_000) });
+  const response = await fetch(url, { headers: { "User-Agent": "Zendropship-Importer/1.0" }, signal: AbortSignal.timeout(45_000) });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const type = response.headers.get("content-type") ?? "";
   if (!type.startsWith("image/")) throw new Error(`Not an image (${type})`);
@@ -40,7 +40,7 @@ async function fetchImage(url: string): Promise<{ buffer: Buffer; filename: stri
 }
 
 /**
- * Idempotent import runner. Every external record is mapped to a Veyora entity through ImportRecord,
+ * Idempotent import runner. Every external record is mapped to a Zendropship entity through ImportRecord,
  * so re-running never duplicates products, categories or images; unchanged records are skipped by checksum.
  */
 export async function runImport(options: ImportOptions): Promise<{ runId: string | null; stats: ImportStats }> {
@@ -62,7 +62,7 @@ export async function runImport(options: ImportOptions): Promise<{ runId: string
   const imageCache = new Map<string, string | null>();
   const importImage = async (url: string, alt: string, folder: string): Promise<string | null> => {
     if (imageCache.has(url)) return imageCache.get(url)!;
-    // Our own media (e.g. from a Veyora CSV export) maps straight back to the existing asset.
+    // Our own media (e.g. from a Zendropship CSV export) maps straight back to the existing asset.
     const appUrl = resolveSiteUrl();
     const ownUrls = [url, ...(appUrl && url.startsWith(appUrl + "/") ? [url.slice(appUrl.length)] : [])];
     const own = await db.mediaAsset.findFirst({ where: { url: { in: ownUrls }, deletedAt: null }, select: { id: true } });

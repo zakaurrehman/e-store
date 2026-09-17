@@ -9,9 +9,9 @@ const optionalUrl = z
 
 export const settingsSchema = {
   store: z.object({
-    name: z.string().trim().min(1).max(60).default("Veyora"),
+    name: z.string().trim().min(1).max(60).default("Zendropship"),
     tagline: z.string().trim().max(120).default("Considered essentials, delivered worldwide."),
-    legalName: z.string().trim().max(120).default("Veyora Commerce"),
+    legalName: z.string().trim().max(120).default("Zendropship Commerce"),
     supportEmail: z.string().trim().max(254).default(""),
     supportPhone: z.string().trim().max(40).default(""),
     supportHours: z.string().trim().max(120).default("Monday–Friday, 9:00–18:00"),
@@ -33,8 +33,8 @@ export const settingsSchema = {
     lowStockThreshold: z.number().int().min(0).max(1000).default(5),
   }),
   seo: z.object({
-    titleTemplate: z.string().trim().max(80).default("%s · Veyora"),
-    defaultTitle: z.string().trim().max(80).default("Veyora — Fashion, beauty, tech & home"),
+    titleTemplate: z.string().trim().max(80).default("%s · Zendropship"),
+    defaultTitle: z.string().trim().max(80).default("Zendropship — Fashion, beauty, tech & home"),
     defaultDescription: z
       .string()
       .trim()

@@ -98,7 +98,7 @@ export function AdminNav({ permissions, user, unread }: { permissions: string[];
       <div className="flex h-16 items-center justify-between border-b border-line px-5">
         <Link href="/admin" className="flex items-center gap-2.5">
           <LogoMark className="size-7" title="" />
-          <span className="text-sm font-semibold tracking-[0.2em]">VEYORA</span>
+          <span className="text-sm font-semibold tracking-[0.2em]">ZENDROPSHIP</span>
           <span className="rounded-xs bg-canvas px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-[0.08em] text-ink-600">Admin</span>
         </Link>
         <button type="button" className="lg:hidden" onClick={() => setOpen(false)} aria-label="Close menu">

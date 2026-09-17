@@ -15,7 +15,7 @@ import { SandboxProvider } from "@/server/payments/providers/sandbox";
  * Enable with SEED_DEMO_DATA=true. Refused when NODE_ENV=production. Skipped if demo customers already exist.
  */
 
-const DEMO_DOMAIN = "demo.veyora.local";
+const DEMO_DOMAIN = "demo.zendropship.local";
 
 const CUSTOMERS = [
   { firstName: "Maya", lastName: "Okafor", city: "Austin", region: "TX", postalCode: "78701", country: "US", line1: "210 Congress Avenue" },

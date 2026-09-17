@@ -8,7 +8,7 @@ import { getRequestMeta } from "@/server/request";
 import { rateLimit } from "@/server/security/rate-limit";
 import { Suspense } from "react";
 
-export const metadata: Metadata = { title: "Track your order", description: "Check the status of your Veyora order with your order number and email address.", alternates: { canonical: "/track-order" } };
+export const metadata: Metadata = { title: "Track your order", description: "Check the status of your Zendropship order with your order number and email address.", alternates: { canonical: "/track-order" } };
 
 async function lookup(formData: FormData) {
   "use server";

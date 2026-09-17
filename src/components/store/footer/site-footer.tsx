@@ -52,7 +52,7 @@ export async function SiteFooter() {
       <div className="container-page py-14 lg:py-20">
         <div className="grid gap-12 lg:grid-cols-12">
           <div className="lg:col-span-4">
-            <Wordmark className="h-4 text-white" />
+            <Wordmark className="text-base text-white" />
             <p className="mt-5 max-w-sm text-[0.9375rem] leading-relaxed text-white/70">{settings.store.tagline}</p>
             <div className="mt-8 max-w-sm">
               <p className="text-[0.9375rem] font-medium">Get first access to new arrivals</p>

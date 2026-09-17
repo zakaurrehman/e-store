@@ -15,7 +15,7 @@ export class StripeProvider implements PaymentProvider {
 
   constructor(secretKey: string, private readonly webhookSecret: string) {
     // The SDK pins its own API version; overriding it risks type/runtime drift.
-    this.stripe = new Stripe(secretKey, { appInfo: { name: "Veyora" } });
+    this.stripe = new Stripe(secretKey, { appInfo: { name: "Zendropship" } });
   }
 
   isAvailable() {

@@ -46,7 +46,7 @@ async function main() {
   }
   await client.end();
 
-  console.log(`PostgreSQL ready on postgresql://${user}:${password}@localhost:${port}/veyora`);
+  console.log(`PostgreSQL ready on postgresql://${user}:${password}@localhost:${port}/zendropship`);
 
   const shutdown = async () => {
     console.log("Stopping PostgreSQL…");

@@ -17,7 +17,7 @@ for (const [label, p] of [["admin", admin], ["customer", customer]]) {
 }
 const stamp = Date.now().toString(36).toUpperCase();
 const email = `qa.people.${stamp.toLowerCase()}@example.com`;
-const password = "Veyora-QA-2026!";
+const password = "Zendropship-QA-2026!";
 const productSlug = "qa-linen-overshirt-mtzridr3";
 const step = (msg) => console.log("✓", msg);
 const go = (p, path) => p.goto(base + path, { waitUntil: "networkidle", timeout: 180000 });
@@ -139,17 +139,17 @@ await run("force password reset: sessions end, sign-in blocked until reset link 
   const reset = await mail((m) => m.to === email && /Reset/i.test(m.subject));
   const link = new URL(reset.links.find((l) => l.includes("/reset-password")));
   await go(customer, link.pathname + link.search);
-  await customer.locator("#reset-password").fill("Veyora-QA-2027!");
-  await customer.locator("#reset-confirm").fill("Veyora-QA-2027!");
+  await customer.locator("#reset-password").fill("Zendropship-QA-2027!");
+  await customer.locator("#reset-confirm").fill("Zendropship-QA-2027!");
   await customer.getByRole("button", { name: /password/i }).last().click();
   await customer.waitForURL((u) => !u.pathname.startsWith("/reset-password"), { timeout: 60000 });
-  await login(customer, email, "Veyora-QA-2027!");
+  await login(customer, email, "Zendropship-QA-2027!");
   await customer.waitForURL(/\/account/, { timeout: 60000 });
   console.log("  new password works →", new URL(customer.url()).pathname);
 });
 
 const staffEmail = `qa.staff.${stamp.toLowerCase()}@example.com`;
-const staffPassword = "Veyora-Staff-QA-2026!";
+const staffPassword = "Zendropship-Staff-QA-2026!";
 await run("RBAC: custom role + staff account; permissions enforced server-side", async () => {
   await go(admin, "/admin/settings/staff");
   await admin.getByRole("button", { name: "New role" }).click();

@@ -78,7 +78,7 @@ export class PayPalProvider implements PaymentProvider {
             items: order.items.map((item) => ({ name: item.name.slice(0, 127), quantity: String(item.quantity), unit_amount: money(item.unitPriceCents) })),
           },
         ],
-        application_context: { brand_name: "Veyora", user_action: "PAY_NOW", shipping_preference: "NO_SHIPPING", return_url: input.returnUrl, cancel_url: input.cancelUrl },
+        application_context: { brand_name: "Zendropship", user_action: "PAY_NOW", shipping_preference: "NO_SHIPPING", return_url: input.returnUrl, cancel_url: input.cancelUrl },
       }),
     });
     const approve = created.links.find((link) => link.rel === "approve")?.href;

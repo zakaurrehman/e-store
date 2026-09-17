@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /*
- * Veyora design tokens.
+ * Zendropship design tokens.
  * The default Tailwind palette is intentionally reset so every colour in the product comes from
  * the brand system documented in BRAND.md.
  */
@@ -197,7 +197,7 @@
 }
 
 /* Long-form content rendered from Markdown (CMS pages, product descriptions) */
-@utility prose-veyora {
+@utility prose-zendropship {
   color: var(--color-ink-700);
   line-height: 1.7;
   & > * + * {

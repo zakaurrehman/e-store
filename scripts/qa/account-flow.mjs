@@ -28,7 +28,7 @@ page.on("response", (response) => {
 const shot = (name) => page.screenshot({ path: path.join(out, `d-account-${name}.png`), caret: "initial" });
 const step = (label) => console.log(`→ ${label}`);
 const email = `qa.customer.${Date.now()}@example.com`;
-const password = "Veyora-QA-2026!";
+const password = "Zendropship-QA-2026!";
 
 async function latestMail(predicate) {
   const lines = (await readFile(path.resolve("var/mail/mailbox.jsonl"), "utf8")).trim().split("\n").map((line) => JSON.parse(line));

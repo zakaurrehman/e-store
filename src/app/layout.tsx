@@ -20,8 +20,8 @@ const serif = Instrument_Serif({
 
 export const metadata: Metadata = {
   metadataBase: new URL(resolveSiteUrl()),
-  title: { default: "Veyora", template: "%s · Veyora" },
-  applicationName: "Veyora",
+  title: { default: "Zendropship", template: "%s · Zendropship" },
+  applicationName: "Zendropship",
   formatDetection: { telephone: false, email: false, address: false },
 };
 

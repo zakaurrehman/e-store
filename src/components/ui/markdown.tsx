@@ -9,7 +9,7 @@ import { cn } from "@/utils/cn";
  */
 export function MarkdownContent({ content, className }: { content: string; className?: string }) {
   return (
-    <div className={cn("prose-veyora", className)}>
+    <div className={cn("prose-zendropship", className)}>
       <Markdown
         remarkPlugins={[remarkGfm]}
         components={{

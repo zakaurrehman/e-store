@@ -1,4 +1,4 @@
-// Veyora relational schema — PostgreSQL.
+// Zendropship relational schema — PostgreSQL.
 // Conventions:
 //   * Money is stored as integer minor units (cents) in the store currency.
 //   * Soft deletion via `deletedAt` on catalogue/customer entities that are referenced by history.
@@ -1282,7 +1282,7 @@ model ImportRun {
   @@index([startedAt])
 }
 
-/// Maps external records to Veyora entities so imports are idempotent.
+/// Maps external records to Zendropship entities so imports are idempotent.
 model ImportRecord {
   id           String     @id @default(cuid())
   source       String

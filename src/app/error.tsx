@@ -12,7 +12,7 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
   return (
     <div className="flex min-h-dvh flex-col">
       <header className="container-page flex h-16 items-center">
-        <Link href="/" aria-label="Veyora home">
+        <Link href="/" aria-label="Zendropship home">
           <Logo />
         </Link>
       </header>

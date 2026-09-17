@@ -1,5 +1,5 @@
 /**
- * Veyora launch taxonomy. Original content; brand names are Veyora house labels.
+ * Zendropship launch taxonomy. Original content; brand names are Zendropship house labels.
  * Photography: Unsplash License (https://unsplash.com/license) — see CREDITS.md.
  */
 

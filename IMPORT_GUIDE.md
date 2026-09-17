@@ -1,15 +1,15 @@
 # Catalogue import and export
 
-Veyora imports categories, products (with variants and attributes) and images from a **CSV file** or a **WooCommerce store's public Store API**, from the command line or from **Admin → Import & export**.
+Zendropship imports categories, products (with variants and attributes) and images from a **CSV file** or a **WooCommerce store's public Store API**, from the command line or from **Admin → Import & export**.
 
 > **Only import content you have the right to use.** Product names, descriptions and photographs belong to their authors. Every import requires an explicit confirmation (`--yes` or `IMPORT_AUTHORIZED=true` on the CLI, a checkbox in the admin), and every imported image records its source. The reference site reviewed in REQUIREMENTS.md was deliberately **not** imported.
 
 ## How imports stay safe to repeat
 
-- Each run is recorded as an `ImportRun`. Every external record is mapped to its Veyora entity through `ImportRecord` (source + type + external id) together with a checksum of the source data.
+- Each run is recorded as an `ImportRun`. Every external record is mapped to its Zendropship entity through `ImportRecord` (source + type + external id) together with a checksum of the source data.
 - Re-running an import **updates** mapped records and **skips** unchanged ones (same checksum); it never creates duplicates.
 - CSV imports also match existing products by handle (slug), and variants by the exported `variant_id`, so *export → edit in a spreadsheet → re-import* updates products in place.
-- Images are de-duplicated: an image URL already imported is reused, Veyora's own `/media/...` URLs map back to the existing asset, and identical files are stored once.
+- Images are de-duplicated: an image URL already imported is reused, Zendropship's own `/media/...` URLs map back to the existing asset, and identical files are stored once.
 - Categories are matched by slug or name before new ones are created; unknown brands and attributes are created automatically.
 - **Dry run** reports what would be created or updated and writes nothing.
 
@@ -56,7 +56,7 @@ One row per variant; rows with the same `handle` belong to one product, and prod
 | `care`, `shipping_note`, `seo_title`, `seo_description` | Text |
 | `images` | Image URLs, first is the main image |
 | `attributes` | Filterable product facts, e.g. `Colour: Navy` |
-| `variant_id` | Veyora variant id (present in exports; leave empty for new variants) |
+| `variant_id` | Zendropship variant id (present in exports; leave empty for new variants) |
 | `variant_options` | Variant-defining options, e.g. `Size: M \| Colour: Navy` |
 | `sku`, `barcode` | SKUs must be unique within a product |
 | `price`, `sale_price`, `cost` | Decimal amounts; `sale_price` must be lower than `price` |

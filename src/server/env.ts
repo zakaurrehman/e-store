@@ -44,7 +44,7 @@ const fields = z.object({
   BLOB_READ_WRITE_TOKEN: optionalString,
 
   EMAIL_DRIVER: option(["log", "smtp", "resend"], "log"),
-  EMAIL_FROM: z.string().default("Veyora <hello@localhost>"),
+  EMAIL_FROM: z.string().default("Zendropship <hello@localhost>"),
   SMTP_HOST: optionalString,
   SMTP_PORT: z.coerce.number().int().default(587),
   SMTP_USER: optionalString,

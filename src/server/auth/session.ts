@@ -13,7 +13,7 @@ import type { RequestMeta } from "@/server/request";
 const isProduction = process.env.NODE_ENV === "production";
 
 /** `__Host-` prefix pins the cookie to this exact host over HTTPS (not usable on http://localhost). */
-export const SESSION_COOKIE = isProduction ? "__Host-veyora_session" : "veyora_session";
+export const SESSION_COOKIE = isProduction ? "__Host-zendropship_session" : "zendropship_session";
 
 export async function startSession(userId: string, meta: RequestMeta) {
   const { token, session } = await createSessionRecord(userId, meta);

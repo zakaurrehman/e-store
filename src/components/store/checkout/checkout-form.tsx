@@ -30,7 +30,7 @@ type Step = "contact" | "address" | "delivery" | "payment" | "review";
 const STEP_TITLES: Record<Step, string> = { contact: "Contact", address: "Shipping address", delivery: "Delivery", payment: "Payment", review: "Review & place order" };
 
 function idempotencyKeyFor(cartId: string | null) {
-  const storageKey = `veyora:checkout-key:${cartId ?? "anon"}`;
+  const storageKey = `zendropship:checkout-key:${cartId ?? "anon"}`;
   try {
     const existing = sessionStorage.getItem(storageKey);
     if (existing) return existing;
@@ -189,7 +189,7 @@ export function CheckoutForm({ cart, customer, savedAddresses, shippableCountrie
       return;
     }
     try {
-      sessionStorage.removeItem(`veyora:checkout-key:${cart.id ?? "anon"}`);
+      sessionStorage.removeItem(`zendropship:checkout-key:${cart.id ?? "anon"}`);
     } catch {}
     window.location.assign(result.redirectUrl);
   };
