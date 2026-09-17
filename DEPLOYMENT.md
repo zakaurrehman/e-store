@@ -51,7 +51,7 @@ npm run start                # or your platform's start command
 
 1. In the project's **Storage** tab, connect a **Postgres** database, and create and connect a **Blob** store with **public** access (the access mode can't be changed later). Vercel adds the connection variables to the project, sometimes with a `STORAGE_` prefix; Veyora finds them either way. Prisma Postgres and Neon both work.
 2. Under **Settings → Environment Variables**, add the rest of step 2 for Production (and Preview, if you use it). The minimum for a first deploy is `AUTH_SECRET`, `CRON_SECRET`, `TRUST_PROXY=true` and `STORAGE_DRIVER=blob`; set `PAYMENT_PROVIDERS` when you add Stripe or PayPal, and `APP_URL` once you have a domain.
-3. Under **Settings → Build and Deployment**, set **Build Command** to `npm run db:deploy && npm run build`.
+3. Nothing to set for the build command: `vercel.json` already runs `npm run db:deploy && npm run build`, so migrations are applied before every build. Preview deployments that share the production database apply the same committed migrations.
 4. Redeploy. If anything is still missing, the build stops at the start and lists it.
 5. Run the first-time seed (step 4) from your machine with the production `DATABASE_URL`, `STORAGE_DRIVER=blob` and the Blob store's `BLOB_READ_WRITE_TOKEN` (from the store's settings) set for that command, so the admin account, settings and starter images are created in the production database and Blob store. Don't copy production values into your local `.env`, which should keep pointing at your development database.
 
