@@ -21,3 +21,12 @@ export function envFlag(value: unknown): boolean {
   const option = envOption(value);
   return option === "true" || option === "1";
 }
+
+/**
+ * Enabled payment providers from PAYMENT_PROVIDERS. When unset, production enables cash on delivery only;
+ * development and tests also enable the sandbox test gateway, which production always refuses.
+ */
+export function paymentProviderList(value: unknown, nodeEnv: string | undefined = process.env.NODE_ENV): string[] {
+  const configured = cleanEnvValue(value) ?? (nodeEnv === "production" ? "cod" : "sandbox,cod");
+  return configured.split(",").map((item) => item.trim().toLowerCase()).filter(Boolean);
+}

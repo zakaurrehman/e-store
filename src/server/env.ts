@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { resolveDatabaseUrl } from "../lib/database-url";
-import { cleanEnvValue, envOption } from "../lib/env-value";
+import { envOption, paymentProviderList } from "../lib/env-value";
 import { resolveSiteUrl } from "../lib/site-url";
 
 // Variables created but left empty (or holding only whitespace) count as unset.
@@ -52,14 +52,8 @@ const fields = z.object({
   SMTP_SECURE: booleanFlag,
   RESEND_API_KEY: optionalString,
 
-  PAYMENT_PROVIDERS: z
-    .preprocess(cleanEnvValue, z.string().default("sandbox,cod"))
-    .transform((value) =>
-      value
-        .split(",")
-        .map((item) => item.trim().toLowerCase())
-        .filter(Boolean),
-    ),
+  // Unset: cash on delivery in production, plus the sandbox test gateway in development (see lib/env-value.ts).
+  PAYMENT_PROVIDERS: z.preprocess((value) => paymentProviderList(value), z.array(z.string())),
   ALLOW_SANDBOX_PAYMENTS: booleanFlag,
   SANDBOX_PAYMENTS_SECRET: optionalString,
   STRIPE_SECRET_KEY: optionalString,

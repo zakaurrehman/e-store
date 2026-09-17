@@ -1,7 +1,7 @@
 import { cacheLife } from "next/cache";
 import Link from "next/link";
 import { Wordmark } from "@/components/brand/logo";
-import { envOption } from "@/lib/env-value";
+import { paymentProviderList } from "@/lib/env-value";
 import { getCategoryTree } from "@/features/catalog/queries";
 import { getMenu } from "@/features/cms/queries";
 import { getStoreSettings } from "@/features/settings/queries";
@@ -43,7 +43,7 @@ async function FooterColumn({ title, menuKey }: { title: string; menuKey: string
 
 export async function SiteFooter() {
   const [settings, categories] = await Promise.all([getStoreSettings(), getCategoryTree()]);
-  const providers = (envOption(process.env.PAYMENT_PROVIDERS) ?? "").split(",").map((item) => item.trim());
+  const providers = paymentProviderList(process.env.PAYMENT_PROVIDERS);
   const paymentMethods = [...new Set(providers.flatMap((provider) => PAYMENT_LABELS[provider] ?? []))];
   const socials = Object.entries(settings.social).filter(([, url]) => !!url);
 

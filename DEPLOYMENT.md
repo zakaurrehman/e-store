@@ -27,7 +27,7 @@ Set these on the host for **both the build and runtime**. `.env.example` documen
 | `STORAGE_DRIVER` | `blob` for Vercel Blob: on Vercel, connecting a **public** Blob store adds `BLOB_STORE_ID` and the SDK authenticates automatically; outside Vercel (for example when seeding from your machine) set `BLOB_READ_WRITE_TOKEN` from the store's settings. Or `s3` with `S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_FORCE_PATH_STYLE` |
 | `MEDIA_PUBLIC_BASE_URL` | With `s3` only: the bucket's public origin, also allowed for `next/image` at build time |
 | `EMAIL_DRIVER` | `smtp` (`SMTP_*`) or `resend` (`RESEND_API_KEY`), plus `EMAIL_FROM`. The `log` driver cannot write files on Vercel: preview deployments print emails to the server log, and production deployments record them as failed (never logging their links) until a real provider is set. |
-| `PAYMENT_PROVIDERS` | e.g. `stripe,paypal,cod`. **Never `sandbox` in production** — it is refused unless `ALLOW_SANDBOX_PAYMENTS=true`, which is for staging only. |
+| `PAYMENT_PROVIDERS` | e.g. `stripe,paypal,cod`. When unset, production offers cash on delivery (`cod`) only. **Never `sandbox` in production** — it is refused unless `ALLOW_SANDBOX_PAYMENTS=true`, which is for staging only. |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | When Stripe is enabled |
 | `PAYPAL_MODE`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID` | When PayPal is enabled (`PAYPAL_MODE=live` for real payments) |
 | `CRON_SECRET` | Required in production |
@@ -50,7 +50,7 @@ npm run start                # or your platform's start command
 ### Vercel
 
 1. In the project's **Storage** tab, connect a **Postgres** database, and create and connect a **Blob** store with **public** access (the access mode can't be changed later). Vercel adds the connection variables to the project, sometimes with a `STORAGE_` prefix; Veyora finds them either way. Prisma Postgres and Neon both work.
-2. Under **Settings → Environment Variables**, add the rest of step 2 for Production (and Preview, if you use it). The minimum for a first deploy is `AUTH_SECRET`, `CRON_SECRET`, `TRUST_PROXY=true`, `STORAGE_DRIVER=blob` and `PAYMENT_PROVIDERS`; set `APP_URL` once you have a domain.
+2. Under **Settings → Environment Variables**, add the rest of step 2 for Production (and Preview, if you use it). The minimum for a first deploy is `AUTH_SECRET`, `CRON_SECRET`, `TRUST_PROXY=true` and `STORAGE_DRIVER=blob`; set `PAYMENT_PROVIDERS` when you add Stripe or PayPal, and `APP_URL` once you have a domain.
 3. Under **Settings → Build and Deployment**, set **Build Command** to `npm run db:deploy && npm run build`.
 4. Redeploy. If anything is still missing, the build stops at the start and lists it.
 5. Run the first-time seed (step 4) from your machine with the production `DATABASE_URL`, `STORAGE_DRIVER=blob` and the Blob store's `BLOB_READ_WRITE_TOKEN` (from the store's settings) set for that command, so the admin account, settings and starter images are created in the production database and Blob store. Don't copy production values into your local `.env`, which should keep pointing at your development database.

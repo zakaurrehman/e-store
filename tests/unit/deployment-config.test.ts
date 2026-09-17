@@ -90,6 +90,12 @@ describe("environmentProblems", () => {
     expect(fields(problemsFor({ DATABASE_URL: "prisma+postgres://accelerate.prisma-data.net/?api_key=example" }))).toContain("DATABASE_URL");
   });
 
+  it("needs no PAYMENT_PROVIDERS in production: it defaults to cash on delivery without the sandbox", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VERCEL", "");
+    expect(problemsFor({ PAYMENT_PROVIDERS: undefined })).toEqual([]);
+  });
+
   it("refuses the sandbox payment gateway in production unless explicitly allowed for staging", () => {
     expect(fields(problemsFor({ PAYMENT_PROVIDERS: "sandbox,cod", SANDBOX_PAYMENTS_SECRET: "s".repeat(20) }))).toContain("PAYMENT_PROVIDERS");
     expect(problemsFor({ PAYMENT_PROVIDERS: "sandbox,cod", SANDBOX_PAYMENTS_SECRET: "s".repeat(20), ALLOW_SANDBOX_PAYMENTS: "true" })).toEqual([]);

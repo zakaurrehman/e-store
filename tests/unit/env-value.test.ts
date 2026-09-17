@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanEnvValue, envFlag, envOption } from "@/lib/env-value";
+import { cleanEnvValue, envFlag, envOption, paymentProviderList } from "@/lib/env-value";
 
 describe("environment value normalisation", () => {
   it("removes surrounding whitespace, Windows line endings and one pair of matching quotes", () => {
@@ -22,5 +22,12 @@ describe("environment value normalisation", () => {
     expect(envFlag("1")).toBe(true);
     expect(envFlag("false")).toBe(false);
     expect(envFlag(undefined)).toBe(false);
+  });
+
+  it("defaults payment providers to cash on delivery in production and adds the sandbox elsewhere", () => {
+    expect(paymentProviderList(undefined, "production")).toEqual(["cod"]);
+    expect(paymentProviderList("", "production")).toEqual(["cod"]);
+    expect(paymentProviderList(undefined, "development")).toEqual(["sandbox", "cod"]);
+    expect(paymentProviderList(" Stripe, COD ", "production")).toEqual(["stripe", "cod"]);
   });
 });
