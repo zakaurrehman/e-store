@@ -61,7 +61,7 @@ npm run start                # or your platform's start command
 SEED_SKIP_CATALOG=true SEED_ADMIN_EMAIL=you@yourdomain.com SEED_ADMIN_PASSWORD='<12+ chars>' npm run db:seed
 ```
 
-This creates roles and permissions, default settings, shipping zones and tax rates, the first super admin and starter content, without the demo catalogue. Then:
+This creates roles and permissions, default settings, shipping zones and tax rates, the first super admin and starter content, without the demo catalogue. Pages built before the seed ran can be served from cache for up to an hour, so **redeploy once the seed has finished** to rebuild them with the new data. Then:
 
 1. Sign in at `/admin`, change the admin password and remove `SEED_ADMIN_PASSWORD` from the environment.
 2. **Settings → Store settings** — store name, legal name, support contact, address, currency, SEO and social links.
