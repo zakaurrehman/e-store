@@ -17,6 +17,7 @@ import {
   Settings,
   ShoppingBag,
   Star,
+  Store,
   Tags,
   Ticket,
   Truck,
@@ -47,6 +48,7 @@ const GROUPS: NavGroup[] = [
   {
     title: "Sales",
     items: [
+      { href: "/admin/stores", label: "Stores", icon: Store, permission: "stores.view" },
       { href: "/admin/orders", label: "Orders", icon: ShoppingBag, permission: "orders.view" },
       { href: "/admin/customers", label: "Customers", icon: Users, permission: "customers.view" },
       { href: "/admin/discounts", label: "Discounts", icon: Ticket, permission: "discounts.manage" },
@@ -143,7 +145,7 @@ export function AdminNav({ permissions, user, unread }: { permissions: string[];
         </div>
         <div className="mt-1 flex gap-1">
           <Link href="/" target="_blank" className="flex flex-1 items-center justify-center gap-1.5 rounded-sm px-2 py-1.5 text-[0.8125rem] text-ink-600 hover:bg-canvas hover:text-ink-950">
-            <ExternalLink className="size-3.5" /> View store
+            <ExternalLink className="size-3.5" /> View site
           </Link>
           <form action={logoutAction} className="flex-1">
             <button type="submit" className="flex w-full items-center justify-center gap-1.5 rounded-sm px-2 py-1.5 text-[0.8125rem] text-ink-600 hover:bg-canvas hover:text-ink-950">

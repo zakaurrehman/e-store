@@ -104,7 +104,7 @@ export function welcomeEmail(brand: EmailBrand, input: { firstName: string; veri
         button("Confirm email address", input.verifyUrl) +
         smallPrint("This link expires in 48 hours. If you didn't create an account, you can safely ignore this email."),
     }),
-    text: `${greeting(input.firstName)}\n\nYour ${brand.storeName} account is ready. Confirm your email address:\n${input.verifyUrl}\n\nThis link expires in 48 hours.`,
+    text: `${greeting(input.firstName)}\n\nYour ${brand.storeName} account is ready. Confirm your email address:\n${input.verifyUrl}\n\nThis link expires in 48 hours.\n\n— ${brand.storeName}`,
   };
 }
 
@@ -121,7 +121,7 @@ export function verifyEmailEmail(brand: EmailBrand, input: { firstName: string; 
         button("Confirm email address", input.verifyUrl) +
         smallPrint("This link expires in 48 hours. If you didn't request it, you can ignore this email."),
     }),
-    text: `${greeting(input.firstName)}\n\nConfirm your email address:\n${input.verifyUrl}\n\nThis link expires in 48 hours.`,
+    text: `${greeting(input.firstName)}\n\nConfirm your email address:\n${input.verifyUrl}\n\nThis link expires in 48 hours.\n\n— ${brand.storeName}`,
   };
 }
 
@@ -138,7 +138,7 @@ export function passwordResetEmail(brand: EmailBrand, input: { firstName: string
         button("Choose a new password", input.resetUrl) +
         smallPrint("The link expires in 1 hour and can only be used once. Resetting your password signs you out on all devices. If you didn't ask for this, no action is needed — your password stays the same."),
     }),
-    text: `${greeting(input.firstName)}\n\nReset your password (valid for 1 hour):\n${input.resetUrl}\n\nIf you didn't ask for this, ignore this email.`,
+    text: `${greeting(input.firstName)}\n\nReset your password (valid for 1 hour):\n${input.resetUrl}\n\nIf you didn't ask for this, ignore this email.\n\n— ${brand.storeName}`,
   };
 }
 
@@ -155,7 +155,7 @@ export function orderConfirmationEmail(brand: EmailBrand, input: { order: OrderE
       heading: "Thank you — your order is confirmed",
       bodyHtml: paragraph(greeting(order.customerFirstName)) + paragraph(intro) + button("View your order", input.orderUrl) + orderSummaryBlock(order),
     }),
-    text: `${greeting(order.customerFirstName)}\n\n${intro}\n\nView your order: ${input.orderUrl}\n\n${orderText(order)}`,
+    text: `${greeting(order.customerFirstName)}\n\n${intro}\n\nView your order: ${input.orderUrl}\n\n${orderText(order)}\n\n— ${brand.storeName}`,
   };
 }
 
@@ -174,7 +174,7 @@ export function paymentConfirmationEmail(brand: EmailBrand, input: { order: Orde
         button("View order", input.orderUrl) +
         orderSummaryBlock(order),
     }),
-    text: `${greeting(order.customerFirstName)}\n\nWe've received your payment of ${amount} for order ${order.number}.\n${input.orderUrl}\n\n${orderText(order)}`,
+    text: `${greeting(order.customerFirstName)}\n\nWe've received your payment of ${amount} for order ${order.number}.\n${input.orderUrl}\n\n${orderText(order)}\n\n— ${brand.storeName}`,
   };
 }
 
@@ -192,7 +192,7 @@ export function paymentFailedEmail(brand: EmailBrand, input: { order: OrderEmail
         button("Complete payment", input.retryUrl) +
         smallPrint("Items are not reserved until payment is confirmed."),
     }),
-    text: `${greeting(order.customerFirstName)}\n\nWe couldn't take payment for order ${order.number}. No money has been taken.\nComplete payment: ${input.retryUrl}`,
+    text: `${greeting(order.customerFirstName)}\n\nWe couldn't take payment for order ${order.number}. No money has been taken.\nComplete payment: ${input.retryUrl}\n\n— ${brand.storeName}`,
   };
 }
 
@@ -217,7 +217,7 @@ export function shippingConfirmationEmail(
         button(input.trackingUrl ? "Track your parcel" : "View order status", input.trackingUrl ?? input.orderUrl) +
         orderSummaryBlock(order),
     }),
-    text: `${greeting(order.customerFirstName)}\n\nOrder ${order.number} has shipped.${input.trackingNumber ? `\nTracking: ${input.carrier ?? ""} ${input.trackingNumber}` : ""}\n${input.trackingUrl ?? input.orderUrl}`,
+    text: `${greeting(order.customerFirstName)}\n\nOrder ${order.number} has shipped.${input.trackingNumber ? `\nTracking: ${input.carrier ?? ""} ${input.trackingNumber}` : ""}\n${input.trackingUrl ?? input.orderUrl}\n\n— ${brand.storeName}`,
   };
 }
 
@@ -235,7 +235,7 @@ export function deliveryConfirmationEmail(brand: EmailBrand, input: { order: Ord
         button("Review your purchase", input.reviewUrl) +
         smallPrint(`Not the right fit? Returns are free within the return window shown on your order page: ${input.orderUrl}`),
     }),
-    text: `${greeting(order.customerFirstName)}\n\nOrder ${order.number} was delivered.\nReview your purchase: ${input.reviewUrl}\nOrder: ${input.orderUrl}`,
+    text: `${greeting(order.customerFirstName)}\n\nOrder ${order.number} was delivered.\nReview your purchase: ${input.reviewUrl}\nOrder: ${input.orderUrl}\n\n— ${brand.storeName}`,
   };
 }
 
@@ -253,7 +253,7 @@ export function refundEmail(brand: EmailBrand, input: { order: OrderEmailData; a
         paragraph(`We've issued a refund of ${amount} for order ${order.number} to your original payment method. Depending on your bank, it can take 5–10 business days to appear.`) +
         button("View order", input.orderUrl),
     }),
-    text: `${greeting(order.customerFirstName)}\n\nWe've refunded ${amount} for order ${order.number}. Allow 5–10 business days.\n${input.orderUrl}`,
+    text: `${greeting(order.customerFirstName)}\n\nWe've refunded ${amount} for order ${order.number}. Allow 5–10 business days.\n${input.orderUrl}\n\n— ${brand.storeName}`,
   };
 }
 
@@ -274,7 +274,7 @@ export function cancellationEmail(brand: EmailBrand, input: { order: OrderEmailD
         paragraph(refundLine) +
         button("View order", input.orderUrl),
     }),
-    text: `${greeting(order.customerFirstName)}\n\nOrder ${order.number} has been cancelled. ${refundLine}\n${input.orderUrl}`,
+    text: `${greeting(order.customerFirstName)}\n\nOrder ${order.number} has been cancelled. ${refundLine}\n${input.orderUrl}\n\n— ${brand.storeName}`,
   };
 }
 
@@ -288,6 +288,6 @@ export function staffAlertEmail(brand: EmailBrand, input: { title: string; lines
       bodyHtml: input.lines.map(paragraph).join("") + button(input.cta, input.href),
       footerNote: "You're receiving this because you're a member of the store team.",
     }),
-    text: `${input.title}\n\n${input.lines.join("\n")}\n\n${input.href}`,
+    text: `${input.title}\n\n${input.lines.join("\n")}\n\n${input.href}\n\n— ${brand.storeName}`,
   };
 }

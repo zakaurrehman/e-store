@@ -50,6 +50,8 @@ export type RegisterInput = {
   firstName: string;
   lastName: string;
   marketingOptIn?: boolean;
+  /** The store the customer signed up on, so owners can see their own customers. */
+  registeredStoreId?: string | null;
 };
 
 export async function registerCustomer(input: RegisterInput, meta: { ipAddress?: string } = {}) {
@@ -72,6 +74,7 @@ export async function registerCustomer(input: RegisterInput, meta: { ipAddress?:
       lastName: input.lastName,
       marketingOptIn: input.marketingOptIn ?? false,
       roleId: role.id,
+      registeredStoreId: input.registeredStoreId ?? null,
     },
   });
   if (input.marketingOptIn) {

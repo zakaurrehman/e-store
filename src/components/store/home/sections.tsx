@@ -7,9 +7,10 @@ import { SectionHeading } from "@/components/ui/misc";
 import { RatingStars } from "@/components/ui/rating";
 import { ProductRail } from "@/components/store/product/product-rail";
 import { NewsletterForm } from "@/components/store/footer/newsletter-form";
-import { getProductRail } from "@/features/catalog/queries";
+import { getCategoryTree, getProductRail } from "@/features/catalog/queries";
 import { getBanners, getCategoryTiles, getFeaturedBrands, getFeaturedReviews, type BannerData } from "@/features/cms/home-queries";
 import { parseHomeSectionConfig, type HomeSectionType } from "@/features/cms/home-sections";
+import { scopeOf, type StoreContext } from "@/features/stores/context";
 import { cn } from "@/utils/cn";
 
 /** Renders CMS titles where `_text_` becomes an editorial italic accent. */
@@ -100,8 +101,8 @@ function TrustBar({ items }: { items: Array<{ icon: keyof typeof TRUST_ICON_MAP;
   );
 }
 
-async function CategoryGrid({ title, subtitle, slugs }: { title: string | null; subtitle: string | null; slugs: string[] }) {
-  const tiles = await getCategoryTiles(slugs);
+async function CategoryGrid({ title, subtitle, slugs, storeId }: { title: string | null; subtitle: string | null; slugs: string[]; storeId: string }) {
+  const tiles = await getCategoryTiles(slugs, storeId);
   if (tiles.length === 0) return null;
   return (
     <section className="py-12 md:py-16">
@@ -154,8 +155,22 @@ function BannerTile({ banner, className, sizes }: { banner: BannerData; classNam
   );
 }
 
-async function PromoBanners({ bannerIds }: { bannerIds: string[] }) {
-  const banners = await getBanners(bannerIds.length ? { ids: bannerIds } : { placement: "PROMO" });
+/**
+ * Banners are managed once for the platform. A store only shows the ones that lead somewhere it sells:
+ * a banner pointing at a department the store does not stock is skipped.
+ */
+async function bannersForStore(store: StoreContext, banners: BannerData[]) {
+  if (store.isPlatformStore) return banners;
+  const tree = await getCategoryTree(scopeOf(store));
+  const stocked = new Set(tree.flatMap((department) => [department.slug, ...department.children.map((child) => child.slug)]));
+  return banners.filter((banner) => {
+    const match = banner.ctaHref?.match(/^\/c\/([^/?#]+)/);
+    return !match || stocked.has(match[1]);
+  });
+}
+
+async function PromoBanners({ bannerIds, store }: { bannerIds: string[]; store: StoreContext }) {
+  const banners = await bannersForStore(store, await getBanners(bannerIds.length ? { ids: bannerIds } : { placement: "PROMO" }));
   if (banners.length === 0) return null;
   return (
     <section className="py-6 md:py-10">
@@ -170,9 +185,9 @@ async function PromoBanners({ bannerIds }: { bannerIds: string[] }) {
   );
 }
 
-async function Editorial({ bannerId, align }: { bannerId?: string; align: "left" | "right" }) {
+async function Editorial({ bannerId, align, store }: { bannerId?: string; align: "left" | "right"; store: StoreContext }) {
   if (!bannerId) return null;
-  const [banner] = await getBanners({ ids: [bannerId] });
+  const [banner] = await bannersForStore(store, await getBanners({ ids: [bannerId] }));
   if (!banner) return null;
   return (
     <section className="py-12 md:py-16">
@@ -199,8 +214,8 @@ async function Editorial({ bannerId, align }: { bannerId?: string; align: "left"
   );
 }
 
-async function BrandStrip({ title, slugs }: { title: string | null; slugs: string[] }) {
-  const brands = await getFeaturedBrands(slugs);
+async function BrandStrip({ title, slugs, storeId }: { title: string | null; slugs: string[]; storeId: string }) {
+  const brands = await getFeaturedBrands(slugs, storeId);
   if (brands.length === 0) return null;
   return (
     <section className="border-y border-line py-12 md:py-16">
@@ -221,8 +236,8 @@ async function BrandStrip({ title, slugs }: { title: string | null; slugs: strin
   );
 }
 
-async function Reviews({ title, limit }: { title: string | null; limit: number }) {
-  const reviews = await getFeaturedReviews(limit);
+async function Reviews({ title, limit, storeId }: { title: string | null; limit: number; storeId: string }) {
+  const reviews = await getFeaturedReviews(limit, storeId);
   if (reviews.length === 0) return null;
   return (
     <section className="bg-canvas py-14 md:py-20">
@@ -277,20 +292,37 @@ function Newsletter({ title, text }: { title: string | null; text?: string }) {
   );
 }
 
-export async function HomeSection({ section }: { section: { id: string; type: HomeSectionType; title: string | null; subtitle: string | null; config: unknown } }): Promise<ReactNode> {
+/** Owner stores keep the CMS hero's layout but show their own headline, subtitle and image. */
+function storeHero(store: StoreContext, banner: BannerData | undefined): BannerData | null {
+  if (store.isPlatformStore) return banner ?? null;
+  const base: BannerData = banner ?? { id: `store-hero-${store.id}`, eyebrow: null, title: store.name, subtitle: null, ctaLabel: null, ctaHref: null, theme: "light", image: null, mobileImage: null };
+  return {
+    ...base,
+    eyebrow: store.tagline ?? null,
+    title: store.heroTitle || store.name,
+    subtitle: store.heroSubtitle ?? null,
+    ctaLabel: "Shop now",
+    ctaHref: "/shop",
+    image: store.heroImageUrl ? { url: store.heroImageUrl, alt: store.name, width: 2400, height: 1350 } : base.image,
+    mobileImage: store.heroImageUrl ? null : base.mobileImage,
+  };
+}
+
+export async function HomeSection({ store, section }: { store: StoreContext; section: { id: string; type: HomeSectionType; title: string | null; subtitle: string | null; config: unknown } }): Promise<ReactNode> {
   switch (section.type) {
     case "HERO": {
       const config = parseHomeSectionConfig("HERO", section.config);
       const banners = await getBanners(config.bannerId ? { ids: [config.bannerId] } : { placement: "HERO" });
-      return banners[0] ? <Hero banner={banners[0]} /> : null;
+      const banner = storeHero(store, banners[0]);
+      return banner ? <Hero banner={banner} /> : null;
     }
     case "TRUST_BAR":
       return <TrustBar items={parseHomeSectionConfig("TRUST_BAR", section.config).items} />;
     case "CATEGORY_GRID":
-      return <CategoryGrid title={section.title} subtitle={section.subtitle} slugs={parseHomeSectionConfig("CATEGORY_GRID", section.config).categorySlugs} />;
+      return <CategoryGrid title={section.title} subtitle={section.subtitle} slugs={parseHomeSectionConfig("CATEGORY_GRID", section.config).categorySlugs} storeId={store.id} />;
     case "PRODUCT_RAIL": {
       const config = parseHomeSectionConfig("PRODUCT_RAIL", section.config);
-      const products = await getProductRail(config.source, config.limit, config.categorySlug);
+      const products = await getProductRail(config.source, config.limit, config.categorySlug, scopeOf(store));
       // Data-driven rails (best sellers, trending, top rated) stay hidden until there is real data behind them.
       const minimum = ["best-sellers", "trending", "top-rated"].includes(config.source) ? 4 : 1;
       if (products.length < minimum) return null;
@@ -304,15 +336,15 @@ export async function HomeSection({ section }: { section: { id: string; type: Ho
       );
     }
     case "PROMO_BANNERS":
-      return <PromoBanners bannerIds={parseHomeSectionConfig("PROMO_BANNERS", section.config).bannerIds} />;
+      return <PromoBanners bannerIds={parseHomeSectionConfig("PROMO_BANNERS", section.config).bannerIds} store={store} />;
     case "EDITORIAL": {
       const config = parseHomeSectionConfig("EDITORIAL", section.config);
-      return <Editorial bannerId={config.bannerId} align={config.align} />;
+      return <Editorial bannerId={config.bannerId} align={config.align} store={store} />;
     }
     case "BRAND_STRIP":
-      return <BrandStrip title={section.title} slugs={parseHomeSectionConfig("BRAND_STRIP", section.config).brandSlugs} />;
+      return <BrandStrip title={section.title} slugs={parseHomeSectionConfig("BRAND_STRIP", section.config).brandSlugs} storeId={store.id} />;
     case "REVIEWS":
-      return <Reviews title={section.title} limit={parseHomeSectionConfig("REVIEWS", section.config).limit} />;
+      return <Reviews title={section.title} limit={parseHomeSectionConfig("REVIEWS", section.config).limit} storeId={store.id} />;
     case "NEWSLETTER":
       return <Newsletter title={section.title} text={parseHomeSectionConfig("NEWSLETTER", section.config).text ?? section.subtitle ?? undefined} />;
     default:

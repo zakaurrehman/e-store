@@ -1,5 +1,5 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
-import { ADMIN_STATE, pathOf, toast, unique, waitForMail } from "./helpers";
+import { ADMIN_STATE, pathOf, PLATFORM_URL, toast, unique, waitForMail } from "./helpers";
 
 test.describe.serial("customer account", () => {
   const email = `e2e.customer.${unique()}@example.com`;
@@ -42,7 +42,7 @@ test.describe.serial("customer account", () => {
     await page.getByRole("button", { name: "Submit review" }).click();
     await expect(page.getByText(/will appear once it's been checked|awaiting moderation/).first()).toBeVisible();
 
-    const adminContext = await browser.newContext({ storageState: ADMIN_STATE });
+    const adminContext = await browser.newContext({ storageState: ADMIN_STATE, baseURL: PLATFORM_URL });
     const admin = await adminContext.newPage();
     await admin.goto("/admin/reviews?status=PENDING");
     await admin.locator("li", { hasText: reviewTitle }).getByRole("button", { name: "Approve" }).click();

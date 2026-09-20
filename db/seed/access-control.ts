@@ -7,6 +7,9 @@ import { db } from "@/server/db";
  * which always holds every permission.
  */
 export async function seedAccessControl() {
+  // Permissions added to the catalogue since the last run are granted to the system roles that define them.
+  const known = new Set((await db.permission.findMany({ select: { key: true } })).map((permission) => permission.key));
+  const introduced = new Set(ALL_PERMISSIONS.filter((key) => !known.has(key)));
   for (const [key, meta] of Object.entries(PERMISSIONS)) {
     await db.permission.upsert({
       where: { key },
@@ -33,9 +36,10 @@ export async function seedAccessControl() {
       },
       update: { rank: definition.rank, isStaff: definition.isStaff, isSystem: true },
     });
-    if (!existing || key === "SUPER_ADMIN") {
+    const grant = !existing || key === "SUPER_ADMIN" ? definition.permissions : definition.permissions.filter((permission) => introduced.has(permission));
+    if (grant.length) {
       await db.rolePermission.createMany({
-        data: definition.permissions.map((permission) => ({ roleId: role.id, permissionId: idByKey.get(permission)! })),
+        data: grant.map((permission) => ({ roleId: role.id, permissionId: idByKey.get(permission)! })),
         skipDuplicates: true,
       });
     }

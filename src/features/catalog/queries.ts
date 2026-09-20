@@ -3,6 +3,9 @@ import { cacheLife, cacheTag } from "next/cache";
 import { Prisma } from "@/generated/prisma/client";
 import { CollectionRule, PaymentStatus, ProductStatus, ReviewStatus } from "@/generated/prisma/enums";
 import { getSearchProvider } from "@/features/search/provider";
+import type { StoreScope } from "@/features/stores/context";
+import { storePriceFor, summarisePrices, SUGGESTED_PRICING, type StoreProductOverride } from "@/features/stores/pricing";
+import { storeCatalogTag } from "@/features/stores/queries";
 import { db } from "@/server/db";
 import { PAGE_SIZE, type ListingFilters, type SortKey } from "./filters";
 
@@ -10,6 +13,14 @@ export const CATALOG_TAG = "catalog";
 export const productTag = (slug: string) => `product:${slug}`;
 
 const NEW_WINDOW_DAYS = 45;
+
+/**
+ * Every listing is either the platform catalogue (scope null: supplier's suggested prices, wholesale shown to
+ * prospective owners) or one store's shelf (scope set: only products the owner added, at the store's prices).
+ */
+export type CatalogScope = StoreScope | null;
+
+const scopeTags = (scope: CatalogScope) => (scope ? [CATALOG_TAG, storeCatalogTag(scope.id)] : [CATALOG_TAG]);
 
 export const productCardSelect = {
   id: true,
@@ -25,10 +36,16 @@ export const productCardSelect = {
   publishedAt: true,
   brand: { select: { name: true, slug: true } },
   images: { orderBy: { position: "asc" }, take: 2, select: { alt: true, media: { select: { url: true, width: true, height: true, alt: true } } } },
-  variants: { where: { isActive: true }, orderBy: { position: "asc" }, take: 2, select: { id: true } },
+  variants: { where: { isActive: true }, orderBy: { position: "asc" }, select: { id: true, priceCents: true, salePriceCents: true, costCents: true } },
 } satisfies Prisma.ProductSelect;
 
-type CardRow = Prisma.ProductGetPayload<{ select: typeof productCardSelect }>;
+/** Card select plus this store's pricing override for the product. */
+const cardSelectFor = (scope: CatalogScope) =>
+  scope
+    ? ({ ...productCardSelect, storeProducts: { where: { storeId: scope.id }, select: { markupBps: true, fixedPriceCents: true } } } satisfies Prisma.ProductSelect)
+    : productCardSelect;
+
+type CardRow = Prisma.ProductGetPayload<{ select: typeof productCardSelect }> & { storeProducts?: Array<{ markupBps: number | null; fixedPriceCents: number | null }> };
 
 export type CardImage = { url: string; alt: string; width: number; height: number };
 
@@ -48,20 +65,25 @@ export type ProductCardData = {
   images: CardImage[];
   /** Set when the product has exactly one variant, enabling one-tap add to bag. */
   quickAddVariantId: string | null;
+  /** Wholesale cost of the cheapest variant — shown to prospective store owners on the platform catalogue only. */
+  costCents: number;
 };
 
-export function toProductCard(row: CardRow): ProductCardData {
+export function toProductCard(row: CardRow, scope: CatalogScope = null): ProductCardData {
   const newSince = Date.now() - NEW_WINDOW_DAYS * 86_400_000;
+  const override: StoreProductOverride = row.storeProducts?.[0] ?? null;
+  const priced = summarisePrices(row.variants.map((variant) => storePriceFor(variant, scope?.pricing ?? SUGGESTED_PRICING, override)));
   return {
     id: row.id,
     slug: row.slug,
     name: row.name,
     brand: row.brand,
-    priceCents: row.priceCents,
-    maxPriceCents: row.maxPriceCents,
-    compareAtPriceCents: row.compareAtPriceCents,
-    onSale: row.onSale,
+    priceCents: row.variants.length ? priced.priceCents : row.priceCents,
+    maxPriceCents: row.variants.length ? priced.maxPriceCents : row.maxPriceCents,
+    compareAtPriceCents: row.variants.length ? priced.compareAtPriceCents : row.compareAtPriceCents,
+    onSale: row.variants.length ? priced.onSale : row.onSale,
     inStock: row.inStock,
+    costCents: priced.costCents,
     ratingAverage: row.ratingAverage,
     ratingCount: row.ratingCount,
     isNew: !!row.publishedAt && row.publishedAt.getTime() > newSince,
@@ -77,14 +99,18 @@ export function toProductCard(row: CardRow): ProductCardData {
 
 const visibleProduct = { status: ProductStatus.ACTIVE, deletedAt: null } satisfies Prisma.ProductWhereInput;
 
+/** Sellable in this scope: the whole catalogue on the platform, or only what the owner put on the shelf. */
+const visibleIn = (scope: CatalogScope): Prisma.ProductWhereInput =>
+  scope ? { ...visibleProduct, storeProducts: { some: { storeId: scope.id, isActive: true } } } : visibleProduct;
+
 // ─── Taxonomy ────────────────────────────────────────────────────────────────
 
 export type NavCategory = { id: string; name: string; slug: string; imageUrl: string | null; children: Array<{ id: string; name: string; slug: string }> };
 
-export async function getCategoryTree(): Promise<NavCategory[]> {
+export async function getCategoryTree(scope: CatalogScope = null): Promise<NavCategory[]> {
   "use cache";
   cacheLife("hours");
-  cacheTag(CATALOG_TAG, "categories");
+  cacheTag(...scopeTags(scope), "categories");
   const categories = await db.category.findMany({
     where: { parentId: null, isActive: true, deletedAt: null },
     orderBy: { position: "asc" },
@@ -100,7 +126,16 @@ export async function getCategoryTree(): Promise<NavCategory[]> {
       },
     },
   });
-  return categories.map((category) => ({ ...category, imageUrl: category.image?.url ?? null, image: undefined }));
+  const tree = categories.map((category) => ({ ...category, imageUrl: category.image?.url ?? null, image: undefined }));
+  if (!scope) return tree;
+  // A store's navigation only shows departments and sub-categories it actually stocks.
+  const stocked = await db.productCategory.findMany({ where: { product: visibleIn(scope) }, select: { categoryId: true }, distinct: ["categoryId"] });
+  const stockedIds = new Set(stocked.map((row) => row.categoryId));
+  const parents = await db.category.findMany({ where: { id: { in: [...stockedIds] } }, select: { id: true, parentId: true } });
+  for (const category of parents) if (category.parentId) stockedIds.add(category.parentId);
+  return tree
+    .map((category) => ({ ...category, children: category.children.filter((child) => stockedIds.has(child.id)) }))
+    .filter((category) => stockedIds.has(category.id));
 }
 
 export async function getCategoryBySlug(slug: string) {
@@ -129,10 +164,10 @@ async function descendantCategoryIds(rootIds: string[]) {
   return [...all];
 }
 
-export async function listBrands() {
+export async function listBrands(scope: CatalogScope = null) {
   "use cache";
   cacheLife("hours");
-  cacheTag(CATALOG_TAG, "brands");
+  cacheTag(...scopeTags(scope), "brands");
   const brands = await db.brand.findMany({
     where: { isActive: true, deletedAt: null },
     orderBy: [{ position: "asc" }, { name: "asc" }],
@@ -143,10 +178,12 @@ export async function listBrands() {
       description: true,
       isFeatured: true,
       logo: { select: { url: true } },
-      _count: { select: { products: { where: visibleProduct } } },
+      _count: { select: { products: { where: visibleIn(scope) } } },
     },
   });
-  return brands.map((brand) => ({ ...brand, productCount: brand._count.products, logoUrl: brand.logo?.url ?? null }));
+  return brands
+    .map((brand) => ({ ...brand, productCount: brand._count.products, logoUrl: brand.logo?.url ?? null }))
+    .filter((brand) => !scope || brand.productCount > 0);
 }
 
 export async function getBrandBySlug(slug: string) {
@@ -206,8 +243,8 @@ function orderByFor(sort: SortKey): Prisma.ProductOrderByWithRelationInput[] {
   }
 }
 
-async function scopeWhere(scope: ListingScope, filters: ListingFilters) {
-  const and: Prisma.ProductWhereInput[] = [visibleProduct];
+async function scopeWhere(scope: ListingScope, filters: ListingFilters, catalog: CatalogScope) {
+  const and: Prisma.ProductWhereInput[] = [visibleIn(catalog)];
   let defaultSort: SortKey | null = null;
   let searchRank: Map<string, number> | null = null;
   let correctedQuery: string | null = null;
@@ -336,12 +373,13 @@ async function computeFacets(base: Prisma.ProductWhereInput, scope: ListingScope
 }
 
 /** Faceted product listing for category, brand, collection, shop and search pages. */
-export async function listProducts(scope: ListingScope, filters: ListingFilters): Promise<ListingResult> {
+export async function listProducts(scope: ListingScope, filters: ListingFilters, catalog: CatalogScope = null): Promise<ListingResult> {
   "use cache";
   cacheLife("minutes");
-  cacheTag(CATALOG_TAG);
+  cacheTag(...scopeTags(catalog));
 
-  const { base, defaultSort, searchRank, correctedQuery } = await scopeWhere(scope, filters);
+  const select = cardSelectFor(catalog);
+  const { base, defaultSort, searchRank, correctedQuery } = await scopeWhere(scope, filters, catalog);
   const where: Prisma.ProductWhereInput = { AND: [base, ...refinementWhere(filters)] };
   const sort: SortKey = filters.sort === "featured" && defaultSort ? defaultSort : filters.sort;
 
@@ -354,7 +392,7 @@ export async function listProducts(scope: ListingScope, filters: ListingFilters)
     const matching = await db.product.findMany({ where, select: { id: true } });
     const ordered = matching.map((row) => row.id).sort((a, b) => (searchRank.get(a) ?? 1e9) - (searchRank.get(b) ?? 1e9));
     const pageIds = ordered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-    const unordered = await db.product.findMany({ where: { id: { in: pageIds } }, select: productCardSelect });
+    const unordered = await db.product.findMany({ where: { id: { in: pageIds } }, select });
     const byId = new Map(unordered.map((row) => [row.id, row]));
     rows = pageIds.map((id) => byId.get(id)).filter(Boolean) as CardRow[];
   } else {
@@ -363,19 +401,20 @@ export async function listProducts(scope: ListingScope, filters: ListingFilters)
       orderBy: orderByFor(sort),
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
-      select: productCardSelect,
+      select,
     });
   }
 
-  return { products: rows.map(toProductCard), total, page, pageCount, pageSize: PAGE_SIZE, facets, correctedQuery };
+  return { products: rows.map((row) => toProductCard(row, catalog)), total, page, pageCount, pageSize: PAGE_SIZE, facets, correctedQuery };
 }
 
 /** Small product rails (homepage, collections, empty states). Returns [] when a data-driven rail has no data. */
-export async function getProductRail(source: "new" | "featured" | "best-sellers" | "sale" | "top-rated" | "trending", limit = 8, categorySlug?: string) {
+export async function getProductRail(source: "new" | "featured" | "best-sellers" | "sale" | "top-rated" | "trending", limit = 8, categorySlug?: string, catalog: CatalogScope = null) {
   "use cache";
   cacheLife("minutes");
-  cacheTag(CATALOG_TAG);
-  const and: Prisma.ProductWhereInput[] = [visibleProduct, { inStock: true }];
+  cacheTag(...scopeTags(catalog));
+  const select = cardSelectFor(catalog);
+  const and: Prisma.ProductWhereInput[] = [visibleIn(catalog), { inStock: true }];
   if (categorySlug) {
     const category = await db.category.findFirst({ where: { slug: categorySlug }, select: { id: true } });
     if (category) and.push({ categories: { some: { categoryId: { in: await descendantCategoryIds([category.id]) } } } });
@@ -409,36 +448,37 @@ export async function getProductRail(source: "new" | "featured" | "best-sellers"
       });
       const ids = trending.map((row) => row.productId!) ;
       if (ids.length === 0) return [];
-      const rows = await db.product.findMany({ where: { AND: [...and, { id: { in: ids } }] }, select: productCardSelect });
+      const rows = await db.product.findMany({ where: { AND: [...and, { id: { in: ids } }] }, select });
       const rank = new Map(ids.map((id, index) => [id, index]));
-      return rows.sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0)).slice(0, limit).map(toProductCard);
+      return rows.sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0)).slice(0, limit).map((row) => toProductCard(row, catalog));
     }
     default:
       orderBy = [{ publishedAt: "desc" }];
   }
-  const rows = await db.product.findMany({ where: { AND: and }, orderBy, take: limit, select: productCardSelect });
-  return rows.map(toProductCard);
+  const rows = await db.product.findMany({ where: { AND: and }, orderBy, take: limit, select });
+  return rows.map((row) => toProductCard(row, catalog));
 }
 
-export async function getProductCardsByIds(ids: string[]) {
+export async function getProductCardsByIds(ids: string[], catalog: CatalogScope = null) {
   "use cache";
   cacheLife("minutes");
-  cacheTag(CATALOG_TAG);
+  cacheTag(...scopeTags(catalog));
   if (ids.length === 0) return [];
-  const rows = await db.product.findMany({ where: { AND: [visibleProduct, { id: { in: ids.slice(0, 50) } }] }, select: productCardSelect });
+  const rows = await db.product.findMany({ where: { AND: [visibleIn(catalog), { id: { in: ids.slice(0, 50) } }] }, select: cardSelectFor(catalog) });
   const byId = new Map(rows.map((row) => [row.id, row]));
-  return ids.map((id) => byId.get(id)).filter(Boolean).map((row) => toProductCard(row as CardRow));
+  return ids.map((id) => byId.get(id)).filter(Boolean).map((row) => toProductCard(row as CardRow, catalog));
 }
 
 // ─── Product detail ─────────────────────────────────────────────────────────
 
-export async function getProductBySlug(slug: string) {
+export async function getProductBySlug(slug: string, catalog: CatalogScope = null) {
   "use cache";
   cacheLife("hours");
-  cacheTag(CATALOG_TAG, productTag(slug));
+  cacheTag(...scopeTags(catalog), productTag(slug));
   const product = await db.product.findFirst({
-    where: { slug, ...visibleProduct },
+    where: { slug, ...visibleIn(catalog) },
     include: {
+      storeProducts: catalog ? { where: { storeId: catalog.id }, select: { markupBps: true, fixedPriceCents: true } } : false,
       brand: { select: { id: true, name: true, slug: true, description: true } },
       primaryCategory: { select: { id: true, name: true, slug: true, parent: { select: { id: true, name: true, slug: true } } } },
       images: { orderBy: { position: "asc" }, include: { media: { select: { id: true, url: true, width: true, height: true, alt: true } } } },
@@ -455,6 +495,10 @@ export async function getProductBySlug(slug: string) {
     },
   });
   if (!product) return null;
+  const override: StoreProductOverride = catalog ? (product.storeProducts as Array<{ markupBps: number | null; fixedPriceCents: number | null }>)[0] ?? null : null;
+  const pricing = catalog?.pricing ?? SUGGESTED_PRICING;
+  const pricedVariants = product.variants.map((variant) => ({ variant, priced: storePriceFor(variant, pricing, override) }));
+  const summary = summarisePrices(pricedVariants.map((entry) => entry.priced));
 
   const distribution = await db.review.groupBy({
     by: ["rating"],
@@ -490,10 +534,12 @@ export async function getProductBySlug(slug: string) {
     specifications: (product.specifications as Array<{ label: string; value: string }>) ?? [],
     seoTitle: product.seoTitle,
     seoDescription: product.seoDescription,
-    priceCents: product.priceCents,
-    maxPriceCents: product.maxPriceCents,
-    compareAtPriceCents: product.compareAtPriceCents,
-    onSale: product.onSale,
+    priceCents: pricedVariants.length ? summary.priceCents : product.priceCents,
+    maxPriceCents: pricedVariants.length ? summary.maxPriceCents : product.maxPriceCents,
+    compareAtPriceCents: pricedVariants.length ? summary.compareAtPriceCents : product.compareAtPriceCents,
+    onSale: pricedVariants.length ? summary.onSale : product.onSale,
+    /** Wholesale of the cheapest variant; only shown on the platform catalogue. */
+    costCents: summary.costCents,
     inStock: product.inStock,
     ratingAverage: product.ratingAverage,
     ratingCount: product.ratingCount,
@@ -508,12 +554,14 @@ export async function getProductBySlug(slug: string) {
       width: image.media.width ?? 1200,
       height: image.media.height ?? 1500,
     })),
-    variants: product.variants.map((variant) => ({
+    variants: pricedVariants.map(({ variant, priced }) => ({
       id: variant.id,
       title: variant.title,
       sku: variant.sku,
-      priceCents: variant.priceCents,
-      salePriceCents: variant.salePriceCents,
+      /** What this store charges for the variant. */
+      priceCents: priced.priceCents,
+      compareAtCents: priced.compareAtCents,
+      costCents: priced.costCents,
       stockQuantity: variant.trackInventory ? variant.stockQuantity : null,
       lowStockThreshold: variant.lowStockThreshold,
       available: !variant.trackInventory || variant.allowBackorder || variant.stockQuantity > 0,
@@ -533,31 +581,32 @@ export async function getProductBySlug(slug: string) {
 
 export type ProductDetail = NonNullable<Awaited<ReturnType<typeof getProductBySlug>>>;
 
-export async function getRelatedProducts(productId: string, categoryId: string | null, brandId: string | null, limit = 8) {
+export async function getRelatedProducts(productId: string, categoryId: string | null, brandId: string | null, limit = 8, catalog: CatalogScope = null) {
   "use cache";
   cacheLife("hours");
-  cacheTag(CATALOG_TAG);
+  cacheTag(...scopeTags(catalog));
   const conditions: Prisma.ProductWhereInput[] = [];
   if (categoryId) conditions.push({ primaryCategoryId: categoryId });
   if (brandId) conditions.push({ brandId });
   if (conditions.length === 0) return [];
   const rows = await db.product.findMany({
-    where: { AND: [visibleProduct, { id: { not: productId } }, { inStock: true }, { OR: conditions }] },
+    where: { AND: [visibleIn(catalog), { id: { not: productId } }, { inStock: true }, { OR: conditions }] },
     orderBy: [{ salesCount: "desc" }, { ratingAverage: "desc" }, { publishedAt: "desc" }],
     take: limit,
-    select: productCardSelect,
+    select: cardSelectFor(catalog),
   });
-  return rows.map(toProductCard);
+  return rows.map((row) => toProductCard(row, catalog));
 }
 
 /**
  * Products actually bought in the same orders. Returns `source: "orders"` only when real co-purchase
  * data exists; otherwise complementary picks from the same department are labelled differently by the UI.
  */
-export async function getBoughtTogether(productId: string, departmentCategoryId: string | null, limit = 3) {
+export async function getBoughtTogether(productId: string, departmentCategoryId: string | null, limit = 3, catalog: CatalogScope = null) {
   "use cache";
   cacheLife("hours");
-  cacheTag(CATALOG_TAG);
+  cacheTag(...scopeTags(catalog));
+  const select = cardSelectFor(catalog);
   const rows = await db.$queryRaw<{ productId: string; together: bigint }[]>`
     SELECT other."productId", COUNT(*) AS together
     FROM "OrderItem" item
@@ -568,9 +617,9 @@ export async function getBoughtTogether(productId: string, departmentCategoryId:
     ORDER BY together DESC
     LIMIT ${limit * 2}`;
   if (rows.length > 0) {
-    const products = await db.product.findMany({ where: { AND: [visibleProduct, { inStock: true }, { id: { in: rows.map((row) => row.productId) } }] }, select: productCardSelect });
+    const products = await db.product.findMany({ where: { AND: [visibleIn(catalog), { inStock: true }, { id: { in: rows.map((row) => row.productId) } }] }, select });
     const rank = new Map(rows.map((row, index) => [row.productId, index]));
-    const cards = products.sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0)).slice(0, limit).map(toProductCard);
+    const cards = products.sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0)).slice(0, limit).map((row) => toProductCard(row, catalog));
     if (cards.length > 0) return { source: "orders" as const, products: cards };
   }
   if (!departmentCategoryId) return { source: "curated" as const, products: [] };
@@ -579,7 +628,7 @@ export async function getBoughtTogether(productId: string, departmentCategoryId:
   const complementary = await db.product.findMany({
     where: {
       AND: [
-        visibleProduct,
+        visibleIn(catalog),
         { inStock: true },
         { id: { not: productId } },
         { categories: { some: { categoryId: { in: ids } } } },
@@ -588,7 +637,15 @@ export async function getBoughtTogether(productId: string, departmentCategoryId:
     },
     orderBy: [{ isFeatured: "desc" }, { ratingAverage: "desc" }, { priceCents: "asc" }],
     take: limit,
-    select: productCardSelect,
+    select,
   });
-  return { source: "curated" as const, products: complementary.map(toProductCard) };
+  return { source: "curated" as const, products: complementary.map((row) => toProductCard(row, catalog)) };
+}
+
+/** Number of products available to sell across the platform catalogue. */
+export async function countCatalogProducts() {
+  "use cache";
+  cacheLife("hours");
+  cacheTag(CATALOG_TAG);
+  return db.product.count({ where: visibleProduct });
 }

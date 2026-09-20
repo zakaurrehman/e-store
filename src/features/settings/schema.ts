@@ -21,12 +21,12 @@ export const settingsSchema = {
   }),
   announcement: z.object({
     enabled: z.boolean().default(true),
-    message: z.string().trim().max(140).default("Complimentary shipping on orders over $150 · 30-day returns"),
+    message: z.string().trim().max(140).default("Complimentary shipping on orders over $150 · 15-day returns"),
     href: z.string().trim().max(300).default("/pages/shipping"),
   }),
   commerce: z.object({
     guestCheckout: z.boolean().default(true),
-    returnWindowDays: z.number().int().min(0).max(365).default(30),
+    returnWindowDays: z.number().int().min(0).max(365).default(15),
     reviewsRequireApproval: z.boolean().default(true),
     reviewsVerifiedPurchaseOnly: z.boolean().default(false),
     reviewImagesEnabled: z.boolean().default(true),
@@ -39,7 +39,7 @@ export const settingsSchema = {
       .string()
       .trim()
       .max(200)
-      .default("Shop considered fashion, beauty, watches, jewellery, tech and home essentials from independent house labels. Free returns within 30 days."),
+      .default("Shop considered fashion, beauty, watches, jewellery, tech and home essentials from independent house labels. Free returns within 15 days."),
   }),
   social: z.object({
     instagram: optionalUrl,

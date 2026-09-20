@@ -2,7 +2,8 @@ import type { StoreSettings } from "@/features/settings/schema";
 import { resolveSiteUrl } from "@/lib/site-url";
 
 const baseUrl = () => resolveSiteUrl();
-export const absolute = (path: string) => (path.startsWith("http") ? path : `${baseUrl()}${path.startsWith("/") ? "" : "/"}${path}`);
+/** Absolute URL for a path, on the platform site by default or on a store's own domain when `base` is given. */
+export const absolute = (path: string, base: string = baseUrl()) => (path.startsWith("http") ? path : `${base.replace(/\/$/, "")}${path.startsWith("/") ? "" : "/"}${path}`);
 
 /** Serialises structured data safely (escapes `<` so content can never close the script tag). */
 export function JsonLd({ data }: { data: object | object[] }) {
@@ -23,24 +24,37 @@ export function organizationJsonLd(settings: StoreSettings) {
   };
 }
 
-export function websiteJsonLd(settings: StoreSettings) {
+/** Organisation data for an owner's store (the platform demo store uses organizationJsonLd). */
+export function storeOrganizationJsonLd(store: { name: string; url: string; logoUrl: string | null; supportEmail: string | null }) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: store.name,
+    url: store.url,
+    ...(store.logoUrl ? { logo: absolute(store.logoUrl, store.url) } : {}),
+    ...(store.supportEmail ? { contactPoint: { "@type": "ContactPoint", contactType: "customer service", email: store.supportEmail } } : {}),
+  };
+}
+
+export function websiteJsonLd(site: { name: string; url?: string }) {
+  const url = site.url ?? baseUrl();
   return {
     "@context": "https://schema.org",
     "@type": "WebSite",
-    name: settings.store.name,
-    url: baseUrl(),
+    name: site.name,
+    url,
     potentialAction: {
       "@type": "SearchAction",
-      target: { "@type": "EntryPoint", urlTemplate: `${baseUrl()}/search?q={search_term_string}` },
+      target: { "@type": "EntryPoint", urlTemplate: `${url}/search?q={search_term_string}` },
       "query-input": "required name=search_term_string",
     },
   };
 }
 
-export function breadcrumbJsonLd(items: Array<{ name: string; href: string }>) {
+export function breadcrumbJsonLd(items: Array<{ name: string; href: string }>, base?: string) {
   return {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
-    itemListElement: items.map((item, index) => ({ "@type": "ListItem", position: index + 1, name: item.name, item: absolute(item.href) })),
+    itemListElement: items.map((item, index) => ({ "@type": "ListItem", position: index + 1, name: item.name, item: absolute(item.href, base) })),
   };
 }

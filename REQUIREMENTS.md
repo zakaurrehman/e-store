@@ -170,3 +170,27 @@ through RBAC (SUPER_ADMIN, ADMIN, MANAGER, CUSTOMER).
 - SEO from day one: canonical URLs, JSON-LD (Product, BreadcrumbList, Organization,
   WebSite/SearchAction), OG/Twitter cards, sitemap excluding private routes.
 - Transparent trust surface: real policies, contact form, visible support channels.
+
+
+---
+
+## 2026-09-19 — Version 2: dropshipping platform
+
+The client clarified the business model: Zendropship is a **dropshipping platform**, not a single store. Visitors browse
+the catalogue, open their own store (`<name>.zendropship.io`, created automatically with design, pages and checkout),
+choose which catalogue products it sells, and sell to their own customers. Orders go to Zendropship fulfilment
+automatically. Decisions taken with the client:
+
+| Topic | Decision |
+| --- | --- |
+| Money flow | Owners will be paid through their **own Stripe accounts (Stripe Connect)**: the customer pays the owner's store, the wholesale cost and platform fee are settled to Zendropship. **Not built yet**; until then checkout uses the platform's payment methods and the dashboard shows owners their margin per order. |
+| Products | The platform's own supplier catalogue (CSV / API through the importer). Each variant's `cost` is the wholesale price owners pay. Scheduled feed sync is not built yet. |
+| Store addresses | Wildcard subdomains `<name>.zendropship.io` (requires Vercel nameservers). Custom domains per store later. |
+| "AI handles everything" | **Not claimed.** There is no AI in this release. The site describes only the automation that actually runs (order routing to fulfilment, live stock and prices, customer emails, owner notifications, instant store setup). An AI assistant may be added later and labelled as such when it exists. |
+
+### What this is not
+
+Opening a store is how the reference scheme lured victims, so the line is explicit. Zendropship stores are real shops
+selling to real customers. Owners **never pay upfront**: there are no deposits, balances, wallets, top-ups, "distribution"
+or pickup orders, invitation codes, government-ID uploads, crypto payments or withdrawal gates. An owner's earnings come
+only from real customer orders in their store, and the owner can see every order, its status and its margin.

@@ -1,6 +1,6 @@
 import { ProductStatus } from "@/generated/prisma/enums";
-import { effectivePrice } from "@/features/catalog/service";
 import type { PricingLine } from "@/features/checkout/pricing";
+import { storePriceFor, type StorePricingRules } from "@/features/stores/pricing";
 import { db, type DbClient } from "@/server/db";
 import { DomainError, NotFoundError } from "@/server/errors";
 import { randomToken, sha256 } from "@/server/security/crypto";
@@ -15,6 +15,8 @@ export type { CartLine };
 
 export type CartView = {
   id: string;
+  storeId: string;
+  currency: string;
   couponCode: string | null;
   lines: CartLine[];
   itemCount: number;
@@ -22,25 +24,28 @@ export type CartView = {
   hasUnavailableItems: boolean;
 };
 
-const lineInclude = {
-  variant: {
-    include: {
-      image: { select: { url: true, alt: true } },
-      product: {
-        select: {
-          id: true,
-          slug: true,
-          name: true,
-          status: true,
-          deletedAt: true,
-          brand: { select: { name: true } },
-          categories: { select: { categoryId: true } },
-          images: { orderBy: { position: "asc" as const }, take: 1, select: { alt: true, media: { select: { url: true, alt: true } } } },
+/** A cart line with everything needed to price it for the cart's store. */
+const lineInclude = (storeId: string) =>
+  ({
+    variant: {
+      include: {
+        image: { select: { url: true, alt: true } },
+        product: {
+          select: {
+            id: true,
+            slug: true,
+            name: true,
+            status: true,
+            deletedAt: true,
+            brand: { select: { name: true } },
+            categories: { select: { categoryId: true } },
+            images: { orderBy: { position: "asc" as const }, take: 1, select: { alt: true, media: { select: { url: true, alt: true } } } },
+            storeProducts: { where: { storeId }, select: { isActive: true, markupBps: true, fixedPriceCents: true } },
+          },
         },
       },
     },
-  },
-} as const;
+  }) as const;
 
 function purchasableLimit(variant: { trackInventory: boolean; allowBackorder: boolean; stockQuantity: number }) {
   if (!variant.trackInventory || variant.allowBackorder) return MAX_LINE_QUANTITY;
@@ -48,18 +53,23 @@ function purchasableLimit(variant: { trackInventory: boolean; allowBackorder: bo
 }
 
 export async function loadCart(cartId: string, client: DbClient = db): Promise<CartView | null> {
+  const head = await client.cart.findUnique({ where: { id: cartId }, select: { storeId: true } });
+  if (!head) return null;
   const cart = await client.cart.findUnique({
     where: { id: cartId },
-    include: { items: { orderBy: { createdAt: "asc" }, include: lineInclude } },
+    include: { store: { select: { pricingMode: true, markupBps: true, currency: true } }, items: { orderBy: { createdAt: "asc" }, include: lineInclude(head.storeId) } },
   });
   if (!cart) return null;
+  const rules: StorePricingRules = { mode: cart.store.pricingMode, markupBps: cart.store.markupBps };
 
   const lines: CartLine[] = cart.items.map((item) => {
     const { variant } = item;
     const { product } = variant;
-    const sellable = product.status === ProductStatus.ACTIVE && !product.deletedAt && variant.isActive;
+    const listing = product.storeProducts[0] ?? null;
+    const sellable = product.status === ProductStatus.ACTIVE && !product.deletedAt && variant.isActive && !!listing?.isActive;
     const limit = sellable ? purchasableLimit(variant) : 0;
-    const unitPriceCents = effectivePrice(variant);
+    const priced = storePriceFor(variant, rules, listing);
+    const unitPriceCents = priced.priceCents;
     const image = variant.image ?? product.images[0]?.media ?? null;
     return {
       id: item.id,
@@ -73,7 +83,8 @@ export async function loadCart(cartId: string, client: DbClient = db): Promise<C
       imageUrl: image?.url ?? null,
       imageAlt: product.images[0]?.alt || image?.alt || product.name,
       unitPriceCents,
-      compareAtCents: unitPriceCents < variant.priceCents ? variant.priceCents : null,
+      unitCostCents: priced.costCents,
+      compareAtCents: priced.compareAtCents,
       quantity: item.quantity,
       lineTotalCents: unitPriceCents * item.quantity,
       maxQuantity: variant.trackInventory && !variant.allowBackorder ? limit : null,
@@ -85,6 +96,8 @@ export async function loadCart(cartId: string, client: DbClient = db): Promise<C
 
   return {
     id: cart.id,
+    storeId: cart.storeId,
+    currency: cart.store.currency,
     couponCode: cart.couponCode,
     lines,
     itemCount: lines.reduce((sum, line) => sum + line.quantity, 0),
@@ -99,12 +112,13 @@ export function toPricingLines(cart: CartView): PricingLine[] {
     .map((line) => ({ key: line.variantId, productId: line.productId, categoryIds: line.categoryIds, unitPriceCents: line.unitPriceCents, quantity: line.quantity }));
 }
 
-async function sellableVariant(variantId: string, client: DbClient) {
+/** A variant the given store currently sells. */
+async function sellableVariant(variantId: string, storeId: string, client: DbClient) {
   const variant = await client.productVariant.findUnique({
     where: { id: variantId },
-    include: { product: { select: { name: true, status: true, deletedAt: true } } },
+    include: { product: { select: { name: true, status: true, deletedAt: true, storeProducts: { where: { storeId, isActive: true }, select: { id: true } } } } },
   });
-  if (!variant || !variant.isActive || variant.product.status !== ProductStatus.ACTIVE || variant.product.deletedAt) {
+  if (!variant || !variant.isActive || variant.product.status !== ProductStatus.ACTIVE || variant.product.deletedAt || variant.product.storeProducts.length === 0) {
     throw new NotFoundError("This item is no longer available.");
   }
   return variant;
@@ -116,25 +130,30 @@ function stockError(limit: number, name: string) {
     : new DomainError("INSUFFICIENT_STOCK", `Only ${limit} of ${name} ${limit === 1 ? "is" : "are"} available.`);
 }
 
-export async function createGuestCart() {
+export async function createGuestCart(storeId: string) {
   const token = randomToken(32);
-  const cart = await db.cart.create({ data: { tokenHash: sha256(token), expiresAt: new Date(Date.now() + GUEST_CART_TTL_MS) } });
+  const cart = await db.cart.create({ data: { storeId, tokenHash: sha256(token), expiresAt: new Date(Date.now() + GUEST_CART_TTL_MS) } });
   return { cart, token };
 }
 
-export async function findGuestCart(token: string | undefined | null) {
+/** The guest cart behind a cookie token, provided it belongs to this store (cookies are per host, but never trust them alone). */
+export async function findGuestCart(token: string | undefined | null, storeId: string) {
   if (!token || token.length > 200) return null;
-  return db.cart.findUnique({ where: { tokenHash: sha256(token) } });
+  const cart = await db.cart.findUnique({ where: { tokenHash: sha256(token) } });
+  return cart && cart.storeId === storeId ? cart : null;
 }
 
-export async function getOrCreateUserCart(userId: string) {
-  return db.cart.upsert({ where: { userId }, create: { userId }, update: {} });
+/** Customers have one cart per store. */
+export async function getOrCreateUserCart(userId: string, storeId: string) {
+  return db.cart.upsert({ where: { userId_storeId: { userId, storeId } }, create: { userId, storeId }, update: {} });
 }
 
 export async function addItem(cartId: string, variantId: string, quantity: number) {
   if (!Number.isInteger(quantity) || quantity < 1) throw new DomainError("INVALID_QUANTITY", "Choose a quantity of at least 1.");
   return db.$transaction(async (tx) => {
-    const variant = await sellableVariant(variantId, tx);
+    const cart = await tx.cart.findUnique({ where: { id: cartId }, select: { storeId: true } });
+    if (!cart) throw new NotFoundError("Your bag could not be found.");
+    const variant = await sellableVariant(variantId, cart.storeId, tx);
     const existing = await tx.cartItem.findUnique({ where: { cartId_variantId: { cartId, variantId } } });
     if (!existing && (await tx.cartItem.count({ where: { cartId } })) >= MAX_CART_LINES) {
       throw new DomainError("CART_FULL", "Your bag is full. Remove an item to add something new.");
@@ -187,8 +206,9 @@ export async function setCartCoupon(cartId: string, code: string | null) {
 export async function mergeGuestCartIntoUser(guestCartId: string, userId: string) {
   return db.$transaction(async (tx) => {
     const guest = await tx.cart.findUnique({ where: { id: guestCartId }, include: { items: { include: { variant: true } } } });
-    const userCart = await tx.cart.upsert({ where: { userId }, create: { userId }, update: {} });
-    if (!guest || guest.id === userCart.id) return userCart.id;
+    if (!guest) return null;
+    const userCart = await tx.cart.upsert({ where: { userId_storeId: { userId, storeId: guest.storeId } }, create: { userId, storeId: guest.storeId }, update: {} });
+    if (guest.id === userCart.id) return userCart.id;
 
     for (const item of guest.items) {
       const existing = await tx.cartItem.findUnique({ where: { cartId_variantId: { cartId: userCart.id, variantId: item.variantId } } });

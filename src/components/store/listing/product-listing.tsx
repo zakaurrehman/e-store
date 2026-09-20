@@ -1,11 +1,12 @@
 import { SearchX } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { CatalogGrid } from "@/components/platform/catalog-card";
 import { ProductGrid } from "@/components/store/product/product-card";
 import { ButtonLink } from "@/components/ui/button";
 import { EmptyState, Skeleton } from "@/components/ui/misc";
 import { activeFilterCount, parseListingFilters, type SearchParamsRecord, type SortKey } from "@/features/catalog/filters";
-import { listProducts, type ListingScope } from "@/features/catalog/queries";
+import { listProducts, type CatalogScope, type ListingScope } from "@/features/catalog/queries";
 import { FilterSidebar, MobileFilterButton } from "./filter-panel";
 import { ActiveFilters, SortSelect, ViewToggle } from "./listing-toolbar";
 import { Pagination } from "./pagination";
@@ -13,19 +14,23 @@ import { Pagination } from "./pagination";
 type ProductListingProps = {
   basePath: string;
   scope: ListingScope;
+  /** The store whose shelf and prices are listed (null = the platform catalogue). */
+  catalog: CatalogScope;
   searchParams: SearchParamsRecord;
   defaultSort?: SortKey;
   hideCategoryFacet?: boolean;
   hideBrandFacet?: boolean;
   emptyState?: ReactNode;
+  /** Platform catalogue: cards show wholesale, retail and margin with "Add to my store" instead of shopping actions. */
+  ownerView?: { inStoreIds: string[]; signedIn: boolean };
 };
 
 /** Faceted, paginated product listing shared by category, brand, collection, shop and search pages. */
-export async function ProductListing({ basePath, scope, searchParams, defaultSort, hideCategoryFacet, hideBrandFacet, emptyState }: ProductListingProps) {
+export async function ProductListing({ basePath, scope, catalog, searchParams, defaultSort, hideCategoryFacet, hideBrandFacet, emptyState, ownerView }: ProductListingProps) {
   const filters = parseListingFilters(searchParams, { sort: defaultSort });
   const effectiveDefault: SortKey = defaultSort ?? (filters.q ? "relevance" : "featured");
   const view = searchParams.view === "list" ? "list" : "grid";
-  const result = await listProducts(scope, filters);
+  const result = await listProducts(scope, filters, catalog);
   const hasFilters = activeFilterCount(filters) > 0;
   const filterProps = { basePath, filters, facets: result.facets, total: result.total, defaultSort: effectiveDefault, hideCategoryFacet, hideBrandFacet };
 
@@ -40,7 +45,7 @@ export async function ProductListing({ basePath, scope, searchParams, defaultSor
           <div className="flex items-center gap-2">
             <MobileFilterButton {...filterProps} />
             <SortSelect basePath={basePath} filters={filters} defaultSort={effectiveDefault} view={view} allowRelevance={!!filters.q} />
-            <ViewToggle basePath={basePath} filters={filters} defaultSort={effectiveDefault} view={view} />
+            {!ownerView && <ViewToggle basePath={basePath} filters={filters} defaultSort={effectiveDefault} view={view} />}
           </div>
         </div>
         {hasFilters && (
@@ -73,7 +78,11 @@ export async function ProductListing({ basePath, scope, searchParams, defaultSor
             )
           ) : (
             <>
-              <ProductGrid products={result.products} layout={view} priorityCount={4} />
+              {ownerView ? (
+                <CatalogGrid products={result.products} inStoreIds={ownerView.inStoreIds} signedIn={ownerView.signedIn} priorityCount={4} />
+              ) : (
+                <ProductGrid products={result.products} layout={view} priorityCount={4} />
+              )}
               <Pagination basePath={basePath} filters={filters} page={result.page} pageCount={result.pageCount} defaultSort={effectiveDefault} view={view} />
             </>
           )}

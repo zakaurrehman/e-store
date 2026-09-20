@@ -47,8 +47,9 @@ export type ProductInput = {
   variants: VariantInput[];
 };
 
-export const effectivePrice = (variant: { priceCents: number; salePriceCents: number | null }) =>
-  variant.salePriceCents !== null && variant.salePriceCents < variant.priceCents ? variant.salePriceCents : variant.priceCents;
+import { effectivePrice } from "@/features/stores/effective-price";
+
+export { effectivePrice };
 
 /** Recalculates the denormalised price/stock read model on Product from its active variants. */
 export async function recomputeProductAggregates(productId: string, client: DbClient = db) {
@@ -233,6 +234,12 @@ export async function saveProduct(
           : await tx.product.create({
               data: { ...data, publishedAt: input.status === ProductStatus.ACTIVE ? new Date() : null },
             });
+
+        // New catalogue products appear in the platform-run demo store, which showcases the whole catalogue.
+        if (!existing) {
+          const platformStores = await tx.store.findMany({ where: { ownerId: null, deletedAt: null }, select: { id: true } });
+          if (platformStores.length) await tx.storeProduct.createMany({ data: platformStores.map((store) => ({ storeId: store.id, productId: product.id })), skipDuplicates: true });
+        }
 
         await tx.productCategory.deleteMany({ where: { productId: product.id } });
         if (categoryIds.length) await tx.productCategory.createMany({ data: categoryIds.map((categoryId) => ({ productId: product.id, categoryId })) });

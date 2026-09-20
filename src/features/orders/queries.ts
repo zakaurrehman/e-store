@@ -23,33 +23,34 @@ function present<T extends { shippingAddress: unknown; billingAddress: unknown }
   };
 }
 
-/** Order detail for its owner (signed-in customer). */
-export async function getOrderForCustomer(userId: string, number: string) {
-  const order = await db.order.findFirst({ where: { number: normaliseOrderNumber(number), userId }, include: orderDetailInclude });
+/** Order detail for its owner (signed-in customer), limited to one store when `storeId` is given. */
+export async function getOrderForCustomer(userId: string, number: string, storeId?: string) {
+  const order = await db.order.findFirst({ where: { number: normaliseOrderNumber(number), userId, ...(storeId ? { storeId } : {}) }, include: orderDetailInclude });
   return order ? present(order) : null;
 }
 
 /** Order detail for a guest holding the signed access token from their email. */
-export async function getOrderByAccessToken(number: string, token: string | null | undefined) {
+export async function getOrderByAccessToken(number: string, token: string | null | undefined, storeId?: string) {
   if (!token) return null;
   const order = await db.order.findUnique({ where: { number: normaliseOrderNumber(number) }, include: orderDetailInclude });
-  if (!order) return null;
+  if (!order || (storeId && order.storeId !== storeId)) return null;
   const expected = hmacSha256(`order-access:${order.number}:${order.email.toLowerCase()}`);
   if (!safeEqual(expected, token)) return null;
   return present(order);
 }
 
 /** Guest lookup by order number + email (used by /track-order). Returns the access token on success. */
-export async function lookupOrder(number: string, email: string) {
-  const order = await db.order.findUnique({ where: { number: normaliseOrderNumber(number) }, select: { number: true, email: true } });
+export async function lookupOrder(number: string, email: string, storeId?: string) {
+  const order = await db.order.findUnique({ where: { number: normaliseOrderNumber(number) }, select: { number: true, email: true, storeId: true } });
   if (!order || order.email.toLowerCase() !== email.trim().toLowerCase()) return null;
+  if (storeId && order.storeId !== storeId) return null;
   return { number: order.number, token: hmacSha256(`order-access:${order.number}:${order.email.toLowerCase()}`) };
 }
 
-export async function listCustomerOrders(userId: string, options: { page?: number; pageSize?: number } = {}) {
+export async function listCustomerOrders(userId: string, options: { page?: number; pageSize?: number; storeId?: string } = {}) {
   const pageSize = options.pageSize ?? 10;
   const page = Math.max(1, options.page ?? 1);
-  const where = { userId };
+  const where = { userId, ...(options.storeId ? { storeId: options.storeId } : {}) };
   const [total, orders] = await Promise.all([
     db.order.count({ where }),
     db.order.findMany({
@@ -63,11 +64,12 @@ export async function listCustomerOrders(userId: string, options: { page?: numbe
   return { total, page, pageCount: Math.max(1, Math.ceil(total / pageSize)), orders };
 }
 
-export async function getCustomerOverview(userId: string) {
+export async function getCustomerOverview(userId: string, storeId?: string) {
+  const inStore = storeId ? { storeId } : {};
   const [orderCount, spend, recent, addresses, wishlistCount, unread] = await Promise.all([
-    db.order.count({ where: { userId, status: { not: OrderStatus.CANCELLED } } }),
-    db.order.aggregate({ where: { userId, paymentStatus: { in: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED] } }, _sum: { totalCents: true } }),
-    db.order.findMany({ where: { userId }, orderBy: { placedAt: "desc" }, take: 3, include: { items: { take: 3, select: { id: true, productName: true, imageUrl: true } } } }),
+    db.order.count({ where: { userId, ...inStore, status: { not: OrderStatus.CANCELLED } } }),
+    db.order.aggregate({ where: { userId, ...inStore, paymentStatus: { in: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED] } }, _sum: { totalCents: true } }),
+    db.order.findMany({ where: { userId, ...inStore }, orderBy: { placedAt: "desc" }, take: 3, include: { items: { take: 3, select: { id: true, productName: true, imageUrl: true } } } }),
     db.address.count({ where: { userId, deletedAt: null } }),
     db.wishlistItem.count({ where: { wishlist: { userId } } }),
     db.notification.count({ where: { userId, readAt: null } }),

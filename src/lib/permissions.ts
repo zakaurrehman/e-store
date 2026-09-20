@@ -25,6 +25,9 @@ export const PERMISSIONS = {
   "customers.update": { group: "Customers", description: "Disable accounts and reset access" },
   "messages.view": { group: "Customers", description: "Read and resolve contact messages" },
 
+  "stores.view": { group: "Stores", description: "View owners' stores, their products and sales" },
+  "stores.manage": { group: "Stores", description: "Suspend and reopen stores" },
+
   "discounts.manage": { group: "Marketing", description: "Manage coupons and discounts" },
   "content.manage": { group: "Content", description: "Manage pages, banners, homepage, menus and FAQ" },
   "media.manage": { group: "Content", description: "Upload and manage media" },
@@ -76,6 +79,13 @@ export const SYSTEM_ROLES = {
       "content.manage",
       "media.manage",
     ] satisfies Permission[],
+  },
+  STORE_OWNER: {
+    name: "Store owner",
+    description: "Runs their own Zendropship store from the owner dashboard",
+    rank: 10,
+    isStaff: false,
+    permissions: [] as Permission[],
   },
   CUSTOMER: {
     name: "Customer",

@@ -18,7 +18,7 @@ async function OrdersTable({ searchParams }: PageProps<"/admin/orders">) {
   await requirePagePermission("orders.view", "/admin/orders");
   const query = await searchParams;
   const str = (key: string) => (typeof query[key] === "string" ? (query[key] as string) : undefined);
-  const data = await listOrders({ q: str("q"), status: str("status"), payment: str("payment"), from: str("from"), to: str("to"), page: Number(str("page") ?? 1) || 1 });
+  const data = await listOrders({ q: str("q"), status: str("status"), payment: str("payment"), from: str("from"), to: str("to"), store: str("store"), page: Number(str("page") ?? 1) || 1 });
   const base = query as Record<string, string | string[] | undefined>;
 
   return (
@@ -64,6 +64,7 @@ async function OrdersTable({ searchParams }: PageProps<"/admin/orders">) {
             <tr>
               <Th>Order</Th>
               <Th>Customer</Th>
+              <Th>Store</Th>
               <Th>Placed</Th>
               <Th>Status</Th>
               <Th>Payment</Th>
@@ -71,7 +72,7 @@ async function OrdersTable({ searchParams }: PageProps<"/admin/orders">) {
             </tr>
           </thead>
           <tbody>
-            {data.orders.length === 0 && <TableEmpty colSpan={6}>No orders match these filters.</TableEmpty>}
+            {data.orders.length === 0 && <TableEmpty colSpan={7}>No orders match these filters.</TableEmpty>}
             {data.orders.map((order) => (
               <tr key={order.id} className="hover:bg-canvas/60">
                 <Td>
@@ -85,6 +86,12 @@ async function OrdersTable({ searchParams }: PageProps<"/admin/orders">) {
                 <Td>
                   <span className="block">{order.user ? `${order.user.firstName} ${order.user.lastName}` : "Guest"}</span>
                   <span className="block text-[0.75rem] text-ink-500">{order.email}</span>
+                </Td>
+                <Td>
+                  <Link href={`/admin/orders${buildQuery(base, { store: order.store.slug, page: null })}`} className="text-ink-800 hover:underline">
+                    {order.store.name}
+                  </Link>
+                  {!order.store.ownerId && <span className="block text-[0.75rem] text-ink-500">Platform store</span>}
                 </Td>
                 <Td className="whitespace-nowrap text-ink-600">{dateTime.format(order.placedAt)}</Td>
                 <Td>

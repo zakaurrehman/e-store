@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { ADMIN_STATE, addToBag, fillCheckout, orderNumberOn, toast, unique } from "./helpers";
+import { addToBag, ADMIN_STATE, fillCheckout, orderNumberOn, PLATFORM_URL, toast, unique } from "./helpers";
 
 test.describe("checkout, payment and orders", () => {
   test("checkout: a guest pays with the sandbox card, gets a confirmed order and can track it", async ({ page }) => {
@@ -45,7 +45,7 @@ test.describe("checkout, payment and orders", () => {
 
   test("coupon: a code created in the admin takes 10% off the bag", async ({ browser }) => {
     const code = `E2E${unique().toUpperCase()}`;
-    const adminContext = await browser.newContext({ storageState: ADMIN_STATE });
+    const adminContext = await browser.newContext({ storageState: ADMIN_STATE, baseURL: PLATFORM_URL });
     const admin = await adminContext.newPage();
     await admin.goto("/admin/discounts");
     await admin.getByRole("button", { name: "New coupon" }).click();

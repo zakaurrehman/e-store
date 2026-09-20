@@ -21,13 +21,14 @@ PostgreSQL 15 or newer, accessed through Prisma 7 with the `@prisma/adapter-pg` 
 
 | Area | Models |
 | --- | --- |
-| Identity & access | `User`, `Role`, `Permission`, `RolePermission`, `Session`, `VerificationToken`, `RateLimitBucket`, `Address`, `AuditLog` |
+| Identity & access | `User` (`registeredStoreId` = the store a customer signed up in), `Role`, `Permission`, `RolePermission`, `Session`, `VerificationToken`, `RateLimitBucket`, `Address`, `AuditLog` |
+| Stores | `Store` (unique `slug` = subdomain; one per owner, `ownerId` null for the platform's demo store; status, pricing rule, branding, reserved `customDomain` and `stripeAccountId`), `StoreProduct` (the store's shelf: active flag, optional markup or fixed price; unique per store and product) |
 | Catalogue | `Product`, `ProductVariant`, `VariantOptionValue`, `ProductImage`, `ProductCategory`, `ProductAttributeValue`, `ProductTag`, `Category` (tree), `Brand`, `Collection` (manual or rule-based), `CollectionProduct`, `Tag`, `Attribute`, `AttributeValue`, `MediaAsset` |
 | Inventory & search | `InventoryMovement`, `SearchDocument` (tsvector + trigram), `SearchQuery`, `SearchHistory` |
-| Shopping | `Cart`, `CartItem`, `Wishlist`, `WishlistItem`, `RecentlyViewed` |
-| Orders & payments | `Order` (unique `idempotencyKey`), `OrderItem`, `OrderEvent`, `Payment` (unique per provider reference), `PaymentTransaction`, `WebhookEvent` (unique per provider event id), `Shipment` |
+| Shopping | `Cart` (belongs to a store; unique per customer and store), `CartItem`, `Wishlist`, `WishlistItem`, `RecentlyViewed` |
+| Orders & payments | `Order` (belongs to a store; unique `idempotencyKey`), `OrderItem` (keeps `unitPriceCents` and the wholesale `unitCostCents`), `OrderEvent`, `Payment` (unique per provider reference), `PaymentTransaction`, `WebhookEvent` (unique per provider event id), `Shipment` |
 | Shipping & tax | `ShippingZone` (country list, `*` = rest of world), `ShippingMethod`, `TaxRate` |
-| Promotions & reviews | `Coupon`, `CouponProduct`, `CouponCategory`, `CouponCustomer`, `CouponRedemption`, `Review`, `ReviewImage` |
+| Promotions & reviews | `Coupon` (`storeId` null = platform coupon, usable only in the platform store), `CouponProduct`, `CouponCategory`, `CouponCustomer`, `CouponRedemption`, `Review`, `ReviewImage` |
 | Content & messaging | `Setting`, `Page`, `FaqItem`, `Banner`, `HomeSection`, `Menu`, `MenuItem`, `ContactMessage`, `NewsletterSubscriber`, `Notification`, `NotificationDelivery` |
 | Import | `ImportRun`, `ImportRecord` |
 
@@ -51,11 +52,14 @@ PostgreSQL 15 or newer, accessed through Prisma 7 with the `@prisma/adapter-pg` 
 2. Store settings (defaults are added without overwriting edits)
 3. Shipping zones, methods and tax rates
 4. The first super admin from `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` (skipped when unset; an existing password is never changed)
-5. Demo catalogue — taxonomy, house brands and products with photos (skip with `SEED_SKIP_CATALOG=true`)
-6. Content — pages, FAQ, menus, banners and homepage sections
-7. Demo orders and reviews — only with `SEED_DEMO_DATA=true`, never in production
+5. Demo catalogue — taxonomy, house brands and products with photos, with sample wholesale costs at 55% of the selling price (skip with `SEED_SKIP_CATALOG=true`)
+6. The platform's demo store (address `demo`), stocked with every active product the first time
+7. Content — pages, FAQ, menus, banners and homepage sections
+8. Demo orders and reviews in the demo store — only with `SEED_DEMO_DATA=true`, never in production
 
-For production, run steps 1–4 and 6 with `SEED_SKIP_CATALOG=true`, then import your own catalogue.
+For production, run the seed with `SEED_SKIP_CATALOG=true`, then import your own catalogue with real wholesale costs.
+
+The `stores` migration (`20260919120407_stores`) upgrades a database from the single-store version in place: it creates the store-owner role and the `stores.*` permissions, creates the demo store with every existing product, assigns existing carts and orders to it, snapshots wholesale cost on existing order lines, and fills missing variant costs at 55% of the selling price.
 
 ## Test database
 

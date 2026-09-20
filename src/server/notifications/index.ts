@@ -4,6 +4,7 @@ import type { EmailBrand, RenderedEmail } from "@/emails/layout";
 import * as templates from "@/emails/templates";
 import type { OrderEmailData } from "@/emails/templates";
 import { isAddressSnapshot } from "@/lib/address";
+import { storeUrl } from "@/lib/tenancy";
 import type { Permission } from "@/lib/permissions";
 import { loadSettings } from "@/features/settings/service";
 import { db } from "@/server/db";
@@ -13,10 +14,14 @@ import { hmacSha256 } from "@/server/security/crypto";
 import { formatMoney } from "@/utils/money";
 import { getPushProvider, getSmsProvider } from "./channels";
 
+/**
+ * Customer emails are sent in the name of the store the customer shops at and link back to that store's domain.
+ * `storeId` on account events is the store the request came from (null = the platform site).
+ */
 export type NotificationEvent =
-  | { type: "user.registered"; userId: string; verificationToken: string }
-  | { type: "user.verification-requested"; userId: string; verificationToken: string }
-  | { type: "user.password-reset-requested"; userId: string; token: string }
+  | { type: "user.registered"; userId: string; verificationToken: string; storeId?: string | null }
+  | { type: "user.verification-requested"; userId: string; verificationToken: string; storeId?: string | null }
+  | { type: "user.password-reset-requested"; userId: string; token: string; storeId?: string | null }
   | { type: "order.confirmed"; orderId: string }
   | { type: "order.payment-received"; orderId: string }
   | { type: "order.payment-failed"; orderId: string; reason?: string }
@@ -36,27 +41,48 @@ export function orderAccessToken(order: { number: string; email: string }) {
   return hmacSha256(`order-access:${order.number}:${order.email.toLowerCase()}`);
 }
 
-export function orderUrl(order: { number: string; email: string; userId: string | null }) {
-  const base = env.APP_URL;
-  if (order.userId) return new URL(`/account/orders/${order.number}`, base).toString();
-  return new URL(`/orders/${order.number}?token=${orderAccessToken(order)}`, base).toString();
+type StoreForEmail = { slug: string; name: string; supportEmail: string | null; ownerId: string | null };
+
+async function loadStore(storeId: string | null | undefined): Promise<StoreForEmail | null> {
+  if (!storeId) return null;
+  return db.store.findUnique({ where: { id: storeId }, select: { slug: true, name: true, supportEmail: true, ownerId: true } });
 }
 
-async function getBrand(): Promise<EmailBrand> {
+/** Where a customer's links point: their store's domain, or the platform site. */
+function originFor(store: StoreForEmail | null) {
+  return store ? storeUrl(store.slug) : env.APP_URL;
+}
+
+export function orderUrl(order: { number: string; email: string; userId: string | null }, origin: string = env.APP_URL) {
+  if (order.userId) return new URL(`/account/orders/${order.number}`, origin).toString();
+  return new URL(`/orders/${order.number}?token=${orderAccessToken(order)}`, origin).toString();
+}
+
+/** Owner stores send under their own name and support address; the platform store and platform emails use the company settings. */
+async function getBrand(store: StoreForEmail | null = null): Promise<EmailBrand> {
   const settings = await loadSettings();
+  if (store?.ownerId) {
+    return {
+      storeName: store.name,
+      legalName: store.name,
+      supportEmail: store.supportEmail ?? settings.store.supportEmail,
+      address: "",
+      appUrl: originFor(store),
+    };
+  }
   return {
     storeName: settings.store.name,
     legalName: settings.store.legalName,
     supportEmail: settings.store.supportEmail,
     address: settings.store.address,
-    appUrl: env.APP_URL,
+    appUrl: originFor(store),
   };
 }
 
 async function loadOrderEmailData(orderId: string) {
   const order = await db.order.findUniqueOrThrow({
     where: { id: orderId },
-    include: { items: true, user: { select: { firstName: true } } },
+    include: { items: true, user: { select: { firstName: true } }, store: { select: { slug: true, name: true, supportEmail: true, ownerId: true } } },
   });
   const shipping = isAddressSnapshot(order.shippingAddress) ? order.shippingAddress : null;
   if (!shipping) throw new Error(`Order ${order.number} has an invalid shipping address snapshot`);
@@ -87,7 +113,8 @@ async function loadOrderEmailData(orderId: string) {
     shippingMethodName: order.shippingMethodName,
     paymentLabel: paymentLabels[order.paymentProvider] ?? order.paymentProvider,
   };
-  return { order, data, url: orderUrl(order) };
+  const brand = await getBrand(order.store);
+  return { order, data, url: orderUrl(order, originFor(order.store)), brand };
 }
 
 async function staffRecipients(permission: Permission) {
@@ -108,14 +135,16 @@ type Planned = {
 };
 
 async function plan(event: NotificationEvent): Promise<Planned[]> {
-  const brand = await getBrand();
+  const platformBrand = await getBrand();
   const app = (path: string) => new URL(path, env.APP_URL).toString();
 
   switch (event.type) {
     case "user.registered":
     case "user.verification-requested": {
       const user = await db.user.findUniqueOrThrow({ where: { id: event.userId } });
-      const verifyUrl = app(`/verify-email?token=${encodeURIComponent(event.verificationToken)}`);
+      const store = await loadStore(event.storeId !== undefined ? event.storeId : user.registeredStoreId);
+      const brand = await getBrand(store);
+      const verifyUrl = new URL(`/verify-email?token=${encodeURIComponent(event.verificationToken)}`, originFor(store)).toString();
       const rendered =
         event.type === "user.registered"
           ? templates.welcomeEmail(brand, { firstName: user.firstName, verifyUrl })
@@ -124,15 +153,20 @@ async function plan(event: NotificationEvent): Promise<Planned[]> {
     }
 
     case "user.password-reset-requested": {
-      const user = await db.user.findUniqueOrThrow({ where: { id: event.userId } });
-      const resetUrl = app(`/reset-password?token=${encodeURIComponent(event.token)}`);
+      const user = await db.user.findUniqueOrThrow({ where: { id: event.userId }, include: { role: { select: { isStaff: true, key: true } } } });
+      // Staff and store owners reset on the platform site; customers on the store they shop at.
+      const platformAccount = user.role.isStaff || user.role.key === "STORE_OWNER";
+      const store = platformAccount ? null : await loadStore(event.storeId !== undefined ? event.storeId : user.registeredStoreId);
+      const brand = await getBrand(store);
+      const resetUrl = new URL(`/reset-password?token=${encodeURIComponent(event.token)}`, originFor(store)).toString();
       return [{ emails: [{ to: user.email, template: event.type, rendered: templates.passwordResetEmail(brand, { firstName: user.firstName, resetUrl }) }] }];
     }
 
     case "order.confirmed": {
-      const { order, data, url } = await loadOrderEmailData(event.orderId);
+      const { order, data, url, brand } = await loadOrderEmailData(event.orderId);
       const staff = await staffRecipients("orders.view");
       const paid = order.paymentStatus === "PAID";
+      const owner = order.store.ownerId ? await db.user.findUnique({ where: { id: order.store.ownerId }, select: { id: true, email: true, deletedAt: true } }) : null;
       return [
         {
           inApp: order.userId
@@ -152,19 +186,42 @@ async function plan(event: NotificationEvent): Promise<Planned[]> {
           emails: staff.map((member) => ({
             to: member.email,
             template: "staff.order-new",
-            rendered: templates.staffAlertEmail(brand, {
-              title: `New order ${order.number}`,
+            rendered: templates.staffAlertEmail(platformBrand, {
+              title: `New order ${order.number}${order.store.ownerId ? ` · ${order.store.name}` : ""}`,
               lines: [`${order.email} placed an order.`, `Payment: ${data.paymentLabel} (${order.paymentStatus.toLowerCase()})`],
               href: app(`/admin/orders/${order.id}`),
               cta: "Open order",
             }),
           })),
         },
+        // The store owner hears about every sale; fulfilment is already queued with the platform.
+        ...(owner && !owner.deletedAt
+          ? [
+              {
+                inApp: { audience: NotificationAudience.CUSTOMER, userId: owner.id, type: "store.order-new", title: `New order ${order.number}`, body: `${formatMoney(order.totalCents, order.currency)} · sent to fulfilment automatically`, href: `/dashboard/orders/${order.number}` },
+                emails: [
+                  {
+                    to: owner.email,
+                    template: "owner.order-new",
+                    rendered: templates.staffAlertEmail(platformBrand, {
+                      title: `New order in ${order.store.name}`,
+                      lines: [
+                        `Order ${order.number} · ${formatMoney(order.totalCents, order.currency)}`,
+                        "It has been passed to Zendropship fulfilment automatically — there is nothing you need to do to ship it.",
+                      ],
+                      href: app(`/dashboard/orders/${order.number}`),
+                      cta: "View in your dashboard",
+                    }),
+                  },
+                ],
+              },
+            ]
+          : []),
       ];
     }
 
     case "order.payment-received": {
-      const { order, data, url } = await loadOrderEmailData(event.orderId);
+      const { order, data, url, brand } = await loadOrderEmailData(event.orderId);
       return [
         {
           inApp: order.userId
@@ -176,7 +233,7 @@ async function plan(event: NotificationEvent): Promise<Planned[]> {
     }
 
     case "order.payment-failed": {
-      const { order, data, url } = await loadOrderEmailData(event.orderId);
+      const { order, data, url, brand } = await loadOrderEmailData(event.orderId);
       return [
         {
           inApp: { audience: NotificationAudience.STAFF, userId: null, type: event.type, title: `Payment failed for ${order.number}`, body: event.reason ?? "The payment provider declined the payment.", href: `/admin/orders/${order.id}` },
@@ -186,7 +243,7 @@ async function plan(event: NotificationEvent): Promise<Planned[]> {
     }
 
     case "order.shipped": {
-      const { order, data, url } = await loadOrderEmailData(event.orderId);
+      const { order, data, url, brand } = await loadOrderEmailData(event.orderId);
       const shipment = await db.shipment.findUniqueOrThrow({ where: { id: event.shipmentId } });
       return [
         {
@@ -205,7 +262,7 @@ async function plan(event: NotificationEvent): Promise<Planned[]> {
     }
 
     case "order.delivered": {
-      const { order, data, url } = await loadOrderEmailData(event.orderId);
+      const { order, data, url, brand } = await loadOrderEmailData(event.orderId);
       const firstProduct = order.items[0]?.productSlug;
       const reviewUrl = order.userId ? app(`/account/reviews`) : firstProduct ? app(`/p/${firstProduct}#reviews`) : url;
       return [
@@ -219,7 +276,7 @@ async function plan(event: NotificationEvent): Promise<Planned[]> {
     }
 
     case "order.refunded": {
-      const { order, data, url } = await loadOrderEmailData(event.orderId);
+      const { order, data, url, brand } = await loadOrderEmailData(event.orderId);
       return [
         {
           inApp: order.userId
@@ -231,7 +288,7 @@ async function plan(event: NotificationEvent): Promise<Planned[]> {
     }
 
     case "order.cancelled": {
-      const { order, data, url } = await loadOrderEmailData(event.orderId);
+      const { order, data, url, brand } = await loadOrderEmailData(event.orderId);
       return [
         {
           inApp: order.userId
@@ -256,7 +313,7 @@ async function plan(event: NotificationEvent): Promise<Planned[]> {
           emails: staff.map((member) => ({
             to: member.email,
             template: "staff.low-stock",
-            rendered: templates.staffAlertEmail(brand, { title: "Low stock alert", lines, href: app("/admin/inventory?filter=low"), cta: "Review inventory" }),
+            rendered: templates.staffAlertEmail(platformBrand, { title: "Low stock alert", lines, href: app("/admin/inventory?filter=low"), cta: "Review inventory" }),
           })),
         },
       ];

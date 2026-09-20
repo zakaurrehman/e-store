@@ -5,7 +5,7 @@ import { db } from "@/server/db";
 
 export const ADMIN_PAGE_SIZE = 25;
 
-export type OrderListFilters = { q?: string; status?: string; payment?: string; page?: number; from?: string; to?: string };
+export type OrderListFilters = { q?: string; status?: string; payment?: string; page?: number; from?: string; to?: string; store?: string };
 
 export async function listOrders(filters: OrderListFilters) {
   const where: Prisma.OrderWhereInput = {};
@@ -20,6 +20,7 @@ export async function listOrders(filters: OrderListFilters) {
     ];
   }
   if (filters.status && filters.status in OrderStatus) where.status = filters.status as OrderStatus;
+  if (filters.store) where.store = { slug: filters.store };
   if (filters.payment && filters.payment in PaymentStatus) where.paymentStatus = filters.payment as PaymentStatus;
   if (filters.from || filters.to) {
     where.placedAt = { ...(filters.from ? { gte: new Date(filters.from) } : {}), ...(filters.to ? { lte: new Date(`${filters.to}T23:59:59.999Z`) } : {}) };
@@ -32,7 +33,7 @@ export async function listOrders(filters: OrderListFilters) {
       orderBy: { placedAt: "desc" },
       skip: (page - 1) * ADMIN_PAGE_SIZE,
       take: ADMIN_PAGE_SIZE,
-      include: { user: { select: { firstName: true, lastName: true } }, _count: { select: { items: true } } },
+      include: { user: { select: { firstName: true, lastName: true } }, store: { select: { name: true, slug: true, ownerId: true } }, _count: { select: { items: true } } },
     }),
     db.order.groupBy({ by: ["status"], _count: { _all: true } }),
   ]);

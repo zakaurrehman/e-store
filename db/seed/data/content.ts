@@ -13,7 +13,7 @@ So we built the opposite. **Zendropship is a curated store of house labels and i
 
 - **Quality over quantity.** We launch fewer products and stand behind every one of them.
 - **Honest information.** Real materials, real dimensions, real stock levels — and reviews only from real customers.
-- **Service that feels human.** Free returns within 30 days, clear delivery times and a team that answers.
+- **Service that feels human.** Free returns within 15 days, clear delivery times and a team that answers.
 
 ## How we choose what we sell
 
@@ -55,8 +55,8 @@ Sales tax for US destinations and VAT for applicable countries is shown at check
   {
     slug: "returns",
     title: "Returns & refunds",
-    excerpt: "Free returns within 30 days.",
-    content: `We want you to love what you ordered. If you don't, you can return most items within **30 days of delivery** for a full refund.
+    excerpt: "Free returns within 15 days.",
+    content: `We want you to love what you ordered. If you don't, you can return most items within **15 days of delivery** for a full refund.
 
 ## What can be returned
 
@@ -190,7 +190,7 @@ export const FAQ = [
   { group: "Orders", question: "Do I need an account to order?", answer: "No — you can check out as a guest. Creating an account lets you track orders, save addresses and your wishlist, and review products you've bought." },
   { group: "Shipping & delivery", question: "Where do you ship?", answer: "We ship to most countries worldwide. Enter your address at checkout to see the delivery options and costs available to you." },
   { group: "Shipping & delivery", question: "How much does shipping cost?", answer: "Standard shipping in the United States is $6.95 and free on orders over $150. International rates depend on destination and are always shown before you pay." },
-  { group: "Returns & refunds", question: "What is your returns policy?", answer: "Most items can be returned within 30 days of delivery in original, unused condition. Returns in the US are free. See our returns policy for details and exclusions." },
+  { group: "Returns & refunds", question: "What is your returns policy?", answer: "Most items can be returned within 15 days of delivery in original, unused condition. Returns in the US are free. See our returns policy for details and exclusions." },
   { group: "Returns & refunds", question: "When will I get my refund?", answer: "We refund your original payment method within 3 business days of receiving your return. Banks can take 5–10 business days to show the refund." },
   { group: "Payments", question: "Which payment methods do you accept?", answer: "Accepted methods are shown at checkout and in the footer of every page. Payments are processed securely by our payment partners and your order is confirmed only once payment is verified." },
   { group: "Payments", question: "Is it safe to pay on Zendropship?", answer: "Yes. Card payments are handled by PCI-compliant payment providers over encrypted connections — we never see or store your full card details." },

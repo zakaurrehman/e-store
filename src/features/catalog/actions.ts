@@ -1,6 +1,8 @@
 "use server";
 
 import { z } from "zod";
+import { getCurrentStore } from "@/features/stores/current";
+import { scopeOf } from "@/features/stores/context";
 import { getCurrentUser } from "@/server/auth/session";
 import { db } from "@/server/db";
 import { getProductCardsByIds, type ProductCardData } from "./queries";
@@ -11,7 +13,8 @@ const idsSchema = z.array(z.string().min(1).max(40)).max(24);
 export async function getProductCardsAction(ids: string[]): Promise<ProductCardData[]> {
   const parsed = idsSchema.safeParse(ids);
   if (!parsed.success) return [];
-  return getProductCardsByIds(parsed.data);
+  const store = await getCurrentStore();
+  return getProductCardsByIds(parsed.data, store ? scopeOf(store) : null);
 }
 
 /** Persists recently viewed products for signed-in customers (shown in their account on every device). */

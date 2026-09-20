@@ -4,6 +4,7 @@ import { after } from "next/server";
 import { z } from "zod";
 import { loadCart } from "@/features/cart/service";
 import { getCurrentCartId } from "@/features/cart/session";
+import { getCurrentStore } from "@/features/stores/current";
 import { buildQuote, flushNotifications, placeOrder, resumePayment } from "@/features/orders/service";
 import { deliveryEstimate } from "@/features/checkout/shipping";
 import { loadSettings } from "@/features/settings/service";
@@ -30,7 +31,8 @@ export type CheckoutQuote = {
 export async function getCheckoutQuoteAction(input: { country: string; region?: string; shippingMethodId?: string }): Promise<{ ok: true; quote: CheckoutQuote } | { ok: false; error: string }> {
   const parsed = quoteSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Choose a destination country." };
-  const cartId = await getCurrentCartId();
+  const store = await getCurrentStore();
+  const cartId = store ? await getCurrentCartId(store.id) : null;
   const cart = cartId ? await loadCart(cartId) : null;
   if (!cart || cart.lines.length === 0) return { ok: false, error: "Your bag is empty." };
   const user = await getCurrentUser();
@@ -71,7 +73,8 @@ export async function placeOrderAction(input: unknown): Promise<PlaceOrderAction
   const limit = await rateLimit("checkout", meta.ipAddress);
   if (!limit.success) return { ok: false, error: retryAfterMessage(limit.resetAt) };
 
-  const cartId = await getCurrentCartId();
+  const store = await getCurrentStore();
+  const cartId = store ? await getCurrentCartId(store.id) : null;
   if (!cartId) return { ok: false, error: "Your bag is empty.", code: "CART_EMPTY" };
   const user = await getCurrentUser();
   try {

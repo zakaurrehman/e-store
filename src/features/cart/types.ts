@@ -12,6 +12,8 @@ export type CartLine = {
   imageUrl: string | null;
   imageAlt: string;
   unitPriceCents: number;
+  /** Wholesale the store owner pays the platform for one unit; never shown to shoppers. */
+  unitCostCents: number;
   compareAtCents: number | null;
   quantity: number;
   lineTotalCents: number;

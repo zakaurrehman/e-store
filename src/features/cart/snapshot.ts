@@ -17,7 +17,7 @@ export async function buildCartSnapshot(cart: CartView | null, customer: { userI
   let coupon: Awaited<ReturnType<typeof validateCoupon>> | null = null;
   if (cart.couponCode) {
     try {
-      coupon = await validateCoupon(cart.couponCode, { lines, userId: customer.userId, email: customer.email });
+      coupon = await validateCoupon(cart.couponCode, { lines, userId: customer.userId, email: customer.email, storeId: cart.storeId });
     } catch (error) {
       if (!isDomainError(error)) throw error;
       couponError = error.message;

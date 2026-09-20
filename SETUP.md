@@ -65,7 +65,9 @@ Optional: set `SEED_DEMO_DATA=true` before seeding to add development-only demo 
 npm run dev
 ```
 
-Open `APP_URL`. The admin is at `/admin` — sign in with `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` and change the password.
+Open `APP_URL` for the platform site. The admin is at `/admin` — sign in at `/login` with `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` and change the password.
+
+Stores run on subdomains of the same server: the demo store is at `http://demo.localhost:<port>`, and a store you open at `/start` is at `http://<address>.localhost:<port>`. Chrome, Edge and Firefox resolve `*.localhost` to your machine without any setup. Sessions and bags are per host, so sign in to a store separately from the platform.
 
 Useful locally:
 

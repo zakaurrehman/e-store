@@ -25,7 +25,8 @@ export class SandboxProvider implements PaymentProvider {
 
   async initiate(input: InitiateInput) {
     const providerReference = `sbx_${input.paymentId}`;
-    const url = new URL(`/checkout/sandbox/${input.paymentId}`, this.appUrl);
+    // The simulator page lives on the same store domain as the checkout it returns to.
+    const url = new URL(`/checkout/sandbox/${input.paymentId}`, new URL(input.returnUrl).origin);
     url.searchParams.set("sig", this.sign(input.paymentId));
     return { kind: "redirect" as const, url: url.toString(), providerReference };
   }

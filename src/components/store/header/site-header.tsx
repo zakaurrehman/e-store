@@ -1,15 +1,16 @@
 import { Heart, Menu, User } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
-import { Logo } from "@/components/brand/logo";
 import { getCategoryTree } from "@/features/catalog/queries";
 import { getStoreSettings } from "@/features/settings/queries";
+import { scopeOf, type StoreContext } from "@/features/stores/context";
 import { getCurrentUser } from "@/server/auth/session";
 import { cn } from "@/utils/cn";
 import { SearchButton } from "../search/search-dialog";
 import { BagButton } from "./bag-button";
 import { DesktopNav, MAX_NAV_DEPARTMENTS } from "./desktop-nav";
 import { MobileMenu } from "./mobile-menu";
+import { StoreBrand } from "./store-brand";
 
 const EXTRA_LINKS = [
   { label: "Brands", href: "/brands" },
@@ -37,15 +38,23 @@ async function AccountLink() {
   );
 }
 
-export async function AnnouncementBar() {
-  const settings = await getStoreSettings();
-  if (!settings.announcement.enabled || !settings.announcement.message) return null;
-  const content = <span className="truncate">{settings.announcement.message}</span>;
+export async function AnnouncementBar({ store }: { store: StoreContext }) {
+  // Owner stores write their own announcement; the platform demo store uses the admin's announcement settings.
+  const settings = store.isPlatformStore ? await getStoreSettings() : null;
+  const announcement = settings
+    ? settings.announcement.enabled && settings.announcement.message
+      ? { message: settings.announcement.message, href: settings.announcement.href }
+      : null
+    : store.announcement
+      ? { message: store.announcement, href: null }
+      : null;
+  if (!announcement) return null;
+  const content = <span className="truncate">{announcement.message}</span>;
   return (
     <div className="bg-ink-950 text-white">
       <div className="container-page flex h-9 items-center justify-center text-[0.75rem] font-medium tracking-[0.02em]">
-        {settings.announcement.href ? (
-          <Link href={settings.announcement.href} className="flex min-w-0 items-center gap-2 hover:underline hover:underline-offset-4">
+        {announcement.href ? (
+          <Link href={announcement.href} className="flex min-w-0 items-center gap-2 hover:underline hover:underline-offset-4">
             {content}
           </Link>
         ) : (
@@ -88,8 +97,8 @@ function DesktopNavFallback({ categories }: { categories: Awaited<ReturnType<typ
   );
 }
 
-export async function SiteHeader() {
-  const categories = await getCategoryTree();
+export async function SiteHeader({ store }: { store: StoreContext }) {
+  const categories = await getCategoryTree(scopeOf(store));
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-surface/95 backdrop-blur-md supports-[backdrop-filter]:bg-surface/85">
       <div className="container-page relative flex h-16 items-center gap-4 lg:h-[4.5rem]">
@@ -99,9 +108,8 @@ export async function SiteHeader() {
           </Suspense>
           <SearchButton className={cn(iconButton, "lg:hidden")} />
         </div>
-        <Link href="/" className="shrink-0 rounded-xs" aria-label="Zendropship home">
-          <Logo className="hidden sm:inline-flex" />
-          <Logo className="sm:hidden" markClassName="size-6" />
+        <Link href="/" className="shrink-0 rounded-xs" aria-label={`${store.name} home`}>
+          <StoreBrand store={store} />
         </Link>
         <div className="hidden h-full flex-1 items-stretch justify-center lg:flex">
           <Suspense fallback={<DesktopNavFallback categories={categories} />}>

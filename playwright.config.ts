@@ -7,7 +7,11 @@ import { defineConfig, devices } from "@playwright/test";
  *   PLAYWRIGHT_BASE_URL=http://localhost:3460 npm run test:e2e   targets an already running server, e.g. `next start`
  * The target must use the seeded catalogue, EMAIL_DRIVER=log and PAYMENT_PROVIDERS including sandbox.
  */
-const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3456";
+const platformURL = (process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3456").replace(/\/$/, "");
+// Storefront specs run in the demo store on its own subdomain (e.g. demo.localhost:3456); admin and owner specs
+// switch to the platform host themselves.
+const platform = new URL(platformURL);
+const baseURL = `${platform.protocol}//demo.${platform.host.replace(/^www\./, "")}`;
 
 export default defineConfig({
   testDir: "e2e",
@@ -26,10 +30,10 @@ export default defineConfig({
     navigationTimeout: 120_000,
   },
   projects: [
-    { name: "setup", testMatch: /auth\.setup\.ts/ },
+    { name: "setup", testMatch: /auth\.setup\.ts/, use: { baseURL: platformURL } },
     { name: "chromium", use: { ...devices["Desktop Chrome"] }, dependencies: ["setup"], testIgnore: /auth\.setup\.ts/ },
   ],
   webServer: process.env.PLAYWRIGHT_BASE_URL
     ? undefined
-    : { command: "npm run dev -- -p 3456", url: `${baseURL}/robots.txt`, reuseExistingServer: true, timeout: 240_000 },
+    : { command: "npm run dev -- -p 3456", url: `${platformURL}/robots.txt`, reuseExistingServer: true, timeout: 240_000 },
 });

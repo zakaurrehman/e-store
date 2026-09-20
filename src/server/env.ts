@@ -2,6 +2,7 @@ import { z } from "zod";
 import { resolveDatabaseUrl } from "../lib/database-url";
 import { envOption, paymentProviderList } from "../lib/env-value";
 import { resolveSiteUrl } from "../lib/site-url";
+import { storeBaseDomain } from "../lib/tenancy";
 
 // Variables created but left empty (or holding only whitespace) count as unset.
 const emptyToUndefined = (value: unknown) => (typeof value === "string" && value.trim() === "" ? undefined : value);
@@ -115,6 +116,14 @@ function crossFieldIssues(env: Partial<FieldValues>): Issue[] {
   if (env.EMAIL_DRIVER === "resend") require(!!env.RESEND_API_KEY, "RESEND_API_KEY", "required when EMAIL_DRIVER=resend");
   if (env.NODE_ENV === "production") {
     require(!!env.CRON_SECRET, "CRON_SECRET", "required in production");
+  }
+  // Stores live at <slug>.<base domain>; a production deployment without a real domain would send them to localhost.
+  if (process.env.VERCEL_ENV === "production") {
+    require(
+      storeBaseDomain(process.env) !== "localhost",
+      "STORE_DOMAIN",
+      "set STORE_DOMAIN (e.g. zendropship.io) or APP_URL to the site's own domain so store subdomains resolve",
+    );
   }
   return issues;
 }

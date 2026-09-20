@@ -64,12 +64,22 @@ export async function getBanners(options: { placement?: "HERO" | "PROMO" | "CATE
   return mapped;
 }
 
-export async function getCategoryTiles(slugs: string[]) {
+/** Products a store sells, as a relation filter (every active product when no store is given). */
+const inStore = (storeId: string | null) =>
+  storeId ? { status: "ACTIVE" as const, deletedAt: null, storeProducts: { some: { storeId, isActive: true } } } : { status: "ACTIVE" as const, deletedAt: null };
+
+export async function getCategoryTiles(slugs: string[], storeId: string | null = null) {
   "use cache";
   cacheLife("hours");
   cacheTag(CATALOG_TAG, "categories");
   const categories = await db.category.findMany({
-    where: { isActive: true, deletedAt: null, ...(slugs.length ? { slug: { in: slugs } } : { parentId: null }) },
+    where: {
+      isActive: true,
+      deletedAt: null,
+      ...(slugs.length ? { slug: { in: slugs } } : { parentId: null }),
+      // A store only shows departments it stocks (directly or through a sub-category).
+      ...(storeId ? { OR: [{ products: { some: { product: inStore(storeId) } } }, { children: { some: { products: { some: { product: inStore(storeId) } } } } }] } : {}),
+    },
     orderBy: { position: "asc" },
     select: { id: true, name: true, slug: true, image: { select: { url: true, alt: true } } },
   });
@@ -80,12 +90,12 @@ export async function getCategoryTiles(slugs: string[]) {
   return categories;
 }
 
-export async function getFeaturedReviews(limit: number) {
+export async function getFeaturedReviews(limit: number, storeId: string | null = null) {
   "use cache";
   cacheLife("hours");
   cacheTag(CATALOG_TAG, "reviews");
   return db.review.findMany({
-    where: { status: ReviewStatus.APPROVED, isFeatured: true, deletedAt: null, product: { status: "ACTIVE", deletedAt: null } },
+    where: { status: ReviewStatus.APPROVED, isFeatured: true, deletedAt: null, product: inStore(storeId) },
     orderBy: { createdAt: "desc" },
     take: limit,
     select: {
@@ -101,12 +111,12 @@ export async function getFeaturedReviews(limit: number) {
   });
 }
 
-export async function getFeaturedBrands(slugs: string[]) {
+export async function getFeaturedBrands(slugs: string[], storeId: string | null = null) {
   "use cache";
   cacheLife("hours");
   cacheTag(CATALOG_TAG, "brands");
   return db.brand.findMany({
-    where: { isActive: true, deletedAt: null, ...(slugs.length ? { slug: { in: slugs } } : { isFeatured: true }) },
+    where: { isActive: true, deletedAt: null, ...(slugs.length ? { slug: { in: slugs } } : { isFeatured: true }), ...(storeId ? { products: { some: inStore(storeId) } } : {}) },
     orderBy: [{ position: "asc" }, { name: "asc" }],
     select: { id: true, name: true, slug: true, description: true },
   });

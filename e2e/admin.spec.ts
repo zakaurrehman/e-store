@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
-import { ADMIN_STATE, toast, unique } from "./helpers";
+import { ADMIN_STATE, PLATFORM_URL, STORE_URL, toast, unique } from "./helpers";
 
-test.use({ storageState: ADMIN_STATE });
+test.use({ storageState: ADMIN_STATE, baseURL: PLATFORM_URL });
 
 test.describe.serial("admin operations", () => {
   const stamp = unique().toUpperCase();
@@ -34,7 +34,7 @@ test.describe.serial("admin operations", () => {
     await page.reload();
     await expect(page.getByLabel("Price", { exact: true }).filter({ visible: true }).first()).toHaveValue("64.00");
 
-    const shopperContext = await browser.newContext({ storageState: undefined });
+    const shopperContext = await browser.newContext({ storageState: undefined, baseURL: STORE_URL });
     const shopper = await shopperContext.newPage();
     await shopper.goto(`/p/${slug}`);
     await expect(shopper.getByRole("heading", { level: 1 })).toHaveText(name);

@@ -160,6 +160,8 @@ async function seedProduct(
 
   const code = `VY-${brandCode(product.brand)}-${String(index + 1).padStart(3, "0")}`;
   const cents = (dollars: number) => Math.round(dollars * 100);
+  // Sample catalogue only: wholesale at 55% of the selling price. Real supplier feeds provide the actual cost.
+  const sampleWholesale = (dollars: number) => Math.round(dollars * 100 * 0.55);
   const variants = product.option
     ? product.option.values.map((entry) => {
         const option = typeof entry === "string" ? { value: entry } : entry;
@@ -171,6 +173,7 @@ async function seedProduct(
           sku: `${code}-${slugify(option.value).toUpperCase()}`,
           priceCents: cents(price),
           salePriceCents: sale !== undefined ? cents(sale) : null,
+          costCents: sampleWholesale(sale ?? price),
           stockQuantity: option.stock ?? product.stock ?? 10,
           weightGrams: product.weight ?? 500,
           optionValueIds: [valueId],
@@ -181,6 +184,7 @@ async function seedProduct(
           sku: code,
           priceCents: cents(product.price),
           salePriceCents: product.sale !== undefined ? cents(product.sale) : null,
+          costCents: sampleWholesale(product.sale ?? product.price),
           stockQuantity: product.stock ?? 10,
           weightGrams: product.weight ?? 500,
           optionValueIds: [],

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { TokenType } from "@/generated/prisma/enums";
 import { mergeGuestCartAfterLogin } from "@/features/cart/session";
+import { getCurrentStore } from "@/features/stores/current";
 import { dispatchNotification, sendDeliveries, type NotificationEvent } from "@/server/notifications";
 import { failure, handleActionError, success, zodFailure, type ActionState } from "@/server/actions";
 import { writeAudit } from "@/server/audit";
@@ -35,10 +36,12 @@ export async function loginAction(_state: ActionState, formData: FormData): Prom
   try {
     const user = await authenticate(parsed.data.email, parsed.data.password);
     await startSession(user.id, meta);
-    await mergeGuestCartAfterLogin(user.id);
+    const store = await getCurrentStore();
+    if (store) await mergeGuestCartAfterLogin(user.id, store.id);
     await resetRateLimit("login", `email:${parsed.data.email}`);
     await writeAudit({ actorId: user.id, action: "user.login", entityType: "User", entityId: user.id, summary: "Signed in", ipAddress: meta.ipAddress });
-    destination = safeRedirectPath(parsed.data.next, user.role.isStaff ? "/admin" : "/account");
+    // On a store the customer lands in their account there; on the platform site staff go to the admin, owners to their dashboard.
+    destination = safeRedirectPath(parsed.data.next, store ? "/account" : user.role.isStaff ? "/admin" : "/dashboard");
   } catch (error) {
     return handleActionError(error);
   }
@@ -62,10 +65,11 @@ export async function registerAction(_state: ActionState, formData: FormData): P
 
   let destination: string;
   try {
-    const { user, verificationToken } = await registerCustomer(parsed.data, { ipAddress: meta.ipAddress });
+    const store = await getCurrentStore();
+    const { user, verificationToken } = await registerCustomer({ ...parsed.data, registeredStoreId: store?.id ?? null }, { ipAddress: meta.ipAddress });
     await startSession(user.id, meta);
-    await mergeGuestCartAfterLogin(user.id);
-    notifyAfterResponse({ type: "user.registered", userId: user.id, verificationToken });
+    if (store) await mergeGuestCartAfterLogin(user.id, store.id);
+    notifyAfterResponse({ type: "user.registered", userId: user.id, verificationToken, storeId: store?.id ?? null });
     destination = safeRedirectPath(parsed.data.next, "/account?welcome=1");
   } catch (error) {
     return handleActionError(error);
@@ -90,7 +94,8 @@ export async function forgotPasswordAction(_state: ActionState, formData: FormDa
   if (!byIp.success || !byEmail.success) return failure(retryAfterMessage(byIp.success ? byEmail.resetAt : byIp.resetAt));
   try {
     const result = await requestPasswordReset(parsed.data.email);
-    if (result) notifyAfterResponse({ type: "user.password-reset-requested", userId: result.user.id, token: result.token });
+    const store = await getCurrentStore();
+    if (result) notifyAfterResponse({ type: "user.password-reset-requested", userId: result.user.id, token: result.token, storeId: store?.id ?? null });
   } catch (error) {
     console.error("[auth] password reset request failed", error);
   }
@@ -117,7 +122,8 @@ export async function resendVerificationAction(): Promise<ActionState> {
   const limit = await rateLimit("verifyEmail", user.id);
   if (!limit.success) return failure(retryAfterMessage(limit.resetAt));
   const token = await createToken(user.id, TokenType.EMAIL_VERIFICATION);
-  notifyAfterResponse({ type: "user.verification-requested", userId: user.id, verificationToken: token });
+  const store = await getCurrentStore();
+  notifyAfterResponse({ type: "user.verification-requested", userId: user.id, verificationToken: token, storeId: store?.id ?? null });
   return success(`We've sent a new confirmation link to ${user.email}.`);
 }
 

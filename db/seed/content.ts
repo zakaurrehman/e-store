@@ -58,7 +58,7 @@ export async function seedContent() {
         config: {
           items: [
             { icon: "truck", title: "Free US shipping over $150", text: "Tracked delivery, dispatched within 1 business day" },
-            { icon: "returns", title: "30-day returns", text: "Free returns on eligible US orders" },
+            { icon: "returns", title: "15-day returns", text: "Free returns on eligible US orders" },
             { icon: "secure", title: "Secure checkout", text: "Payments verified by our payment partners" },
             { icon: "support", title: "Real people, real help", text: "Replies within one business day" },
           ],

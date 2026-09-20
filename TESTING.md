@@ -11,13 +11,13 @@
 
 ## Unit tests — `tests/unit`
 
-Pure logic with no database: the pricing engine (discount allocation, tax, shipping thresholds, rounding), utilities (money parsing and formatting, slugs) and deployment configuration (the site URL fallback on Vercel, and the environment check that lists every missing or unsafe setting).
+Pure logic with no database: the pricing engine (discount allocation, tax, shipping thresholds, rounding), store pricing (suggested price, markup with .99 rounding, per-product overrides, margins), tenancy (base domain, host classification, reserved and malformed subdomains, store addresses), utilities (money parsing and formatting, slugs) and deployment configuration (the site URL fallback on Vercel, and the environment check that lists every missing or unsafe setting).
 
 ## Integration tests — `tests/integration`
 
 Real services against a real PostgreSQL database, `TEST_DATABASE_URL` (default `veyora_test` on the local server).
 
-- `global-setup.ts` applies migrations. Each file's setup truncates every table and re-seeds roles, settings, shipping and tax.
+- `global-setup.ts` applies migrations. Each file's setup truncates every table and re-seeds roles, settings, shipping and tax, and the platform store the tests shop in.
 - Both refuse to run unless the database name ends in `_test`, so they can never wipe a real database.
 
 Covered:
@@ -27,10 +27,11 @@ Covered:
 - **Authentication** — Argon2id hashing, duplicate email and weak password rejection, identical errors for unknown email and wrong password, lockout, disabled accounts.
 - **Import** — dry run writes nothing; re-imports skip unchanged records and update changed ones in place.
 - **RBAC** — seeded role permissions (super admin, admin without staff management, manager, customer).
+- **Stores** — opening a store creates a store-owner account and a unique address (reserved addresses and duplicate emails refused, one store per owner); new catalogue products join the platform store, while an owner's store sells only what the owner added; the store's markup and per-product fixed prices drive the bag, and orders keep the store, price and wholesale cost; hidden products can't be bought; platform coupons only work in the platform store and a store's coupon only in that store; suspended stores refuse changes; owners can't change other owners' stores.
 
 ## End-to-end tests — `e2e`
 
-Playwright drives Chromium through 20 flows in 16 tests:
+Playwright drives Chromium through 23 tests. Storefront specs run in the demo store on its own subdomain (`http://demo.localhost:3456`; Chromium resolves `*.localhost` to your machine); admin and owner steps switch to the platform host (`http://localhost:3456`).
 
 | Spec | Flows |
 | --- | --- |
@@ -40,12 +41,13 @@ Playwright drives Chromium through 20 flows in 16 tests:
 | `checkout.spec.ts` | Checkout, sandbox payment, order creation, order tracking; declined payment and retry; coupon created in the admin and applied in the bag |
 | `account.spec.ts` | Register (with email verification), review submitted and approved, logout, login |
 | `admin.spec.ts` | Product create, product edit (checked on the storefront), inventory update with ledger, order management |
+| `platform.spec.ts` | Landing and catalogue with cost/price/margin; opening a store from a product; adding products and setting a markup (checked in the store, including a product the store doesn't sell); a shopper paying in the owner's store with emails in the store's name and an owner alert; the owner's order view with margin; bags kept separate between stores; the admin suspending and reopening the store |
 
 ### Running
 
 ```bash
 npm run test:e2e                                          # reuses or starts the dev server on :3456
-PLAYWRIGHT_BASE_URL=http://localhost:3460 npm run test:e2e   # any running server, e.g. `next start -p 3460`
+PLAYWRIGHT_BASE_URL=http://localhost:3460 npm run test:e2e   # any running server, e.g. `next start -p 3460` (stores at http://<slug>.localhost:3460)
 ```
 
 The server under test must:
@@ -59,7 +61,8 @@ Notes:
 
 - Tests run one at a time because they share one database, the mailbox and rate limits.
 - They **create real data** (orders, products, coupons, reviews, a customer) — use a development or disposable database, never production.
-- Registration is rate limited to 5 per IP per hour. If you run the suite repeatedly, set `RATE_LIMIT_DRIVER=memory` on the server under test and restart it to reset the limits.
+- Registration and store opening are rate limited to 5 per IP per hour. If you run the suite repeatedly, set `RATE_LIMIT_DRIVER=memory` on the server under test and restart it to reset the limits.
+- After moving or renaming routes, restart the dev server with a clean `.next/dev` folder: Turbopack's persistent cache can keep a deleted route alive and put the browser into a reload loop.
 - Failures keep a trace and screenshot in `test-results/`; the HTML report is in `playwright-report/` (`npx playwright show-report`).
 
 ## Exploratory QA scripts — `scripts/qa`

@@ -76,14 +76,18 @@ model User {
   failedLoginCount  Int                 @default(0)
   lockedUntil       DateTime?
   lastLoginAt       DateTime?
+  /// The store this customer signed up on (null for platform sign-ups and staff)
+  registeredStoreId String?
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
   deletedAt         DateTime?
   role              Role                @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  store             Store?              @relation("StoreOwner")
+  registeredStore   Store?              @relation("StoreSignups", fields: [registeredStoreId], references: [id], onDelete: SetNull)
   sessions          Session[]
   tokens            VerificationToken[]
   addresses         Address[]
-  cart              Cart?
+  carts             Cart[]
   wishlist          Wishlist?
   orders            Order[]
   reviews           Review[]
@@ -100,6 +104,7 @@ model User {
   @@index([roleId])
   @@index([createdAt])
   @@index([lastName, firstName])
+  @@index([registeredStoreId])
 }
 
 model Session {
@@ -168,33 +173,35 @@ model Address {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model MediaAsset {
-  id           String          @id @default(cuid())
+  id            String           @id @default(cuid())
   /// Storage key of the optimised master (e.g. products/2026/09/abc.webp)
-  storageKey   String          @unique
-  url          String
-  filename     String
-  mimeType     String
-  sizeBytes    Int
-  width        Int?
-  height       Int?
-  alt          String          @default("")
+  storageKey    String           @unique
+  url           String
+  filename      String
+  mimeType      String
+  sizeBytes     Int
+  width         Int?
+  height        Int?
+  alt           String           @default("")
   /// Optional attribution / licence line (e.g. "Photo by … on Unsplash")
-  credit       String?
-  folder       String          @default("library")
-  checksum     String?
-  uploadedById String?
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
-  deletedAt    DateTime?
-  uploadedBy   User?           @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  credit        String?
+  folder        String           @default("library")
+  checksum      String?
+  uploadedById  String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  deletedAt     DateTime?
+  uploadedBy    User?            @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
   productImages ProductImage[]
-  variants     ProductVariant[]
-  categories   Category[]
-  brands       Brand[]
-  collections  Collection[]
-  banners      Banner[]        @relation("BannerImage")
-  mobileBanners Banner[]       @relation("BannerMobileImage")
-  reviewImages ReviewImage[]
+  variants      ProductVariant[]
+  categories    Category[]
+  brands        Brand[]
+  collections   Collection[]
+  banners       Banner[]         @relation("BannerImage")
+  mobileBanners Banner[]         @relation("BannerMobileImage")
+  reviewImages  ReviewImage[]
+  storeLogos    Store[]          @relation("StoreLogo")
+  storeHeroes   Store[]          @relation("StoreHero")
 
   @@index([folder, createdAt])
   @@index([checksum])
@@ -374,6 +381,7 @@ model Product {
   recentlyViewed      RecentlyViewed[]
   searchDocument      SearchDocument?
   coupons             CouponProduct[]
+  storeProducts       StoreProduct[]
 
   @@index([status, deletedAt, publishedAt])
   @@index([brandId])
@@ -498,18 +506,18 @@ enum InventoryReason {
 
 /// Append-only inventory ledger. ProductVariant.stockQuantity is the running balance.
 model InventoryMovement {
-  id            String          @id @default(cuid())
-  variantId     String
-  delta         Int
-  balanceAfter  Int
-  reason        InventoryReason
-  note          String?
-  orderId       String?
-  actorId       String?
-  createdAt     DateTime        @default(now())
-  variant       ProductVariant  @relation(fields: [variantId], references: [id], onDelete: Cascade)
-  order         Order?          @relation(fields: [orderId], references: [id], onDelete: SetNull)
-  actor         User?           @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  id           String          @id @default(cuid())
+  variantId    String
+  delta        Int
+  balanceAfter Int
+  reason       InventoryReason
+  note         String?
+  orderId      String?
+  actorId      String?
+  createdAt    DateTime        @default(now())
+  variant      ProductVariant  @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  order        Order?          @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  actor        User?           @relation(fields: [actorId], references: [id], onDelete: SetNull)
 
   @@index([variantId, createdAt])
   @@index([orderId])
@@ -533,10 +541,10 @@ model SearchDocument {
 }
 
 model SearchQuery {
-  term           String   @id // normalised (lower-case, trimmed)
-  count          Int      @default(1)
-  lastResultCount Int     @default(0)
-  lastSearchedAt DateTime @default(now())
+  term            String   @id // normalised (lower-case, trimmed)
+  count           Int      @default(1)
+  lastResultCount Int      @default(0)
+  lastSearchedAt  DateTime @default(now())
 
   @@index([count])
 }
@@ -556,9 +564,88 @@ model SearchHistory {
 // Cart & wishlist
 // ─────────────────────────────────────────────────────────────────────────────
 
+enum StoreStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+enum StorePricingMode {
+  /// Sell at the supplier's suggested retail price (sale prices included)
+  SUGGESTED
+  /// Wholesale cost plus the store's markup
+  MARKUP
+}
+
+/// A dropshipper's store: its own subdomain, branding, product selection and orders.
+/// Products, stock, shipping and fulfilment come from the platform catalogue.
+model Store {
+  id                String           @id @default(cuid())
+  /// Subdomain: <slug>.zendropship.io — lower-case letters, digits and hyphens
+  slug              String           @unique
+  name              String
+  ownerId           String?          @unique
+  status            StoreStatus      @default(ACTIVE)
+  pricingMode       StorePricingMode @default(SUGGESTED)
+  /// Markup over wholesale in basis points (4000 = 40%) when pricingMode is MARKUP
+  markupBps         Int              @default(4000)
+  currency          String           @default("USD")
+  tagline           String?
+  aboutText         String?
+  supportEmail      String?
+  announcement      String?
+  logoId            String?
+  heroImageId       String?
+  heroTitle         String?
+  heroSubtitle      String?
+  /// Accent colour as #rrggbb
+  accentColor       String           @default("#5446ff")
+  /// Owner's own domain (verified separately); null until connected
+  customDomain      String?          @unique
+  /// Stripe Connect account id once the owner has started onboarding
+  stripeAccountId   String?          @unique
+  stripeOnboardedAt DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  deletedAt         DateTime?
+  owner             User?            @relation("StoreOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  logo              MediaAsset?      @relation("StoreLogo", fields: [logoId], references: [id], onDelete: SetNull)
+  heroImage         MediaAsset?      @relation("StoreHero", fields: [heroImageId], references: [id], onDelete: SetNull)
+  products          StoreProduct[]
+  orders            Order[]
+  carts             Cart[]
+  coupons           Coupon[]
+  signups           User[]           @relation("StoreSignups")
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+/// A platform product listed in a store, with the owner's pricing.
+model StoreProduct {
+  id              String   @id @default(cuid())
+  storeId         String
+  productId       String
+  isActive        Boolean  @default(true)
+  /// Overrides the store's markup for this product (basis points)
+  markupBps       Int?
+  /// Fixed retail price for every variant of this product, overriding markup and suggested pricing
+  fixedPriceCents Int?
+  position        Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  store           Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, productId])
+  @@index([productId])
+  @@index([storeId, isActive, position])
+}
+
 model Cart {
   id         String     @id @default(cuid())
-  userId     String?    @unique
+  storeId    String
+  userId     String?
   /// SHA-256 of the guest cart cookie token
   tokenHash  String?    @unique
   couponCode String?
@@ -567,9 +654,12 @@ model Cart {
   updatedAt  DateTime   @updatedAt
   expiresAt  DateTime?
   user       User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  store      Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
   items      CartItem[]
 
+  @@unique([userId, storeId])
   @@index([updatedAt])
+  @@index([storeId])
 }
 
 model CartItem {
@@ -658,6 +748,7 @@ enum OrderEventType {
 model Order {
   id                 String              @id @default(cuid())
   number             String              @unique
+  storeId            String
   userId             String?
   email              String
   phone              String?
@@ -690,6 +781,7 @@ model Order {
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
   user               User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  store              Store               @relation(fields: [storeId], references: [id], onDelete: Restrict)
   shippingMethod     ShippingMethod?     @relation(fields: [shippingMethodId], references: [id], onDelete: SetNull)
   items              OrderItem[]
   events             OrderEvent[]
@@ -703,6 +795,7 @@ model Order {
   @@index([paymentStatus])
   @@index([email])
   @@index([createdAt])
+  @@index([storeId, createdAt])
 }
 
 model OrderItem {
@@ -716,6 +809,8 @@ model OrderItem {
   sku            String?
   imageUrl       String?
   unitPriceCents Int
+  /// Wholesale cost per unit charged to the store owner (snapshot)
+  unitCostCents  Int             @default(0)
   quantity       Int
   discountCents  Int             @default(0)
   taxCents       Int             @default(0)
@@ -872,17 +967,17 @@ model ShippingMethod {
 }
 
 model TaxRate {
-  id              String   @id @default(cuid())
-  name            String
-  country         String
+  id                String   @id @default(cuid())
+  name              String
+  country           String
   /// null = whole country
-  region          String?
+  region            String?
   /// basis points: 825 = 8.25 %
-  rateBps         Int
-  appliesToShipping Boolean @default(false)
-  isActive        Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  rateBps           Int
+  appliesToShipping Boolean  @default(false)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@unique([country, region])
 }
@@ -905,6 +1000,8 @@ enum CouponScope {
 
 model Coupon {
   id                    String             @id @default(cuid())
+  /// Null for platform-wide coupons managed by Zendropship staff
+  storeId               String?
   code                  String             @unique // upper-case
   description           String?
   type                  DiscountType
@@ -927,8 +1024,10 @@ model Coupon {
   categories            CouponCategory[]
   customers             CouponCustomer[]
   redemptions           CouponRedemption[]
+  store                 Store?             @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
   @@index([isActive, endsAt])
+  @@index([storeId])
 }
 
 model CouponProduct {

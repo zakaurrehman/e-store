@@ -16,7 +16,8 @@ export function normaliseCouponCode(code: string) {
  */
 export async function validateCoupon(
   rawCode: string,
-  context: { lines: PricingLine[]; userId: string | null; email: string | null; currency?: string },
+  /** storeId: the store the bag belongs to. Omitted only by callers outside a store (none today). */
+  context: { lines: PricingLine[]; userId: string | null; email: string | null; currency?: string; storeId?: string },
   client: DbClient = db,
 ): Promise<PricingCoupon & { id: string; description: string | null }> {
   const code = normaliseCouponCode(rawCode);
@@ -30,6 +31,14 @@ export async function validateCoupon(
     },
   });
   if (!coupon || coupon.deletedAt || !coupon.isActive) throw new CouponError("COUPON_INVALID", "That promo code isn't valid.");
+  // A coupon belongs to one store; platform coupons (no store) work only in the platform's own stores, so they
+  // never reduce an owner's margin without the owner's say.
+  if (context.storeId) {
+    const valid = coupon.storeId
+      ? coupon.storeId === context.storeId
+      : !!(await client.store.findFirst({ where: { id: context.storeId, ownerId: null }, select: { id: true } }));
+    if (!valid) throw new CouponError("COUPON_INVALID", "That promo code isn't valid.");
+  }
 
   const now = Date.now();
   if (coupon.startsAt && coupon.startsAt.getTime() > now) throw new CouponError("COUPON_NOT_STARTED", "That promo code isn't active yet.");

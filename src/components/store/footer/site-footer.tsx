@@ -1,10 +1,11 @@
 import { cacheLife } from "next/cache";
 import Link from "next/link";
-import { Wordmark } from "@/components/brand/logo";
 import { paymentProviderList } from "@/lib/env-value";
 import { getCategoryTree } from "@/features/catalog/queries";
 import { getMenu } from "@/features/cms/queries";
 import { getStoreSettings } from "@/features/settings/queries";
+import { scopeOf, type StoreContext } from "@/features/stores/context";
+import { StoreBrand } from "../header/store-brand";
 import { NewsletterForm } from "./newsletter-form";
 
 const PAYMENT_LABELS: Record<string, string[]> = {
@@ -41,8 +42,11 @@ async function FooterColumn({ title, menuKey }: { title: string; menuKey: string
   );
 }
 
-export async function SiteFooter() {
-  const [settings, categories] = await Promise.all([getStoreSettings(), getCategoryTree()]);
+export async function SiteFooter({ store }: { store: StoreContext }) {
+  const [settings, categories] = await Promise.all([getStoreSettings(), getCategoryTree(scopeOf(store))]);
+  // The platform demo store shows the company's details; owner stores show their own name.
+  const legalName = store.isPlatformStore ? settings.store.legalName : store.name;
+  const tagline = store.isPlatformStore ? settings.store.tagline : store.tagline;
   const providers = paymentProviderList(process.env.PAYMENT_PROVIDERS);
   const paymentMethods = [...new Set(providers.flatMap((provider) => PAYMENT_LABELS[provider] ?? []))];
   const socials = Object.entries(settings.social).filter(([, url]) => !!url);
@@ -52,8 +56,8 @@ export async function SiteFooter() {
       <div className="container-page py-14 lg:py-20">
         <div className="grid gap-12 lg:grid-cols-12">
           <div className="lg:col-span-4">
-            <Wordmark className="text-base text-white" />
-            <p className="mt-5 max-w-sm text-[0.9375rem] leading-relaxed text-white/70">{settings.store.tagline}</p>
+            <StoreBrand store={store} tone="light" className="text-base" />
+            {tagline && <p className="mt-5 max-w-sm text-[0.9375rem] leading-relaxed text-white/70">{tagline}</p>}
             <div className="mt-8 max-w-sm">
               <p className="text-[0.9375rem] font-medium">Get first access to new arrivals</p>
               <p className="mb-3 mt-1 text-[0.8125rem] text-white/60">No spam. Unsubscribe anytime.</p>
@@ -74,7 +78,8 @@ export async function SiteFooter() {
               </ul>
             </div>
             <FooterColumn title="Help" menuKey="footer-help" />
-            <FooterColumn title="Company" menuKey="footer-company" />
+            {/* The company column describes Zendropship itself; owner stores leave it out. */}
+            {store.isPlatformStore && <FooterColumn title="Company" menuKey="footer-company" />}
             <FooterColumn title="Legal" menuKey="footer-legal" />
           </div>
         </div>
@@ -82,10 +87,11 @@ export async function SiteFooter() {
         <div className="mt-14 flex flex-col gap-6 border-t border-white/10 pt-8 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-[0.8125rem] text-white/60">
             <span>
-              © <CopyrightYear /> {settings.store.legalName}
+              © <CopyrightYear /> {legalName}
             </span>
-            {settings.store.address && <span>{settings.store.address}</span>}
-            {socials.length > 0 && (
+            {store.isPlatformStore && settings.store.address && <span>{settings.store.address}</span>}
+            {!store.isPlatformStore && <span>Fulfilled by Zendropship</span>}
+            {store.isPlatformStore && socials.length > 0 && (
               <ul className="flex gap-4">
                 {socials.map(([key, url]) => (
                   <li key={key}>

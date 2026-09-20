@@ -4,6 +4,18 @@ import { expect, type Page } from "@playwright/test";
 
 export const ADMIN_STATE = "e2e/.auth/admin.json";
 
+/** The platform site (marketing, catalogue, owner dashboard, admin). */
+export const PLATFORM_URL = (process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3456").replace(/\/$/, "");
+
+/** A store's own address: <slug>.<platform host>, e.g. http://demo.localhost:3456. */
+export function storeUrlFor(slug: string) {
+  const url = new URL(PLATFORM_URL);
+  return `${url.protocol}//${slug}.${url.host.replace(/^www\./, "")}`;
+}
+
+/** The platform-run demo store, where the storefront specs shop. */
+export const STORE_URL = storeUrlFor("demo");
+
 export const unique = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
 export const SHIPPING = { firstName: "Quinn", lastName: "Tester", line1: "500 Market Street", city: "San Francisco", region: "CA", postalCode: "94105" };
@@ -36,7 +48,7 @@ export async function orderNumberOn(page: Page) {
   return number;
 }
 
-export type Mail = { to: string; subject: string; links: string[] };
+export type Mail = { to: string; subject: string; links: string[]; text?: string };
 
 /** Reads the development mailbox written by EMAIL_DRIVER=log. */
 export async function waitForMail(predicate: (mail: Mail) => boolean, timeoutMs = 30_000): Promise<Mail> {

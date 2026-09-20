@@ -1,6 +1,6 @@
 # Admin guide
 
-The admin lives at `/admin`. Sign in with a staff account; customer accounts cannot open it. What you see depends on your role: sections you lack permission for are hidden, and the server refuses those actions even if a link is opened directly.
+The admin lives at `/admin` on the platform site (`www.zendropship.io/admin`). Sign in at `www.zendropship.io/login` with a staff account; customer and store-owner accounts cannot open it. What you see depends on your role: sections you lack permission for are hidden, and the server refuses those actions even if a link is opened directly.
 
 ## Roles
 
@@ -9,7 +9,8 @@ The admin lives at `/admin`. Sign in with a staff account; customer accounts can
 | **Super admin** | Everything, including staff accounts, roles and permissions |
 | **Admin** | Everything except managing staff and roles |
 | **Manager** | Dashboard and analytics; view, create, edit and export products; adjust stock; manage categories and brands; moderate reviews; view and update orders; view customers; read messages; manage content and media |
-| **Customer** | Storefront only |
+| **Store owner** | Their own store's dashboard at `/dashboard` only — see OWNER_GUIDE.md |
+| **Customer** | Shopping in stores only |
 
 Managers cannot delete or import products, refund or cancel orders, change customer accounts, manage coupons, shipping, settings or staff, or view the audit log. **Settings → Staff & roles** can create custom roles from the individual permissions.
 
@@ -19,7 +20,8 @@ Managers cannot delete or import products, refund or cancel orders, change custo
 | --- | --- | --- |
 | Dashboard / Analytics | Revenue, orders, customers, top products and categories, low stock, recent orders; 7 / 30 / 90-day and 12-month ranges; each chart has a table view | `dashboard.view` / `analytics.view` |
 | Notifications | New orders, payment failures, low stock, new reviews and messages | any staff |
-| Orders | Search and filter; order detail with timeline, payment, shipment and notes | `orders.view` |
+| Stores | Every store with its owner, products, orders and sales; suspend and reopen | `stores.view`, `stores.manage` |
+| Orders | Every store's orders; search and filter (including by store); order detail with timeline, payment, shipment and notes | `orders.view` |
 | Customers | Search accounts; history, addresses, reviews, activity | `customers.view` |
 | Discounts | Coupon codes | `discounts.manage` |
 | Messages | Contact form inbox | `messages.view` |
@@ -32,6 +34,18 @@ Managers cannot delete or import products, refund or cancel orders, change custo
 | Pages & FAQ | Static pages and FAQ | `content.manage` |
 | Media library | Images | `media.manage` |
 | Settings | Store settings, shipping & tax, staff & roles, audit log | `settings.manage`, `shipping.manage`, `staff.manage`, `audit.view` |
+
+## Stores
+
+Every store opened on the platform is listed under **Stores**, newest first, with its address, owner, live products, orders and sales. Search by store name, address or owner email.
+
+- **Open a store's orders** by clicking its order count — the Orders list filters to that store.
+- **Suspend** hides the store from shoppers immediately (its address shows a not-found page) and stops the owner from changing it; the owner can still sign in and see their data. **Reopen** restores it. Both are recorded in the audit log.
+- The **platform (demo) store** at `demo.<domain>` has no owner and cannot be suspended here. New catalogue products are added to it automatically; its homepage, banners and announcement come from **Homepage & banners** and **Store settings**. Owner stores reuse the homepage layout with their own name, headline and image, and skip banners that link to departments they don't stock.
+
+**Wholesale cost** (the variant's *cost* field) is what an owner pays when their store sells the item, and the catalogue shows it to prospective owners. Keep it accurate: it decides every owner's margin. **Price** and **sale price** are the suggested retail prices stores use by default. Platform coupons (created under **Discounts**) work only in the platform store, so they never reduce an owner's margin.
+
+Fulfilment is the same for every store: orders from all stores arrive in **Orders** and move through the status flow below; owners see the status and tracking in their dashboard, and their customers get the emails in the store's name.
 
 ## Orders
 

@@ -9,6 +9,7 @@ import { getShippingOptions, getTaxRate } from "@/features/checkout/shipping";
 import type { PlaceOrderInput } from "@/features/checkout/schemas";
 import { loadSettings } from "@/features/settings/service";
 import type { AddressSnapshot } from "@/lib/address";
+import { storeUrl } from "@/lib/tenancy";
 import { writeAudit } from "@/server/audit";
 import { db, type DbClient, type Tx } from "@/server/db";
 import { DomainError, NotFoundError } from "@/server/errors";
@@ -46,7 +47,7 @@ async function addEvent(client: DbClient, orderId: string, type: OrderEventType,
 
 export async function buildQuote(cart: CartView, customer: { userId: string | null; email: string | null }, destination: { country: string; region?: string | null }, shippingMethodId?: string | null) {
   const lines = toPricingLines(cart);
-  const coupon = cart.couponCode ? await validateCoupon(cart.couponCode, { lines, userId: customer.userId, email: customer.email }).catch(() => null) : null;
+  const coupon = cart.couponCode ? await validateCoupon(cart.couponCode, { lines, userId: customer.userId, email: customer.email, storeId: cart.storeId }).catch(() => null) : null;
   const [options, taxRate] = await Promise.all([getShippingOptions(destination.country), getTaxRate(destination.country, destination.region)]);
   const method = options.find((option) => option.id === shippingMethodId) ?? options[0] ?? null;
   const totals = calculateTotals({ lines, coupon, shipping: method, tax: taxRate });
@@ -90,7 +91,7 @@ export async function placeOrder(
 
   // Pricing
   const lines = toPricingLines(cart);
-  const coupon = cart.couponCode ? await validateCoupon(cart.couponCode, { lines, userId: context.userId, email: input.email }) : null;
+  const coupon = cart.couponCode ? await validateCoupon(cart.couponCode, { lines, userId: context.userId, email: input.email, storeId: cart.storeId }) : null;
   const options = await getShippingOptions(shipping.country);
   const method = options.find((option) => option.id === input.shippingMethodId);
   if (!method) throw new OrderError("SHIPPING_INVALID", "Choose a delivery method for your address.", { fieldErrors: { shippingMethodId: ["Choose a delivery method."] } });
@@ -129,6 +130,7 @@ export async function placeOrder(
       const created = await tx.order.create({
         data: {
           number,
+          storeId: cart.storeId,
           userId: context.userId,
           email: input.email,
           phone: input.phone ?? shipping.phone ?? null,
@@ -161,6 +163,7 @@ export async function placeOrder(
                 sku: line.sku,
                 imageUrl: line.imageUrl,
                 unitPriceCents: priced.unitPriceCents,
+                unitCostCents: line.unitCostCents,
                 quantity: priced.quantity,
                 discountCents: priced.discountCents,
                 taxCents: priced.taxCents,
@@ -232,13 +235,18 @@ function toOrderForPayment(order: { id: string; number: string; email: string; c
   };
 }
 
+/**
+ * Hands the customer to the payment provider. Return and cancel links point at the order's own store domain,
+ * because checkout pages only exist on store hosts; `appUrl` is kept for callers and used for orders without a store slug.
+ */
 async function startPayment(orderId: string, paymentId: string, appUrl: string): Promise<PlaceOrderResult> {
-  const order = await db.order.findUniqueOrThrow({ where: { id: orderId }, include: { items: true } });
+  const order = await db.order.findUniqueOrThrow({ where: { id: orderId }, include: { items: true, store: { select: { slug: true } } } });
   const payment = await db.payment.findUniqueOrThrow({ where: { id: paymentId } });
   const provider = getPaymentProvider(payment.provider);
   if (!provider) throw new OrderError("PAYMENT_METHOD_INVALID", "This payment method is no longer available.");
-  const returnUrl = new URL(`/checkout/return/${provider.key}?order=${order.number}&payment=${payment.id}`, appUrl).toString();
-  const cancelUrl = new URL(`/checkout/return/${provider.key}?order=${order.number}&payment=${payment.id}&cancelled=1`, appUrl).toString();
+  const origin = order.store?.slug ? storeUrl(order.store.slug) : appUrl;
+  const returnUrl = new URL(`/checkout/return/${provider.key}?order=${order.number}&payment=${payment.id}`, origin).toString();
+  const cancelUrl = new URL(`/checkout/return/${provider.key}?order=${order.number}&payment=${payment.id}&cancelled=1`, origin).toString();
 
   const initiated = await provider.initiate({ order: toOrderForPayment(order), paymentId: payment.id, returnUrl, cancelUrl });
   await db.payment.update({ where: { id: payment.id }, data: { providerReference: initiated.providerReference, status: PaymentStatus.PROCESSING } });

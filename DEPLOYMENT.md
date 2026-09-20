@@ -20,7 +20,8 @@ Set these on the host for **both the build and runtime**. `.env.example` documen
 | Variable | Production value |
 | --- | --- |
 | `NODE_ENV` | `production` (set automatically by `next build` / `next start`) |
-| `APP_URL` | Your public `https://` origin, no trailing slash. On Vercel, an unset or empty value falls back to the deployment URL. |
+| `APP_URL` | The platform site's public `https://` origin, no trailing slash (e.g. `https://www.zendropship.io`). On Vercel, an unset or empty value falls back to the deployment URL. |
+| `STORE_DOMAIN` | Optional. The domain stores hang off (`zendropship.io` → stores at `<name>.zendropship.io`). Derived from `APP_URL` without `www.` when unset; production deployments stop if it would resolve to `localhost`. |
 | `AUTH_SECRET` | 32+ random characters, unique per environment |
 | `TRUST_PROXY` | `true` behind Vercel or a reverse proxy, so client IPs come from `X-Forwarded-For` |
 | `DATABASE_URL` | A direct `postgres://` connection string. Databases connected in Vercel's Storage tab are found automatically, including under Vercel's default `STORAGE_` prefix (`STORAGE_POSTGRES_URL`, `STORAGE_DATABASE_URL`); Neon's direct `…_UNPOOLED` URL is used for migrations when present. Prisma Accelerate (`prisma+postgres://`) URLs are not supported. `DATABASE_POOL_MAX` sets the pool size (default 10). |
@@ -61,7 +62,7 @@ npm run start                # or your platform's start command
 SEED_SKIP_CATALOG=true SEED_ADMIN_EMAIL=you@yourdomain.com SEED_ADMIN_PASSWORD='<12+ chars>' npm run db:seed
 ```
 
-This creates roles and permissions, default settings, shipping zones and tax rates, the first super admin and starter content, without the demo catalogue. Pages built before the seed ran can be served from cache for up to an hour, so **redeploy once the seed has finished** to rebuild them with the new data. Then:
+This creates roles and permissions (including the store-owner role), default settings, shipping zones and tax rates, the first super admin, the demo store and starter content, without the demo catalogue. On a database that already had products before the platform release, the `stores` migration creates the demo store (address `demo`) with every existing product, gives existing orders and bags to it, and sets each variant's wholesale cost to 55% of its price where none was recorded — **review wholesale costs in the admin before owners start selling**, because they decide owners' margins. Pages built before the seed ran can be served from cache for up to an hour, so **redeploy once the seed has finished** to rebuild them with the new data. Then:
 
 1. Sign in at `/admin`, change the admin password and remove `SEED_ADMIN_PASSWORD` from the environment.
 2. **Settings → Store settings** — store name, legal name, support contact, address, currency, SEO and social links.
@@ -94,16 +95,37 @@ Customers return through `/checkout/return/<provider>` automatically. Place a te
 
   It returns JSON with `"ok": true`, and 401 without the correct secret.
 
-## 7. Custom domain
+## 7. Domains: the platform site and store subdomains
 
-In the Vercel project, open **Settings → Domains** and add `zendropship.io` (and `www.zendropship.io`, redirecting to the apex). Vercel shows the DNS records to create at your registrar: an `A` record for the apex and a `CNAME` for `www`. Once the domain is verified, Vercel issues the TLS certificate and makes it the production domain.
+Zendropship answers on two kinds of host from one deployment:
 
-Zendropship builds absolute links (emails, sitemap, payment return URLs) from `APP_URL`, or, when that is unset on Vercel, from the project's production domain, so the custom domain is picked up automatically on the next deployment. Set `EMAIL_FROM` to an address on the domain (for example `Zendropship <hello@zendropship.io>`) and verify the domain with your email provider.
+| Host | Serves |
+| --- | --- |
+| `www.zendropship.io` (and the apex) | The platform site: landing page, catalogue, sign-up, owner dashboard, admin |
+| `<name>.zendropship.io` | That owner's store; `demo.zendropship.io` is the platform-run demo store |
+
+`src/proxy.ts` reads the host and serves the right one; nothing else needs configuring per store.
+
+**Platform domain.** In **Settings → Domains**, add `zendropship.io` and `www.zendropship.io`. Set `APP_URL=https://www.zendropship.io`.
+
+**Store subdomains need a wildcard domain, and Vercel only issues wildcard certificates for domains that use Vercel's nameservers.** So:
+
+1. In Vercel, open **Domains** (team level) → `zendropship.io` and note the records you will need to keep: anything besides the site itself, such as `MX` and `TXT` records for email. Recreate them in Vercel DNS first.
+2. At the registrar (Namecheap → Domain List → Manage → **Nameservers** → Custom DNS), set `ns1.vercel-dns.com` and `ns2.vercel-dns.com`. Propagation usually takes minutes, occasionally up to 48 hours.
+3. In the project's **Settings → Domains**, add `*.zendropship.io`. Vercel verifies it and issues the wildcard certificate.
+4. Check: `https://demo.zendropship.io` shows the demo store.
+
+**Release order.** Set up the wildcard domain **before** deploying the platform version: on the platform site, shopping paths (`/cart`, `/checkout`, `/orders/…`) now redirect to the demo store at `demo.zendropship.io`, and product pages redirect to `/catalog`, so the demo store must resolve first.
+
+Sessions and bags are per host: shoppers sign in on the store they buy from; owners and staff sign in on `www`. Customer emails link to the store's own address; owner and staff emails link to the platform site. Set `EMAIL_FROM` to an address on the domain (for example `Zendropship <hello@zendropship.io>`) and verify the domain with your email provider. Owner stores send under the store's name in the email body; the sending address stays the platform's.
+
+Custom domains for individual stores (`shop.maya.com`) are not supported yet — the `Store.customDomain` column is reserved for it.
 
 ## 8. Post-deploy checks
 
 - `/` loads and the response carries `Content-Security-Policy` and `Strict-Transport-Security` headers.
-- `/robots.txt` and `/sitemap.xml` list your production domain.
+- `/robots.txt` and `/sitemap.xml` list your production domain, and `https://demo.zendropship.io/sitemap.xml` lists the demo store's own URLs.
+- `https://demo.zendropship.io` shows the demo store; opening a test store at `/start` makes `https://<its-address>.zendropship.io` live immediately, and **Admin → Stores** lists it.
 - Signed out, `/account` and `/admin` redirect to `/login`.
 - Registration sends a verification email that arrives and links to your domain.
 - A test-mode order is paid via webhook, appears in **Admin → Orders**, and the confirmation email arrives.

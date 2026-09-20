@@ -69,8 +69,8 @@ export function PurchasePanel({ product, freeShippingThresholdCents, returnWindo
     return () => observer.disconnect();
   }, []);
 
-  const effective = variant ? (variant.salePriceCents !== null && variant.salePriceCents < variant.priceCents ? variant.salePriceCents : variant.priceCents) : product.priceCents;
-  const compareAt = variant ? (variant.salePriceCents !== null && variant.salePriceCents < variant.priceCents ? variant.priceCents : null) : product.compareAtPriceCents;
+  const effective = variant ? variant.priceCents : product.priceCents;
+  const compareAt = variant ? variant.compareAtCents : product.compareAtPriceCents;
   const maxQuantity = variant?.stockQuantity !== null && variant?.stockQuantity !== undefined ? Math.max(1, Math.min(20, variant.stockQuantity)) : 20;
 
   const isValueAvailable = (attributeId: string, valueId: string) => {

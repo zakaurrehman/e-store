@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { seedAccessControl } from "../../db/seed/access-control";
 import { seedSettings } from "../../db/seed/settings";
 import { seedShippingAndTax } from "../../db/seed/shipping";
+import { seedPlatformStore } from "../../db/seed/stores";
 import { addItem, createGuestCart } from "@/features/cart/service";
 import { saveProduct } from "@/features/catalog/service";
 import type { PlaceOrderInput } from "@/features/checkout/schemas";
@@ -28,6 +29,12 @@ export async function resetDatabase() {
   await seedAccessControl();
   await seedSettings();
   await seedShippingAndTax();
+  await seedPlatformStore();
+}
+
+/** The store integration tests shop in (the platform store created by resetDatabase). */
+export async function testStore() {
+  return db.store.findFirstOrThrow({ where: { ownerId: null }, orderBy: { createdAt: "asc" } });
 }
 
 const shortId = () => randomUUID().slice(0, 8);
@@ -51,7 +58,7 @@ export async function createProduct(options: { name?: string; priceCents?: numbe
 }
 
 export async function guestCartWith(items: Array<{ variantId: string; quantity: number }>) {
-  const { cart } = await createGuestCart();
+  const { cart } = await createGuestCart((await testStore()).id);
   for (const item of items) await addItem(cart.id, item.variantId, item.quantity);
   return cart;
 }

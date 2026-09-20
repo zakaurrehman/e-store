@@ -1,13 +1,15 @@
 # Architecture
 
-Zendropship is a single Next.js 16 application (App Router, Turbopack, Cache Components) backed by PostgreSQL through Prisma 7. There is no separate API service: pages and server actions call feature services directly, and Route Handlers exist only where an HTTP endpoint is required (webhooks, cron, uploads, exports, media, search suggestions).
+Zendropship is a multi-tenant dropshipping platform in a single Next.js 16 application (App Router, Turbopack, Cache Components) backed by PostgreSQL through Prisma 7. There is no separate API service: pages and server actions call feature services directly, and Route Handlers exist only where an HTTP endpoint is required (webhooks, cron, uploads, exports, media, search suggestions).
 
 ## Repository layout
 
 ```
 src/
   app/                  routes
-    (store)/            storefront, account, checkout (shared store layout)
+    (platform)/         platform site on the base domain: landing, /catalog, /start (open a store), sign-in, legal pages
+    s/[store]/          a store's storefront, account and checkout — reached through the proxy rewrite, never directly
+    dashboard/          store owner's dashboard (layout requires a session with a store)
     admin/              admin area (layout requires a staff session)
     api/                route handlers: payments/webhooks, cron, admin media & export, search suggestions
     media/[...key]/     serves locally stored media
@@ -15,7 +17,7 @@ src/
   server/               infrastructure: db, env, auth, security, payments, storage, email/notifications, jobs, audit
   components/           UI: ui/ primitives, store/, admin/, brand/, seo/
   lib/, utils/          client-safe helpers (permissions catalogue, money, slugs, countries, action state)
-  proxy.ts              optimistic auth gate for /account and /admin
+  proxy.ts              tenancy (host → platform or store) and the optimistic auth gate
 db/                     schema.prisma, migrations, seed
 scripts/                local database, importer CLI, jobs runner, QA scripts
 tests/                  Vitest unit and integration suites
@@ -24,9 +26,18 @@ e2e/                    Playwright suite
 
 Client components import only from `lib/`, `utils/`, `components/` and client-safe type modules (for example `features/cart/types.ts`). Server-only modules import `server-only`, so a mistaken client import fails the build instead of shipping database code to the browser.
 
+## Tenancy
+
+- **One deployment, many stores.** `src/proxy.ts` classifies each request's host (`src/lib/tenancy.ts`): the base domain and `www` are the platform site; `<slug>.<base domain>` is a store and is rewritten to `/s/<slug>/…`, so every storefront route receives the store as the `[store]` param. Reserved and malformed subdomains go to the platform site. `x-forwarded-host` wins over `Host`, because Next.js re-fetches server-action redirect targets from its own origin and passes the visitor's host in that header. On development, stores are at `<slug>.localhost:<port>`.
+- **Store context.** Pages resolve the store with `storeFromParams` (`features/stores/route.ts`); server actions and route handlers resolve it from the host with `getCurrentStore` (`features/stores/current.ts`). A missing or suspended store renders the not-found page.
+- **What is per store.** `StoreProduct` rows are the store's shelf (active flag, optional markup or fixed price). Catalogue queries take a `CatalogScope` (`null` = the platform catalogue, or the store's id and pricing rule) and filter to the shelf; carts (`Cart.storeId`, one per customer per store), orders (`Order.storeId`, `OrderItem.unitCostCents`), coupons (`Coupon.storeId`; platform coupons only work in the platform store) and customer sign-ups (`User.registeredStoreId`) carry the store.
+- **What is shared.** Products, variants, stock, categories, brands, reviews, shipping zones, tax, CMS pages and fulfilment belong to the platform. User accounts are platform-wide, but sessions and bags are per host because cookies are.
+- **Pricing** (`features/stores/pricing.ts`, pure and shared with the client): a variant has a wholesale `costCents` and a suggested `priceCents`/`salePriceCents`. A store sells at the suggested price (default) or at wholesale plus its markup, rounded to .99; a product can override with its own markup or a fixed price. Carts and orders are always priced this way on the server; listings sort and filter by the suggested price.
+- **Owners.** `/start` creates a `STORE_OWNER` account and its `Store` in one transaction (`features/stores/onboarding.ts`). Every dashboard page calls `requireStoreOwner`, and every owner action calls `assertStoreOwner` and passes the owner's id to the store service, which refuses stores the caller does not own.
+
 ## Rendering and caching
 
-- **Cache Components** is enabled. Catalogue, CMS and settings reads are `"use cache"` functions tagged by entity (`catalog`, `product:<slug>`, `reviews:<productId>`, CMS and settings tags) with `cacheLife`. Pages prerender a static shell and stream per-request parts inside `<Suspense>`.
+- **Cache Components** is enabled. Catalogue, CMS and settings reads are `"use cache"` functions tagged by entity (`catalog`, `product:<slug>`, `reviews:<productId>`, CMS and settings tags) with `cacheLife`. Store-scoped reads also carry `store-catalog:<storeId>`, and the store record `store:<slug>`; owner actions update those two tags, so their changes show in their store immediately. Pages prerender a static shell and stream per-request parts inside `<Suspense>`.
 - **Invalidation.** Admin and customer server actions call `updateTag`, so the person who made a change sees it on their next request. Stock and sales changes that also happen in webhooks, cron and order processing call `revalidateTag(tag, "max")` (stale-while-revalidate) through `features/catalog/invalidate.ts`.
 - Request-only endpoints (`/api/cron`, `/sitemap.xml`) call `connection()`, so nothing touches secrets or live data at build time.
 
@@ -34,8 +45,8 @@ Client components import only from `lib/`, `utils/`, `components/` and client-sa
 
 - Passwords are hashed with Argon2id. Sessions are database rows keyed by the SHA-256 of an opaque, httpOnly cookie token (`__Host-` prefixed in production), valid for 30 days.
 - Sign-in has per-account lockout (10 failures → 15 minutes) and per-IP rate limits; unknown emails and wrong passwords return the same error.
-- Roles (`SUPER_ADMIN`, `ADMIN`, `MANAGER`, `CUSTOMER`, plus custom roles) map to fine-grained permissions (`src/lib/permissions.ts`). Every admin page calls `requirePagePermission`, and every admin action or route handler calls `assertPermission`. Staff can only manage roles ranked below their own and grant permissions they hold.
-- `src/proxy.ts` redirects visitors without a session cookie away from `/account` and `/admin` with a real 307. It never trusts the cookie; the server checks above remain authoritative.
+- Roles (`SUPER_ADMIN`, `ADMIN`, `MANAGER`, `STORE_OWNER`, `CUSTOMER`, plus custom roles) map to fine-grained permissions (`src/lib/permissions.ts`). Every admin page calls `requirePagePermission`, and every admin action or route handler calls `assertPermission`. Staff can only manage roles ranked below their own and grant permissions they hold.
+- `src/proxy.ts` redirects visitors without a session cookie away from `/account` (stores), `/dashboard` and `/admin` (platform) with a real 307. It never trusts the cookie; the server checks above remain authoritative.
 
 ## Orders and payments
 
@@ -49,7 +60,7 @@ Client components import only from `lib/`, `utils/`, `components/` and client-sa
 
 - **Search** — a `SearchProvider` interface; the PostgreSQL implementation uses a weighted `tsvector` document per product plus trigram similarity for typo tolerance and "did you mean" corrections.
 - **Media** — uploads are validated, re-encoded to WebP with `sharp` (metadata stripped), de-duplicated by checksum and stored through a `StorageProvider` (local disk served from `/media`, Vercel Blob, or S3-compatible storage).
-- **Notifications** — domain events create in-app notifications and an email delivery outbox with retries and backoff. Email drivers: `log`, `smtp`, `resend`. SMS and push are provider interfaces only.
+- **Notifications** — domain events create in-app notifications and an email delivery outbox with retries and backoff. Customer emails use the store's name and support address and link to the store's own domain; each new order also emails the store's owner. Email drivers: `log`, `smtp`, `resend`. SMS and push are provider interfaces only.
 - **Background jobs** — `GET /api/cron` (bearer `CRON_SECRET`) or `npm run jobs:run`: email retries, unpaid-order expiry, cleanup of expired sessions, tokens, guest carts, rate-limit buckets and old webhook events.
 - **Rate limiting** — fixed windows in PostgreSQL (single atomic upsert, UTC timestamps), or in memory for tests; fails open on infrastructure errors.
 - **Import** — source adapters (CSV, WooCommerce Store API) feed one idempotent runner that maps every external record through `ImportRecord`. See IMPORT_GUIDE.md.

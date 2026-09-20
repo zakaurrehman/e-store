@@ -7,6 +7,7 @@ import { OrderStatus, ProductStatus } from "@/generated/prisma/enums";
 import { db } from "@/server/db";
 import { getPaymentProvider } from "@/server/payments/registry";
 import { SandboxProvider } from "@/server/payments/providers/sandbox";
+import { seedPlatformStore } from "./stores";
 
 /**
  * Development-only demo data for QA: customers, orders across the fulfilment timeline and approved reviews.
@@ -67,6 +68,7 @@ export async function seedDemoData() {
     console.log("• demo: no super admin to act as staff (set SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD) — skipped");
     return;
   }
+  const store = await seedPlatformStore();
   const variants = await db.productVariant.findMany({
     where: { isActive: true, stockQuantity: { gte: 6 }, product: { status: ProductStatus.ACTIVE, deletedAt: null } },
     select: { id: true, productId: true },
@@ -108,7 +110,7 @@ export async function seedDemoData() {
     for (let orderNumber = 0; orderNumber < orderCount; orderNumber++) {
       const [method] = await getShippingOptions(person.country);
       if (!method) continue;
-      const cart = await getOrCreateUserCart(user.id);
+      const cart = await getOrCreateUserCart(user.id, store.id);
       const lineCount = 1 + Math.floor(random() * 2);
       const chosen = new Set<string>();
       for (let line = 0; line < lineCount; line++) chosen.add(pick(variants).id);
