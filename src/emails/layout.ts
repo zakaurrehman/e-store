@@ -62,6 +62,11 @@ export function keyValueRows(rows: Array<[string, string, { strong?: boolean }?]
     .join("")}</table>`;
 }
 
+/** The customer's own words, set apart from the reply above them. */
+export function quote(text: string) {
+  return `<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:8px 0 0;"><tr><td style="padding:14px 16px;background:${COLORS.canvas};border-radius:8px;font:14px/1.6 ${FONT};color:${COLORS.muted};white-space:pre-line;">${escapeHtml(text)}</td></tr></table>`;
+}
+
 export function divider() {
   return `<div style="height:1px;background:${COLORS.line};margin:24px 0;"></div>`;
 }

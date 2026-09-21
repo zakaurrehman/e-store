@@ -23,13 +23,14 @@ PostgreSQL 15 or newer, accessed through Prisma 7 with the `@prisma/adapter-pg` 
 | --- | --- |
 | Identity & access | `User` (`registeredStoreId` = the store a customer signed up in), `Role`, `Permission`, `RolePermission`, `Session`, `VerificationToken`, `RateLimitBucket`, `Address`, `AuditLog` |
 | Stores | `Store` (unique `slug` = subdomain; one per owner, `ownerId` null for the platform's demo store; status, pricing rule, branding, reserved `customDomain` and `stripeAccountId`), `StoreProduct` (the store's shelf: active flag, optional markup or fixed price; unique per store and product) |
+| Store wallet | `WalletEntry` (append-only ledger; the balance is its sum; one earning and one reversal per order enforced by a unique index), `Payout` (withdrawal requested by an owner, marked paid or declined by staff), `Deposit` (transfer an owner declares; credited only when staff confirm it) |
 | Catalogue | `Product`, `ProductVariant`, `VariantOptionValue`, `ProductImage`, `ProductCategory`, `ProductAttributeValue`, `ProductTag`, `Category` (tree), `Brand`, `Collection` (manual or rule-based), `CollectionProduct`, `Tag`, `Attribute`, `AttributeValue`, `MediaAsset` |
 | Inventory & search | `InventoryMovement`, `SearchDocument` (tsvector + trigram), `SearchQuery`, `SearchHistory` |
 | Shopping | `Cart` (belongs to a store; unique per customer and store), `CartItem`, `Wishlist`, `WishlistItem`, `RecentlyViewed` |
 | Orders & payments | `Order` (belongs to a store; unique `idempotencyKey`), `OrderItem` (keeps `unitPriceCents` and the wholesale `unitCostCents`), `OrderEvent`, `Payment` (unique per provider reference), `PaymentTransaction`, `WebhookEvent` (unique per provider event id), `Shipment` |
 | Shipping & tax | `ShippingZone` (country list, `*` = rest of world), `ShippingMethod`, `TaxRate` |
 | Promotions & reviews | `Coupon` (`storeId` null = platform coupon, usable only in the platform store), `CouponProduct`, `CouponCategory`, `CouponCustomer`, `CouponRedemption`, `Review`, `ReviewImage` |
-| Content & messaging | `Setting`, `Page`, `FaqItem`, `Banner`, `HomeSection`, `Menu`, `MenuItem`, `ContactMessage`, `NewsletterSubscriber`, `Notification`, `NotificationDelivery` |
+| Content & messaging | `Setting`, `Page`, `FaqItem`, `Banner`, `HomeSection`, `Menu`, `MenuItem`, `ContactMessage` (belongs to the store it was sent to; null = Zendropship itself), `ContactReply` (the answers sent back), `NewsletterSubscriber`, `Notification`, `NotificationDelivery` |
 | Import | `ImportRun`, `ImportRecord` |
 
 ## Commands
@@ -58,6 +59,8 @@ PostgreSQL 15 or newer, accessed through Prisma 7 with the `@prisma/adapter-pg` 
 8. Demo orders and reviews in the demo store — only with `SEED_DEMO_DATA=true`, never in production
 
 For production, run the seed with `SEED_SKIP_CATALOG=true`, then import your own catalogue with real wholesale costs.
+
+Two later migrations extend this: `20260921090000_store_support` gives contact messages a store and adds the reply thread (existing messages go to the platform store), and `20260921120000_store_wallet` adds the wallet, crediting every order whose payment had already been collected so existing owners start with the right balance.
 
 The `stores` migration (`20260919120407_stores`) upgrades a database from the single-store version in place: it creates the store-owner role and the `stores.*` permissions, creates the demo store with every existing product, assigns existing carts and orders to it, snapshots wholesale cost on existing order lines, and fills missing variant costs at 55% of the selling price.
 

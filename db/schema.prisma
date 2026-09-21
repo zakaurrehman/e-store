@@ -88,6 +88,12 @@ model User {
   tokens            VerificationToken[]
   addresses         Address[]
   carts             Cart[]
+  contactReplies    ContactReply[]
+  walletEntries     WalletEntry[]       @relation("WalletEntryAuthor")
+  payoutsRequested  Payout[]            @relation("PayoutRequester")
+  payoutsProcessed  Payout[]            @relation("PayoutProcessor")
+  depositsCreated   Deposit[]           @relation("DepositCreator")
+  depositsConfirmed Deposit[]           @relation("DepositConfirmer")
   wishlist          Wishlist?
   orders            Order[]
   reviews           Review[]
@@ -615,6 +621,10 @@ model Store {
   orders            Order[]
   carts             Cart[]
   coupons           Coupon[]
+  messages          ContactMessage[]
+  walletEntries     WalletEntry[]
+  payouts           Payout[]
+  deposits          Deposit[]
   signups           User[]           @relation("StoreSignups")
 
   @@index([status])
@@ -789,6 +799,7 @@ model Order {
   shipments          Shipment[]
   couponRedemption   CouponRedemption?
   inventoryMoves     InventoryMovement[]
+  walletEntries      WalletEntry[]
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
@@ -1318,17 +1329,35 @@ enum ContactStatus {
 }
 
 model ContactMessage {
-  id          String        @id @default(cuid())
+  id          String         @id @default(cuid())
+  /// The store the customer wrote to; null for messages sent to Zendropship itself
+  storeId     String?
   name        String
   email       String
   subject     String
   message     String
   orderNumber String?
-  status      ContactStatus @default(NEW)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  status      ContactStatus  @default(NEW)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  store       Store?         @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  replies     ContactReply[]
 
   @@index([status, createdAt])
+  @@index([storeId, createdAt])
+}
+
+/// A reply sent to the customer from the owner dashboard or the admin, kept as the conversation history.
+model ContactReply {
+  id        String         @id @default(cuid())
+  messageId String
+  authorId  String?
+  body      String
+  createdAt DateTime       @default(now())
+  message   ContactMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  author    User?          @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([messageId, createdAt])
 }
 
 model NewsletterSubscriber {
@@ -1396,4 +1425,113 @@ model ImportRecord {
 
   @@unique([source, externalType, externalId])
   @@index([entityId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Store wallet: what Zendropship owes each owner, and how it was settled
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum WalletEntryType {
+  /// Margin earned on an order, credited once the customer's money has been collected
+  ORDER_EARNING
+  /// Reverses an earning when the order is refunded or cancelled
+  ORDER_REVERSAL
+  /// Money paid out to the owner (held when a withdrawal is requested)
+  PAYOUT
+  /// A payout that was rejected or cancelled, returned to the balance
+  PAYOUT_REVERSAL
+  /// Funds the owner transferred to Zendropship, credited once receipt is confirmed
+  DEPOSIT
+  /// Manual correction made by staff, always with a reason
+  ADJUSTMENT
+}
+
+/// Append-only ledger. The balance is the sum of its amounts; nothing else may change it.
+model WalletEntry {
+  id          String          @id @default(cuid())
+  storeId     String
+  type        WalletEntryType
+  /// Positive credits the owner, negative debits them
+  amountCents Int
+  description String
+  orderId     String?
+  payoutId    String?
+  depositId   String?
+  createdById String?
+  createdAt   DateTime        @default(now())
+  store       Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  order       Order?          @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  payout      Payout?         @relation(fields: [payoutId], references: [id], onDelete: SetNull)
+  deposit     Deposit?        @relation(fields: [depositId], references: [id], onDelete: SetNull)
+  createdBy   User?           @relation("WalletEntryAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  /// One earning and one reversal per order, so replayed events cannot double-credit
+  @@unique([orderId, type])
+  @@index([storeId, createdAt])
+}
+
+enum PayoutStatus {
+  REQUESTED
+  PAID
+  REJECTED
+}
+
+enum PayoutMethod {
+  BANK_TRANSFER
+  PAYPAL
+}
+
+/// A withdrawal the owner asked for. The amount leaves the balance when requested and returns if rejected.
+model Payout {
+  id            String        @id @default(cuid())
+  storeId       String
+  amountCents   Int
+  status        PayoutStatus  @default(REQUESTED)
+  method        PayoutMethod
+  /// Where the money should go: IBAN/account details or a PayPal address, as typed by the owner
+  destination   String
+  note          String?
+  /// Staff note or bank reference recorded when the transfer was made or refused
+  reference     String?
+  requestedById String?
+  processedById String?
+  processedAt   DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  store         Store         @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  requestedBy   User?         @relation("PayoutRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  processedBy   User?         @relation("PayoutProcessor", fields: [processedById], references: [id], onDelete: SetNull)
+  entries       WalletEntry[]
+
+  @@index([storeId, createdAt])
+  @@index([status, createdAt])
+}
+
+enum DepositStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+}
+
+/// Money the owner says they have transferred to Zendropship. Credited only once staff confirm it arrived.
+model Deposit {
+  id            String        @id @default(cuid())
+  storeId       String
+  amountCents   Int
+  status        DepositStatus @default(PENDING)
+  /// The owner's transfer reference, so staff can match it against the bank statement
+  reference     String?
+  note          String?
+  createdById   String?
+  confirmedById String?
+  confirmedAt   DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  store         Store         @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  createdBy     User?         @relation("DepositCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  confirmedBy   User?         @relation("DepositConfirmer", fields: [confirmedById], references: [id], onDelete: SetNull)
+  entries       WalletEntry[]
+
+  @@index([storeId, createdAt])
+  @@index([status, createdAt])
 }

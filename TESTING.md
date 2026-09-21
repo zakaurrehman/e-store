@@ -27,6 +27,7 @@ Covered:
 - **Authentication** — Argon2id hashing, duplicate email and weak password rejection, identical errors for unknown email and wrong password, lockout, disabled accounts.
 - **Import** — dry run writes nothing; re-imports skip unchanged records and update changed ones in place.
 - **RBAC** — seeded role permissions (super admin, admin without staff management, manager, customer).
+- **Wallet** — an owner is credited their margin once the customer's payment is collected, and only once even if the payment webhook is replayed; refunds and cancellations reverse it; cash on delivery is credited on delivery; earnings are summarised for today, this week and this month with a running balance in the ledger; a withdrawal is held against the balance, returns when declined and stays gone when paid; a deposit credits nothing until staff confirm it; balances never cross between stores and the platform store earns none.
 - **Stores** — opening a store creates a store-owner account and a unique address (reserved addresses and duplicate emails refused, one store per owner); new catalogue products join the platform store, while an owner's store sells only what the owner added; the store's markup and per-product fixed prices drive the bag, and orders keep the store, price and wholesale cost; hidden products can't be bought; platform coupons only work in the platform store and a store's coupon only in that store; suspended stores refuse changes; owners can't change other owners' stores.
 
 ## End-to-end tests — `e2e`
@@ -41,7 +42,7 @@ Playwright drives Chromium through 23 tests. Storefront specs run in the demo st
 | `checkout.spec.ts` | Checkout, sandbox payment, order creation, order tracking; declined payment and retry; coupon created in the admin and applied in the bag |
 | `account.spec.ts` | Register (with email verification), review submitted and approved, logout, login |
 | `admin.spec.ts` | Product create, product edit (checked on the storefront), inventory update with ledger, order management |
-| `platform.spec.ts` | Landing and catalogue with cost/price/margin; opening a store from a product; adding products and setting a markup (checked in the store, including a product the store doesn't sell); a shopper paying in the owner's store with emails in the store's name and an owner alert; the owner's order view with margin; bags kept separate between stores; the admin suspending and reopening the store |
+| `platform.spec.ts` | Landing and catalogue with cost/price/margin; opening a store from a product; adding products and setting a markup (checked in the store, including a product the store doesn't sell); a shopper paying in the owner's store with emails in the store's name and an owner alert; the owner's order view with margin; the balance showing the earning, a withdrawal requested by the owner and marked paid by staff; a customer message answered from Customer service with the reply emailed; bags kept separate between stores; the admin suspending and reopening the store |
 
 ### Running
 

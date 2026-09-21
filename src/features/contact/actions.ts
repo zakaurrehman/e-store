@@ -3,6 +3,7 @@
 import { after } from "next/server";
 import { z } from "zod";
 import { emailSchema } from "@/features/auth/schemas";
+import { getCurrentStore } from "@/features/stores/current";
 import { failure, success, zodFailure, type ActionState } from "@/server/actions";
 import { db } from "@/server/db";
 import { dispatchNotification, sendDeliveries } from "@/server/notifications";
@@ -36,7 +37,9 @@ export async function submitContactAction(_state: ActionState, formData: FormDat
   const limit = await rateLimit("contact", meta.ipAddress);
   if (!limit.success) return failure(retryAfterMessage(limit.resetAt));
   const { website: _website, ...data } = parsed.data;
-  const message = await db.contactMessage.create({ data });
+  // On a store host the message belongs to that store's owner; on the platform site it is for Zendropship.
+  const store = await getCurrentStore();
+  const message = await db.contactMessage.create({ data: { ...data, storeId: store?.id ?? null } });
   after(async () => sendDeliveries(await dispatchNotification({ type: "contact.received", messageId: message.id })));
   return success("Thanks — we've received your message and will reply within one business day.");
 }

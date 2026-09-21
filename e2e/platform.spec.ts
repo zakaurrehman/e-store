@@ -85,7 +85,13 @@ test.describe.serial("dropshipping platform", () => {
     const email = `e2e.buyer.${stamp}@example.com`;
     await page.goto(`/p/${FIRST_PRODUCT}`);
     await page.getByRole("button", { name: "Add to bag" }).first().click();
-    await expect(page.getByRole("dialog").getByText("Your bag")).toBeVisible();
+    const bag = page.getByRole("dialog");
+    await expect(bag.getByText("Your bag (1)")).toBeVisible();
+    // Three units, so the owner's margin clears the minimum withdrawal in the next test.
+    await bag.getByRole("button", { name: /Increase quantity/i }).first().click();
+    await expect(bag.getByText("Your bag (2)")).toBeVisible();
+    await bag.getByRole("button", { name: /Increase quantity/i }).first().click();
+    await expect(bag.getByText("Your bag (3)")).toBeVisible();
     await fillCheckout(page, email);
     await page.getByRole("button", { name: "Continue to payment" }).click();
     await page.waitForURL(/\/checkout\/sandbox\//);
@@ -111,6 +117,67 @@ test.describe.serial("dropshipping platform", () => {
     await expect(owner.getByText("Your margin", { exact: true })).toBeVisible();
     await owner.goto("/dashboard");
     await expect(owner.getByText("Orders").first()).toBeVisible();
+  });
+
+  test("the balance shows the margin earned, and a withdrawal is held then paid", async ({ browser }) => {
+    await owner.goto("/dashboard/balance");
+    const balance = owner.locator("p", { hasText: /^\$\d/ }).first();
+    await expect(balance).toBeVisible();
+    const earned = (await balance.innerText()).trim();
+    expect(earned).not.toBe("$0.00");
+    // The order's earning is listed in the ledger and counted in today's earnings.
+    await expect(owner.getByText(`Earnings from order ${orderNumber}`)).toBeVisible();
+    await expect(owner.getByRole("cell", { name: "Today" }).or(owner.getByText("Today", { exact: true })).first()).toBeVisible();
+
+    await owner.getByRole("button", { name: "Withdraw" }).first().click();
+    const dialog = owner.getByRole("dialog");
+    await dialog.getByLabel("Amount (USD)").fill("20");
+    await dialog.getByText("PayPal", { exact: true }).click();
+    await dialog.getByLabel("PayPal email address").fill(ownerEmail);
+    await dialog.getByRole("button", { name: "Request withdrawal" }).click();
+    await expect(toast(owner, /Withdrawal of \$20.00 requested/)).toBeVisible();
+    await expect(owner.getByText("Being sent").first()).toBeVisible();
+
+    // Staff send the money and mark it paid; the amount stays out of the balance.
+    const adminContext = await browser.newContext({ storageState: ADMIN_STATE, baseURL: PLATFORM_URL });
+    const admin = await adminContext.newPage();
+    await admin.goto("/admin/payouts");
+    const row = admin.locator("tbody tr", { hasText: storeName }).first();
+    await expect(row).toContainText("$20.00");
+    await row.getByRole("button", { name: "Mark paid" }).click();
+    await admin.getByRole("dialog").filter({ visible: true }).getByRole("button", { name: "Mark as paid" }).click();
+    await expect(toast(admin, /marked as paid/)).toBeVisible();
+    await adminContext.close();
+
+    await owner.reload();
+    await expect(owner.getByText("Paid").first()).toBeVisible();
+    await expect(owner.getByText("Withdrawal", { exact: true }).first()).toBeVisible();
+  });
+
+  test("customer service: a message from the store reaches the owner, who replies by email", async ({ browser }) => {
+    const shopper = await browser.newContext({ baseURL: storeUrl });
+    const page = await shopper.newPage();
+    const customerEmail = `e2e.support.${stamp}@example.com`;
+    await page.goto("/contact");
+    await page.locator("#field-name").fill("Sam Shopper");
+    await page.locator("#field-email").fill(customerEmail);
+    await page.locator("#field-subject").fill(`Where is my parcel ${stamp}`);
+    await page.locator("#contact-message").fill("Hello, I ordered yesterday and would like to know when it ships. Thank you!");
+    await page.getByRole("button", { name: /Send/ }).click();
+    await expect(page.getByText(/we.ve received your message/i).first()).toBeVisible();
+    await shopper.close();
+
+    await owner.goto("/dashboard/support");
+    await owner.getByRole("link", { name: new RegExp(`Where is my parcel ${stamp}`) }).click();
+    await expect(owner.getByText("I ordered yesterday")).toBeVisible();
+    await owner.getByLabel(/Reply to Sam/).fill("Hi Sam — your parcel leaves our warehouse today and you'll get tracking by email.");
+    await owner.getByRole("button", { name: "Send reply" }).click();
+    await expect(toast(owner, /Reply sent/)).toBeVisible();
+    await expect(owner.getByText(/your parcel leaves our warehouse today/)).toBeVisible();
+
+    const reply = await waitForMail((mail) => mail.to === customerEmail && mail.subject.startsWith("Re: Where is my parcel"));
+    expect(reply.text).toContain("leaves our warehouse today");
+    expect(reply.text).toContain(storeName);
   });
 
   test("stores are separate: the demo store's bag and orders never show in the owner's store", async ({ browser }) => {

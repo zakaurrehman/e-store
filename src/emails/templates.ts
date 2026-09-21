@@ -6,6 +6,7 @@ import {
   escapeHtml,
   keyValueRows,
   paragraph,
+  quote,
   renderLayout,
   sectionHeading,
   smallPrint,
@@ -275,6 +276,25 @@ export function cancellationEmail(brand: EmailBrand, input: { order: OrderEmailD
         button("View order", input.orderUrl),
     }),
     text: `${greeting(order.customerFirstName)}\n\nOrder ${order.number} has been cancelled. ${refundLine}\n${input.orderUrl}\n\n— ${brand.storeName}`,
+  };
+}
+
+/** A reply from a store (or Zendropship) to a customer's support message. */
+export function supportReplyEmail(brand: EmailBrand, input: { customerName: string; subject: string; reply: string; original: string }): RenderedEmail {
+  return {
+    subject: `Re: ${input.subject}`,
+    html: renderLayout({
+      brand,
+      preheader: input.reply.slice(0, 120),
+      heading: `Re: ${input.subject}`,
+      bodyHtml:
+        paragraph(`Hi ${input.customerName},`) +
+        input.reply.split(/\n{2,}/).map(paragraph).join("") +
+        sectionHeading("Your message") +
+        quote(input.original),
+      footerNote: "Reply to this email to continue the conversation.",
+    }),
+    text: `Hi ${input.customerName},\n\n${input.reply}\n\n— ${brand.storeName}\n\n---\nYour message:\n${input.original}`,
   };
 }
 

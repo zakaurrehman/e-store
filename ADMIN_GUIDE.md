@@ -21,6 +21,7 @@ Managers cannot delete or import products, refund or cancel orders, change custo
 | Dashboard / Analytics | Revenue, orders, customers, top products and categories, low stock, recent orders; 7 / 30 / 90-day and 12-month ranges; each chart has a table view | `dashboard.view` / `analytics.view` |
 | Notifications | New orders, payment failures, low stock, new reviews and messages | any staff |
 | Stores | Every store with its owner, products, orders and sales; suspend and reopen | `stores.view`, `stores.manage` |
+| Withdrawals | Owners' balances: withdrawals to send and deposits to confirm | `stores.view`, `stores.manage` |
 | Orders | Every store's orders; search and filter (including by store); order detail with timeline, payment, shipment and notes | `orders.view` |
 | Customers | Search accounts; history, addresses, reviews, activity | `customers.view` |
 | Discounts | Coupon codes | `discounts.manage` |
@@ -46,6 +47,16 @@ Every store opened on the platform is listed under **Stores**, newest first, wit
 **Wholesale cost** (the variant's *cost* field) is what an owner pays when their store sells the item, and the catalogue shows it to prospective owners. Keep it accurate: it decides every owner's margin. **Price** and **sale price** are the suggested retail prices stores use by default. Platform coupons (created under **Discounts**) work only in the platform store, so they never reduce an owner's margin.
 
 Fulfilment is the same for every store: orders from all stores arrive in **Orders** and move through the status flow below; owners see the status and tracking in their dashboard, and their customers get the emails in the store's name.
+
+## Withdrawals and deposits
+
+Each owner has a balance: their margin on orders whose payment has been collected, minus what has been paid out. It is an append-only ledger — no screen writes a balance directly.
+
+- **Withdrawals to send.** An owner asks to withdraw; the amount leaves their balance straight away. Send the money by bank transfer or PayPal to the details shown, then **Mark paid** (add the bank reference if you have one). **Decline** returns the amount to their balance and tells them why.
+- **Deposits to confirm.** An owner records a transfer they say they have made. **Confirm only when the money is in the Zendropship account** — confirming is what credits their balance. **Decline** credits nothing.
+- **Owed to owners** at the top is the total of every store balance, which is the money the platform holds on their behalf.
+
+Earnings are credited automatically: online payments when the order is paid, cash on delivery when it is delivered, and refunds or cancellations reverse them. Customer messages sent from a store's contact page go to that store's owner (**Customer service** in their dashboard); messages sent from the Zendropship site come to **Messages** here.
 
 ## Orders
 

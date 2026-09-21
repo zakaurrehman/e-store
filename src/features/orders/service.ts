@@ -8,6 +8,7 @@ import { calculateTotals } from "@/features/checkout/pricing";
 import { getShippingOptions, getTaxRate } from "@/features/checkout/shipping";
 import type { PlaceOrderInput } from "@/features/checkout/schemas";
 import { loadSettings } from "@/features/settings/service";
+import { creditOrderEarning, reverseOrderEarning } from "@/features/wallet/service";
 import type { AddressSnapshot } from "@/lib/address";
 import { storeUrl } from "@/lib/tenancy";
 import { writeAudit } from "@/server/audit";
@@ -307,6 +308,7 @@ export async function applyPaymentEvent(providerKey: string, event: PaymentEvent
       await recomputeProductSales(items.map((item) => item.productId).filter(Boolean) as string[]);
       await invalidateProducts(items.map((item) => item.productId));
       await checkLowStock(items.map((item) => item.variantId).filter(Boolean) as string[], notifications);
+      await creditOrderEarning(order.id);
       notifications.push(order.status === OrderStatus.PENDING ? { type: "order.confirmed", orderId: order.id } : { type: "order.payment-received", orderId: order.id });
       break;
     }
@@ -397,7 +399,11 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus, ac
     const shipment = await db.shipment.findFirstOrThrow({ where: { orderId }, orderBy: { createdAt: "desc" } });
     notifications.push({ type: "order.shipped", orderId, shipmentId: shipment.id });
   }
-  if (status === OrderStatus.DELIVERED) notifications.push({ type: "order.delivered", orderId });
+  if (status === OrderStatus.DELIVERED) {
+    // Cash on delivery is collected by the courier, so the owner earns it once the parcel arrives.
+    await creditOrderEarning(orderId);
+    notifications.push({ type: "order.delivered", orderId });
+  }
   return notifications;
 }
 
@@ -444,6 +450,7 @@ async function recordRefund(paymentId: string, amountCents: number, transactionI
     data: { refundedCents: orderRefunded, paymentStatus: orderRefunded >= payment.order.totalCents ? PaymentStatus.REFUNDED : PaymentStatus.PARTIALLY_REFUNDED },
   });
   await addEvent(client, payment.orderId, OrderEventType.REFUND, `Refunded ${(amountCents / 100).toFixed(2)} ${payment.currency} — ${reason}`, { actorId, data: { amountCents, transactionId } });
+  await reverseOrderEarning(payment.orderId, "refunded");
   notifications.push({ type: "order.refunded", orderId: payment.orderId, amountCents });
 }
 
@@ -494,6 +501,8 @@ export async function cancelOrder(orderId: string, reason: string, actorId: stri
     await tx.payment.updateMany({ where: { orderId, status: { in: [PaymentStatus.PENDING, PaymentStatus.PROCESSING, PaymentStatus.FAILED] } }, data: { status: PaymentStatus.CANCELLED } });
     await addEvent(tx, orderId, OrderEventType.STATUS_CHANGED, `Order cancelled — ${reason}`, { data: { status: OrderStatus.CANCELLED }, actorId });
   });
+  // A cancelled order earns the owner nothing (a refund has already reversed it when one was issued).
+  await reverseOrderEarning(orderId, "cancelled");
   for (const item of order.items) if (item.productId) await recomputeProductAggregates(item.productId);
   await invalidateProducts(order.items.map((item) => item.productId));
   if (actorId) await writeAudit({ actorId, action: "order.cancel", entityType: "Order", entityId: orderId, summary: `Order ${order.number} cancelled: ${reason}` });

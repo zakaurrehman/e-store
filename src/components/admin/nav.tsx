@@ -18,6 +18,7 @@ import {
   ShoppingBag,
   Star,
   Store,
+  Wallet,
   Tags,
   Ticket,
   Truck,
@@ -49,6 +50,7 @@ const GROUPS: NavGroup[] = [
     title: "Sales",
     items: [
       { href: "/admin/stores", label: "Stores", icon: Store, permission: "stores.view" },
+      { href: "/admin/payouts", label: "Withdrawals", icon: Wallet, permission: "stores.view" },
       { href: "/admin/orders", label: "Orders", icon: ShoppingBag, permission: "orders.view" },
       { href: "/admin/customers", label: "Customers", icon: Users, permission: "customers.view" },
       { href: "/admin/discounts", label: "Discounts", icon: Ticket, permission: "discounts.manage" },

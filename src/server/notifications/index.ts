@@ -31,7 +31,8 @@ export type NotificationEvent =
   | { type: "order.cancelled"; orderId: string; reason?: string; refunded: boolean }
   | { type: "inventory.low-stock"; variantIds: string[] }
   | { type: "review.submitted"; reviewId: string }
-  | { type: "contact.received"; messageId: string };
+  | { type: "contact.received"; messageId: string }
+  | { type: "contact.replied"; messageId: string; replyId: string };
 
 const MAX_ATTEMPTS = 5;
 const BACKOFF_MINUTES = [1, 5, 30, 120, 720];
@@ -131,7 +132,7 @@ async function staffRecipients(permission: Permission) {
 
 type Planned = {
   inApp?: { audience: NotificationAudience; userId: string | null; type: string; title: string; body: string; href?: string; data?: Prisma.InputJsonValue };
-  emails?: Array<{ to: string; template: string; rendered: RenderedEmail }>;
+  emails?: Array<{ to: string; template: string; rendered: RenderedEmail; replyTo?: string }>;
 };
 
 async function plan(event: NotificationEvent): Promise<Planned[]> {
@@ -329,10 +330,52 @@ async function plan(event: NotificationEvent): Promise<Planned[]> {
     }
 
     case "contact.received": {
-      const message = await db.contactMessage.findUniqueOrThrow({ where: { id: event.messageId } });
+      const message = await db.contactMessage.findUniqueOrThrow({ where: { id: event.messageId }, include: { store: { select: { slug: true, name: true, supportEmail: true, ownerId: true } } } });
+      const owner = message.store?.ownerId ? await db.user.findUnique({ where: { id: message.store.ownerId }, select: { id: true, email: true, deletedAt: true } }) : null;
+      // A message written in an owner's store is that owner's to answer; everything else reaches Zendropship staff.
+      if (owner && !owner.deletedAt) {
+        return [
+          {
+            inApp: { audience: NotificationAudience.CUSTOMER, userId: owner.id, type: event.type, title: `Message from ${message.name}`, body: message.subject, href: `/dashboard/support?id=${message.id}` },
+            emails: [
+              {
+                to: owner.email,
+                template: "owner.contact-received",
+                rendered: templates.staffAlertEmail(platformBrand, {
+                  title: `New customer message in ${message.store?.name ?? "your store"}`,
+                  lines: [`${message.name} (${message.email}) wrote: ${message.subject}`, message.message.slice(0, 300)],
+                  href: app(`/dashboard/support?id=${message.id}`),
+                  cta: "Read and reply",
+                }),
+                replyTo: message.email,
+              },
+            ],
+          },
+        ];
+      }
       return [
         {
           inApp: { audience: NotificationAudience.STAFF, userId: null, type: event.type, title: `Message from ${message.name}`, body: message.subject, href: `/admin/messages/${message.id}` },
+        },
+      ];
+    }
+
+    case "contact.replied": {
+      const [message, reply] = await Promise.all([
+        db.contactMessage.findUniqueOrThrow({ where: { id: event.messageId }, include: { store: { select: { slug: true, name: true, supportEmail: true, ownerId: true } } } }),
+        db.contactReply.findUniqueOrThrow({ where: { id: event.replyId } }),
+      ]);
+      const brand = await getBrand(message.store);
+      return [
+        {
+          emails: [
+            {
+              to: message.email,
+              template: event.type,
+              rendered: templates.supportReplyEmail(brand, { customerName: message.name.split(" ")[0] ?? message.name, subject: message.subject, reply: reply.body, original: message.message }),
+              replyTo: brand.supportEmail || undefined,
+            },
+          ],
         },
       ];
     }
@@ -368,7 +411,7 @@ export async function dispatchNotification(event: NotificationEvent): Promise<st
           recipient: email.to,
           template: email.template,
           subject: email.rendered.subject,
-          payload: { html: email.rendered.html, text: email.rendered.text } satisfies Prisma.InputJsonValue,
+          payload: { html: email.rendered.html, text: email.rendered.text, replyTo: email.replyTo } satisfies Prisma.InputJsonValue,
         },
       });
       deliveryIds.push(delivery.id);
@@ -387,7 +430,7 @@ export async function sendDeliveries(ids: string[]) {
     if (claimed.count === 0) continue;
     const delivery = await db.notificationDelivery.findUniqueOrThrow({ where: { id } });
     try {
-      const payload = delivery.payload as { html?: string; text?: string; body?: string; title?: string; href?: string };
+      const payload = delivery.payload as { html?: string; text?: string; body?: string; title?: string; href?: string; replyTo?: string };
       let providerMessageId: string | null = null;
       if (delivery.channel === NotificationChannel.EMAIL) {
         const result = await getEmailProvider().send({
@@ -395,6 +438,7 @@ export async function sendDeliveries(ids: string[]) {
           subject: delivery.subject ?? "",
           html: payload.html ?? "",
           text: payload.text ?? "",
+          replyTo: payload.replyTo,
           tag: delivery.template,
         });
         providerMessageId = result.id;

@@ -4,10 +4,13 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { Card, PageHeader, StatTile } from "@/components/admin/ui";
 import { CopyLink } from "@/components/dashboard/controls";
+import { BalancePanel } from "@/components/dashboard/wallet";
 import { Alert, Skeleton } from "@/components/ui/misc";
 import { ButtonLink } from "@/components/ui/button";
 import { getStoreStats } from "@/features/stores/dashboard";
 import { requireStoreOwner } from "@/features/stores/guards";
+import { getWalletSummary } from "@/features/wallet/queries";
+import { MIN_DEPOSIT_CENTS, MIN_PAYOUT_CENTS } from "@/features/wallet/service";
 import { storeUrl } from "@/lib/tenancy";
 import { env } from "@/server/env";
 import { cn } from "@/utils/cn";
@@ -17,7 +20,7 @@ export const metadata: Metadata = { title: "Overview" };
 
 async function Overview({ searchParams }: PageProps<"/dashboard">) {
   const [{ user, store }, query] = await Promise.all([requireStoreOwner("/dashboard"), searchParams]);
-  const stats = await getStoreStats(store.id);
+  const [stats, wallet] = await Promise.all([getStoreStats(store.id), getWalletSummary(store.id)]);
   const url = storeUrl(store.slug);
   const emailLive = env.EMAIL_DRIVER !== "log";
 
@@ -57,11 +60,13 @@ async function Overview({ searchParams }: PageProps<"/dashboard">) {
         }
       />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <BalancePanel summary={wallet} minimumPayoutCents={MIN_PAYOUT_CENTS} minimumDepositCents={MIN_DEPOSIT_CENTS} supportEmail={store.supportEmail} />
+
+      <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile label="Products live" value={stats.activeProducts} hint={stats.hiddenProducts ? `${stats.hiddenProducts} hidden` : undefined} href="/dashboard/products" />
         <StatTile label="Orders" value={stats.orders} hint={`${stats.recentOrders} in the last 30 days`} href="/dashboard/orders" />
         <StatTile label="Sales" value={formatMoney(stats.revenueCents)} hint={`${stats.customers} customer${stats.customers === 1 ? "" : "s"}`} href="/dashboard/orders" />
-        <StatTile label="Your margin" value={formatMoney(stats.marginCents)} hint="Selling price minus wholesale" />
+        <StatTile label="Your margin" value={formatMoney(stats.marginCents)} hint="Selling price minus wholesale" href="/dashboard/balance" />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
