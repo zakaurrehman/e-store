@@ -10,7 +10,15 @@ import { requirePagePermission } from "@/server/auth/guards";
 
 export const metadata: Metadata = { title: "Store settings" };
 
-const LABELS: Record<SettingsKey, string> = { store: "Store", announcement: "Announcement bar", commerce: "Commerce", seo: "SEO", deposits: "Owner deposits", social: "Social links" };
+const LABELS: Record<SettingsKey, string> = {
+  store: "Store",
+  platform: "Commission & invitations",
+  announcement: "Announcement bar",
+  commerce: "Commerce",
+  seo: "SEO",
+  deposits: "Owner deposits",
+  social: "Social links",
+};
 
 async function Settings({ searchParams }: PageProps<"/admin/settings">) {
   const [, query] = await Promise.all([requirePagePermission("settings.manage", "/admin/settings"), searchParams]);

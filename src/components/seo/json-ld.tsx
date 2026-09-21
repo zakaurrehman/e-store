@@ -25,13 +25,13 @@ export function organizationJsonLd(settings: StoreSettings) {
 }
 
 /** Organisation data for an owner's store (the platform demo store uses organizationJsonLd). */
-export function storeOrganizationJsonLd(store: { name: string; url: string; logoUrl: string | null; supportEmail: string | null }) {
+export function storeOrganizationJsonLd(store: { name: string; url: string; logo: { url: string } | null; supportEmail: string | null }) {
   return {
     "@context": "https://schema.org",
     "@type": "Organization",
     name: store.name,
     url: store.url,
-    ...(store.logoUrl ? { logo: absolute(store.logoUrl, store.url) } : {}),
+    ...(store.logo ? { logo: absolute(store.logo.url, store.url) } : {}),
     ...(store.supportEmail ? { contactPoint: { "@type": "ContactPoint", contactType: "customer service", email: store.supportEmail } } : {}),
   };
 }

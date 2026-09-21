@@ -1,16 +1,22 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { DashboardNav } from "@/components/dashboard/nav";
+import { OrderStatus } from "@/generated/prisma/enums";
 import { requireStoreOwner } from "@/features/stores/guards";
 import { storeUrl } from "@/lib/tenancy";
+import { db } from "@/server/db";
 
 export const metadata: Metadata = { title: { default: "Your store", template: "%s · Zendropship" }, robots: { index: false, follow: false } };
 
 async function DashboardShell({ children }: { children: React.ReactNode }) {
   const { user, store } = await requireStoreOwner("/dashboard");
+  const [support, orders] = await Promise.all([
+    db.contactMessage.count({ where: { storeId: store.id, unreadForStaff: true } }),
+    db.order.count({ where: { storeId: store.id, status: OrderStatus.AWAITING_FUNDS } }),
+  ]);
   return (
     <div className="min-h-dvh bg-canvas">
-      <DashboardNav store={{ name: store.name, url: storeUrl(store.slug), status: store.status }} user={{ name: `${user.firstName} ${user.lastName}`, email: user.email }} />
+      <DashboardNav store={{ name: store.name, url: storeUrl(store.slug), status: store.status }} user={{ name: `${user.firstName} ${user.lastName}`, email: user.email }} badges={{ support, orders }} />
       <div className="lg:pl-60">
         <main className="mx-auto w-full max-w-[80rem] px-4 pb-20 pt-20 sm:px-6 lg:px-8 lg:pt-8">{children}</main>
       </div>

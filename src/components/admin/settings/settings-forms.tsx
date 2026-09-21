@@ -16,7 +16,7 @@ import { cn } from "@/utils/cn";
 
 // ─── Store settings ──────────────────────────────────────────────────────────
 
-const LABELS: Record<string, { label: string; hint?: string; type?: "text" | "textarea" | "number" | "checkbox" | "email" }> = {
+const LABELS: Record<string, { label: string; hint?: string; type?: "text" | "textarea" | "number" | "checkbox" | "email" | "select"; options?: Array<{ value: string; label: string }> }> = {
   name: { label: "Store name" },
   tagline: { label: "Tagline", hint: "Shown in the footer." },
   legalName: { label: "Legal entity name", hint: "Used on invoices and emails." },
@@ -26,6 +26,17 @@ const LABELS: Record<string, { label: string; hint?: string; type?: "text" | "te
   address: { label: "Business address", hint: "Shown in the footer and on invoices." },
   currency: { label: "Currency (ISO code)", hint: "Changing the currency does not convert existing prices." },
   locale: { label: "Locale", hint: "e.g. en-US — controls number and date formatting." },
+  commissionRateBps: { label: "Zendropship commission (basis points)", hint: "1000 = 10%. Applied to every new order in an owner's store; orders already placed keep the rate they were placed under.", type: "number" },
+  commissionBase: {
+    label: "Charged on",
+    hint: "What the rate is applied to. Changing this does not touch existing orders.",
+    type: "select",
+    options: [
+      { value: "ORDER_REVENUE", label: "Goods sold, after discount (shipping and tax excluded)" },
+      { value: "OWNER_MARGIN", label: "The owner's margin (goods sold − wholesale)" },
+    ],
+  },
+  requireReferralCode: { label: "Stores are invitation-only", hint: "Nobody can open a store without a valid invitation code.", type: "checkbox" },
   enabled: { label: "Show announcement bar", type: "checkbox" },
   message: { label: "Announcement message" },
   href: { label: "Announcement link", hint: "Optional path such as /pages/shipping." },
@@ -57,6 +68,18 @@ export function SettingsSectionForm({ section, values }: { section: SettingsKey;
           const meta = LABELS[key] ?? { label: key };
           const id = `${section}-${key}`;
           if (meta.type === "checkbox") return <Checkbox key={key} id={id} name={key} defaultChecked={!!value} label={meta.label} />;
+          if (meta.type === "select" && meta.options)
+            return (
+              <Field key={key} label={meta.label} htmlFor={id} hint={meta.hint} className="sm:col-span-2">
+                <Select id={id} name={key} defaultValue={String(value ?? "")}>
+                  {meta.options.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            );
           if (meta.type === "textarea")
             return (
               <Field key={key} label={meta.label} htmlFor={id} hint={meta.hint} className="sm:col-span-2">

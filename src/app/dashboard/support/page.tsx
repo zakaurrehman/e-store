@@ -1,23 +1,32 @@
-import { Mail, MessageSquare } from "lucide-react";
+import { LifeBuoy, Mail, MessageSquare, Search } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { AdminPagination, buildQuery, Card, dateTime, FilterLink, PageHeader, StatusBadge } from "@/components/admin/ui";
 import { ReplyForm, StatusButton } from "@/components/dashboard/support-thread";
+import { Input } from "@/components/ui/field";
 import { EmptyState, Skeleton } from "@/components/ui/misc";
 import { requireStoreOwner } from "@/features/stores/guards";
-import { getStoreMessage, listStoreMessages, parseSupportStatus, SUPPORT_PAGE_SIZE, SUPPORT_STATUS_LABELS, SUPPORT_STATUS_TONES } from "@/features/support/queries";
+import { markStoreMessageReadAction } from "@/features/support/actions";
+import { getStoreMessage, listOwnerTickets, listStoreMessages, parseSupportStatus, SUPPORT_PAGE_SIZE, SUPPORT_STATUS_LABELS, SUPPORT_STATUS_TONES } from "@/features/support/queries";
 import { ContactStatus } from "@/generated/prisma/enums";
 import { cn } from "@/utils/cn";
 
 export const metadata: Metadata = { title: "Customer service" };
 
 async function Inbox({ searchParams }: PageProps<"/dashboard/support">) {
-  const [{ store }, query] = await Promise.all([requireStoreOwner("/dashboard/support"), searchParams]);
+  const [{ user, store }, query] = await Promise.all([requireStoreOwner("/dashboard/support"), searchParams]);
   const status = parseSupportStatus(query.status);
   const page = Math.max(1, Number(query.page ?? 1) || 1);
   const selectedId = typeof query.id === "string" ? query.id : null;
-  const [data, selected] = await Promise.all([listStoreMessages(store.id, { status, page }), selectedId ? getStoreMessage(store.id, selectedId) : null]);
+  const q = typeof query.q === "string" ? query.q : "";
+  const [data, selected, tickets] = await Promise.all([
+    listStoreMessages(store.id, { status, page, q }),
+    selectedId ? getStoreMessage(store.id, selectedId) : null,
+    listOwnerTickets(user.id, 5),
+  ]);
+  // Opening a thread is what marks it read.
+  if (selected?.unreadForStaff) await markStoreMessageReadAction(selected.id);
   const base = query as Record<string, string | string[] | undefined>;
 
   return (
@@ -31,6 +40,13 @@ async function Inbox({ searchParams }: PageProps<"/dashboard/support">) {
             {SUPPORT_STATUS_LABELS[value]} <span className="tabular ml-1.5 opacity-60">{data.counts[value] ?? 0}</span>
           </FilterLink>
         ))}
+        <form className="ml-auto flex items-center gap-2" action="/dashboard/support">
+          {status && <input type="hidden" name="status" value={status} />}
+          <Input name="q" defaultValue={q} placeholder="Search name, subject, order…" className="h-9 w-56 text-[0.875rem]" aria-label="Search messages" />
+          <button type="submit" className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-line-strong px-3 text-[0.875rem] hover:border-ink-400">
+            <Search className="size-3.5" aria-hidden /> Search
+          </button>
+        </form>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-5">
@@ -50,14 +66,18 @@ async function Inbox({ searchParams }: PageProps<"/dashboard/support">) {
                 <li key={message.id}>
                   <Link href={`/dashboard/support${buildQuery(base, { id: message.id })}`} className={cn("block px-5 py-3.5 hover:bg-canvas/60", selectedId === message.id && "bg-iris-50")}>
                     <div className="flex items-center justify-between gap-2">
-                      <span className={cn("truncate text-sm", message.status === ContactStatus.NEW ? "font-semibold" : "font-medium")}>{message.subject}</span>
+                      <span className={cn("truncate text-sm", message.unreadForStaff ? "font-semibold" : "font-medium")}>
+                        {message.unreadForStaff && <span className="mr-1.5 inline-block size-1.5 rounded-full bg-iris-600" aria-label="Unread" />}
+                        {message.subject}
+                      </span>
                       <StatusBadge label={SUPPORT_STATUS_LABELS[message.status]} tone={SUPPORT_STATUS_TONES[message.status]} />
                     </div>
                     <p className="mt-0.5 truncate text-[0.8125rem] text-ink-600">
                       {message.name} · {message.email}
                     </p>
                     <p className="text-[0.75rem] text-ink-400">
-                      {dateTime.format(message.createdAt)}
+                      {dateTime.format(message.lastMessageAt)}
+                      {message.orderNumber ? ` · ${message.orderNumber}` : ""}
                       {message._count.replies > 0 && ` · ${message._count.replies} ${message._count.replies === 1 ? "reply" : "replies"}`}
                     </p>
                   </Link>
@@ -92,10 +112,10 @@ async function Inbox({ searchParams }: PageProps<"/dashboard/support">) {
               {selected.replies.length > 0 && (
                 <ol className="mt-5 space-y-3">
                   {selected.replies.map((reply) => (
-                    <li key={reply.id} className="rounded-md border border-line p-4">
+                    <li key={reply.id} className={cn("rounded-md p-4", reply.isFromCustomer ? "bg-canvas" : "border border-line")}>
                       <p className="flex flex-wrap items-center gap-2 text-[0.8125rem] text-ink-500">
-                        <Mail className="size-3.5" aria-hidden />
-                        Sent by {reply.author ? `${reply.author.firstName} ${reply.author.lastName}` : "your store"} · {dateTime.format(reply.createdAt)}
+                        {reply.isFromCustomer ? <MessageSquare className="size-3.5" aria-hidden /> : <Mail className="size-3.5" aria-hidden />}
+                        {reply.isFromCustomer ? `${selected.name} wrote back` : `Sent by ${reply.author ? `${reply.author.firstName} ${reply.author.lastName}` : "your store"}`} · {dateTime.format(reply.createdAt)}
                       </p>
                       <p className="mt-2 whitespace-pre-line text-[0.9375rem] leading-relaxed text-ink-800">{reply.body}</p>
                     </li>
@@ -127,6 +147,39 @@ async function Inbox({ searchParams }: PageProps<"/dashboard/support">) {
           )}
         </Card>
       </div>
+
+      <Card
+        className="mt-6"
+        title="Your questions to Zendropship"
+        description="Anything you cannot answer yourself — a deposit, a withdrawal, a parcel that went missing."
+        actions={
+          <a href="/contact" target="_blank" rel="noopener noreferrer" className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-line-strong px-3 text-[0.875rem] font-medium hover:border-ink-950">
+            <LifeBuoy className="size-4" aria-hidden /> Ask Zendropship
+          </a>
+        }
+      >
+        {tickets.length === 0 ? (
+          <p className="py-4 text-[0.9375rem] text-ink-500">You have not written to Zendropship yet. Replies arrive by email and appear here.</p>
+        ) : (
+          <ul className="divide-y divide-line">
+            {tickets.map((ticket) => (
+              <li key={ticket.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3 first:pt-0 last:pb-0">
+                <div className="min-w-0">
+                  <p className="truncate font-medium text-ink-950">
+                    {ticket.unreadForCustomer && <span className="mr-1.5 inline-block size-1.5 rounded-full bg-iris-600" aria-label="New reply" />}
+                    {ticket.subject}
+                  </p>
+                  <p className="text-[0.8125rem] text-ink-500">
+                    {dateTime.format(ticket.lastMessageAt)}
+                    {ticket._count.replies > 0 ? ` · ${ticket._count.replies} replies` : ""}
+                  </p>
+                </div>
+                <StatusBadge label={SUPPORT_STATUS_LABELS[ticket.status]} tone={SUPPORT_STATUS_TONES[ticket.status]} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
     </>
   );
 }

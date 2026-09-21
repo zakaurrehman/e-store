@@ -18,6 +18,7 @@ import {
   setStoreProductVisibilityAction,
   uploadStoreImageAction,
 } from "@/features/stores/actions";
+import { formatRate, unitEarning, type CommissionRule } from "@/features/finance/order-finance";
 import { storePriceFor } from "@/features/stores/pricing";
 import { idleState, type ActionState } from "@/lib/action-state";
 import { cn } from "@/utils/cn";
@@ -135,9 +136,12 @@ export function RemoveProductButton({ productId, productName }: { productId: str
 export function ProductPriceEditor({
   row,
   storeRule,
+  commission,
 }: {
   row: { productId: string; name: string; costCents: number; suggestedCents: number; priceCents: number; markupBps: number | null; fixedPriceCents: number | null; hasVariants: boolean };
   storeRule: { mode: "SUGGESTED" | "MARKUP"; markupBps: number };
+  /** Zendropship's commission in force, so the preview shows what the owner would really keep. */
+  commission: CommissionRule;
 }) {
   const [open, setOpen] = useState(false);
   const [state, action] = useActionState<ActionState, FormData>(saveStoreProductPricingAction, idleState);
@@ -160,7 +164,7 @@ export function ProductPriceEditor({
       : mode === "markup"
         ? storePriceFor(cost, storeRule, { markupBps: Math.round(Number(markup || 0) * 100), fixedPriceCents: null }).priceCents
         : storePriceFor(cost, storeRule).priceCents;
-  const margin = preview - row.costCents;
+  const margin = unitEarning(preview, row.costCents, commission).earningCents;
 
   return (
     <>
@@ -329,7 +333,17 @@ export function StoreImageUpload({ kind, label, hint, current }: { kind: "logo" 
   );
 }
 
-export function StorePricingForm({ mode, markupBps, example }: { mode: "SUGGESTED" | "MARKUP"; markupBps: number; example: { name: string; costCents: number; suggestedCents: number } | null }) {
+export function StorePricingForm({
+  mode,
+  markupBps,
+  example,
+  commission,
+}: {
+  mode: "SUGGESTED" | "MARKUP";
+  markupBps: number;
+  example: { name: string; costCents: number; suggestedCents: number } | null;
+  commission: CommissionRule;
+}) {
   const [state, action] = useActionState<ActionState, FormData>(saveStorePricingAction, idleState);
   const [choice, setChoice] = useState(mode);
   const [markup, setMarkup] = useState(String(markupBps / 100));
@@ -364,7 +378,8 @@ export function StorePricingForm({ mode, markupBps, example }: { mode: "SUGGESTE
           </p>
           <p className="tabular mt-1 text-ink-700">
             You pay {formatMoney(example.costCents)} → sells for <span className="font-semibold text-ink-950">{formatMoney(preview)}</span> → you earn{" "}
-            <span className={cn("font-semibold", preview - example.costCents > 0 ? "text-success" : "text-danger")}>{formatMoney(preview - example.costCents)}</span>
+            <span className={cn("font-semibold", unitEarning(preview, example.costCents, commission).earningCents > 0 ? "text-success" : "text-danger")}>{formatMoney(unitEarning(preview, example.costCents, commission).earningCents)}</span>
+            {commission.rateBps > 0 && <span className="text-ink-500"> after Zendropship&rsquo;s {formatRate(commission.rateBps)} commission</span>}
           </p>
         </div>
       )}

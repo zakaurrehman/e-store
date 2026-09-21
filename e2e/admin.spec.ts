@@ -57,7 +57,7 @@ test.describe.serial("admin operations", () => {
   });
 
   test("order management: staff move an order to its next status", async ({ page }) => {
-    await page.goto("/admin/orders");
+    await page.goto("/admin/orders?status=ACCEPTED");
     await page.getByRole("link", { name: /VY-/ }).first().click();
     await page.waitForURL(/\/admin\/orders\/[a-z0-9]+$/);
     await page.getByRole("button", { name: "Update status" }).click();

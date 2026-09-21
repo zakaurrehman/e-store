@@ -9,6 +9,8 @@ import { ProductGallery } from "@/components/store/product/gallery";
 import { MarkdownContent } from "@/components/ui/markdown";
 import { Skeleton } from "@/components/ui/misc";
 import { getProductBySlug, getRelatedProducts, type ProductDetail } from "@/features/catalog/queries";
+import { commissionRuleOf, formatRate, type CommissionRule } from "@/features/finance/order-finance";
+import { getStoreSettings } from "@/features/settings/queries";
 import { getOwnedStore, getPlatformStore, getShelfProductIds } from "@/features/stores/queries";
 import { storeUrl } from "@/lib/tenancy";
 import { getCurrentUser } from "@/server/auth/session";
@@ -27,7 +29,7 @@ export async function generateMetadata({ params }: PageProps<"/catalog/p/[slug]"
   };
 }
 
-function VariantTable({ product }: { product: ProductDetail }) {
+function VariantTable({ product, commission }: { product: ProductDetail; commission: CommissionRule }) {
   if (product.variants.length <= 1) return null;
   return (
     <div className="mt-8 overflow-x-auto rounded-md border border-line">
@@ -43,7 +45,7 @@ function VariantTable({ product }: { product: ProductDetail }) {
         </thead>
         <tbody className="divide-y divide-line">
           {product.variants.map((variant) => {
-            const margin = marginAt(variant.priceCents, variant.costCents);
+            const margin = marginAt(variant.priceCents, variant.costCents, commission);
             return (
               <tr key={variant.id}>
                 <td className="px-3 py-2.5 text-ink-950">{variant.title}</td>
@@ -81,22 +83,23 @@ async function OwnerActions({ product }: { product: ProductDetail }) {
 async function Related({ product }: { product: ProductDetail }) {
   const related = await getRelatedProducts(product.id, product.category?.id ?? null, product.brand?.id ?? null, 4);
   if (related.length === 0) return null;
-  const user = await getCurrentUser();
+  const [user, settings] = await Promise.all([getCurrentUser(), getStoreSettings()]);
   const store = user ? await getOwnedStore(user.id) : null;
   const shelf = store ? await getShelfProductIds(store.id) : [];
   return (
     <section className="mt-20 border-t border-line pt-12">
       <h2 className="text-2xl font-semibold tracking-[-0.02em] text-ink-950">More to sell alongside it</h2>
-      <CatalogGrid products={related} inStoreIds={shelf} signedIn={!!user} className="mt-8" />
+      <CatalogGrid products={related} inStoreIds={shelf} signedIn={!!user} commission={commissionRuleOf(settings.platform)} className="mt-8" />
     </section>
   );
 }
 
 async function ProductContent({ params }: PageProps<"/catalog/p/[slug]">) {
   const { slug } = await params;
-  const product = await getProductBySlug(slug);
+  const [product, settings] = await Promise.all([getProductBySlug(slug), getStoreSettings()]);
   if (!product) notFound();
-  const margin = marginAt(product.priceCents, product.costCents);
+  const commission = commissionRuleOf(settings.platform);
+  const margin = marginAt(product.priceCents, product.costCents, commission);
   return (
     <>
       <nav aria-label="Breadcrumb" className="text-sm text-ink-500">
@@ -146,7 +149,9 @@ async function ProductContent({ params }: PageProps<"/catalog/p/[slug]">) {
                 </dd>
               </div>
             </dl>
-            <p className="mt-2 text-[0.8125rem] text-ink-500">At the suggested price, before payment-processing fees. You can set your own price in your dashboard.</p>
+            <p className="mt-2 text-[0.8125rem] text-ink-500">
+              At the suggested price, after the wholesale cost{commission.rateBps > 0 ? ` and Zendropship's ${formatRate(commission.rateBps)} commission` : ""}. You can set your own price in your dashboard.
+            </p>
 
             <div className="mt-7">
               <Suspense fallback={<Skeleton className="h-13 w-full rounded-md" />}>
@@ -166,7 +171,7 @@ async function ProductContent({ params }: PageProps<"/catalog/p/[slug]">) {
                 {product.inStock ? "In stock now — your store shows live availability." : "Out of stock right now — stores show it as sold out until it is back."}
               </li>
             </ul>
-            <VariantTable product={product} />
+            <VariantTable product={product} commission={commission} />
           </div>
         </div>
       </div>

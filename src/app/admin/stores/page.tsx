@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { ActionButton } from "@/components/admin/forms";
 import { AdminPagination, Card, FilterLink, PageHeader, StatusBadge, Table, TableEmpty, Td, Th, buildQuery, dateOnly } from "@/components/admin/ui";
+import { StoreMark } from "@/components/store/header/store-brand";
 import { Input } from "@/components/ui/field";
 import { Skeleton } from "@/components/ui/misc";
 import { listStoresForAdmin, STORES_PAGE_SIZE } from "@/features/admin/stores";
@@ -46,20 +47,27 @@ async function StoresTable({ searchParams }: PageProps<"/admin/stores">) {
             <Th className="text-right">Products</Th>
             <Th className="text-right">Orders</Th>
             <Th className="text-right">Sales</Th>
+            <Th className="text-right">Balance</Th>
             <Th>Opened</Th>
             <Th>Status</Th>
             {canManage && <Th />}
           </tr>
         </thead>
         <tbody>
-          {data.stores.length === 0 && <TableEmpty colSpan={canManage ? 8 : 7}>No stores match.</TableEmpty>}
+          {data.stores.length === 0 && <TableEmpty colSpan={canManage ? 9 : 8}>No stores match.</TableEmpty>}
           {data.stores.map((store) => (
             <tr key={store.id}>
               <Td>
-                <a href={storeUrl(store.slug)} target="_blank" rel="noopener noreferrer" className="font-medium text-ink-950 hover:underline">
-                  {store.name}
-                </a>
-                <span className="block text-[0.75rem] text-ink-500">{storeUrl(store.slug).replace(/^https?:\/\//, "")}</span>
+                <span className="flex items-center gap-2.5">
+                  <StoreMark store={store} size={32} />
+                  <span className="min-w-0">
+                    <a href={storeUrl(store.slug)} target="_blank" rel="noopener noreferrer" className="font-medium text-ink-950 hover:underline">
+                      {store.name}
+                    </a>
+                    <span className="block text-[0.75rem] text-ink-500">{storeUrl(store.slug).replace(/^https?:\/\//, "")}</span>
+                    {store.invitation && <span className="block font-mono text-[0.6875rem] text-ink-400">{store.invitation}</span>}
+                  </span>
+                </span>
               </Td>
               <Td>
                 {store.owner ? (
@@ -78,6 +86,16 @@ async function StoresTable({ searchParams }: PageProps<"/admin/stores">) {
                 </Link>
               </Td>
               <Td className="tabular text-right">{formatMoney(store.salesCents)}</Td>
+              <Td className="tabular text-right">
+                {store.owner ? (
+                  <Link href="/admin/payouts" className="hover:underline">
+                    {formatMoney(store.balanceCents)}
+                    {store.awaitingFunds > 0 && <span className="block text-[0.75rem] font-medium text-warning">{store.awaitingFunds} awaiting funds</span>}
+                  </Link>
+                ) : (
+                  <span className="text-ink-400">—</span>
+                )}
+              </Td>
               <Td className="whitespace-nowrap text-ink-600">{dateOnly.format(store.createdAt)}</Td>
               <Td>
                 <StatusBadge label={store.status === "ACTIVE" ? "Open" : store.status === "SUSPENDED" ? "Suspended" : "Pending"} tone={store.status === "ACTIVE" ? "success" : store.status === "SUSPENDED" ? "danger" : "warning"} />

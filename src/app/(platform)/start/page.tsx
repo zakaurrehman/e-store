@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { AuthSkeleton } from "@/components/store/auth/auth-shell";
 import { OpenStoreForm } from "@/components/platform/open-store-form";
+import { referralRequired } from "@/features/referrals/service";
 import { getOwnedStore } from "@/features/stores/queries";
 import { storeBaseDomain } from "@/lib/tenancy";
 import { getCurrentUser } from "@/server/auth/session";
@@ -24,17 +25,21 @@ const INCLUDED = [
 ];
 
 async function StartContent({ searchParams }: PageProps<"/start">) {
-  const [query, user] = await Promise.all([searchParams, getCurrentUser()]);
+  const [query, user, inviteOnly] = await Promise.all([searchParams, getCurrentUser(), referralRequired()]);
   if (user && (await getOwnedStore(user.id))) redirect("/dashboard");
   const add = typeof query.add === "string" && query.add.length <= 40 ? query.add : undefined;
   return (
     <div className="w-full max-w-[28rem]">
       <h1 className="text-3xl font-semibold tracking-[-0.025em] text-ink-950 md:text-4xl">Create your store</h1>
       <p className="mt-2 text-[0.9375rem] leading-relaxed text-ink-600">
-        {add ? "Open your store and we'll add the product you picked straight away." : "It takes about a minute. You can change everything later."}
+        {inviteOnly
+          ? "Stores are invitation-only. Enter your code and your store is live in about a minute."
+          : add
+            ? "Open your store and we'll add the product you picked straight away."
+            : "It takes about a minute. You can change everything later."}
       </p>
       <div className="mt-8">
-        <OpenStoreForm signedInAs={user ? user.email : null} addProductId={add} baseDomain={storeBaseDomain()} />
+        <OpenStoreForm signedInAs={user ? user.email : null} addProductId={add} baseDomain={storeBaseDomain()} inviteOnly={inviteOnly} />
       </div>
       {!user && (
         <p className="mt-8 border-t border-line pt-6 text-center text-[0.9375rem] text-ink-600">

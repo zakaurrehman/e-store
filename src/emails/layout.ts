@@ -9,6 +9,8 @@ export type EmailBrand = {
   supportEmail: string;
   address: string;
   appUrl: string;
+  /** The store's logo as an absolute URL; the name is set as a wordmark when there is none. */
+  logoUrl?: string | null;
 };
 
 export type RenderedEmail = { subject: string; html: string; text: string };
@@ -101,7 +103,8 @@ export function renderLayout(options: {
 <tr><td align="center" style="padding:32px 16px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">
 <tr><td style="padding:0 4px 24px;">
-<a href="${escapeHtml(brand.appUrl)}" style="text-decoration:none;font:600 15px/1 ${FONT};letter-spacing:0.32em;color:${COLORS.ink};">${escapeHtml(brand.storeName.toUpperCase())}</a>
+<a href="${escapeHtml(brand.appUrl)}" style="text-decoration:none;font:600 15px/1 ${FONT};letter-spacing:0.32em;color:${COLORS.ink};">
+${brand.logoUrl ? `<img src="${escapeHtml(brand.logoUrl)}" alt="${escapeHtml(brand.storeName)}" height="32" style="display:block;height:32px;width:auto;max-width:200px;border:0;">` : escapeHtml(brand.storeName.toUpperCase())}</a>
 </td></tr>
 <tr><td style="background:#ffffff;border:1px solid ${COLORS.line};border-radius:14px;padding:36px 32px;">
 <h1 style="margin:0 0 20px;font:600 24px/1.25 ${FONT};letter-spacing:-0.01em;color:${COLORS.ink};">${escapeHtml(options.heading)}</h1>

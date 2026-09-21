@@ -66,6 +66,8 @@ SEED_SKIP_CATALOG=true SEED_ADMIN_EMAIL=you@yourdomain.com SEED_ADMIN_PASSWORD='
 This creates roles and permissions (including the store-owner role), default settings, shipping zones and tax rates, the first super admin, the demo store and starter content, without the demo catalogue. On a database that already had products before the platform release, the `stores` migration creates the demo store (address `demo`) with every existing product, gives existing orders and bags to it, and sets each variant's wholesale cost to 55% of its price where none was recorded — **review wholesale costs in the admin before owners start selling**, because they decide owners' margins. Pages built before the seed ran can be served from cache for up to an hour, so **redeploy once the seed has finished** to rebuild them with the new data. Then:
 
 1. Sign in at `/admin`, change the admin password and remove `SEED_ADMIN_PASSWORD` from the environment.
+1. **Invitations.** Opening a store is invite-only by default. The seed creates one code (5 uses) on an empty database and prints it; set `SEED_REFERRAL_CODE` to choose it. On a database that was deployed before invitations existed, **no code exists** until you generate one in **Admin → Invitations** — until then nobody can open a store. Switch invitations off in **Settings → Commission & invitations** if you want open sign-up.
+1. **Commission.** Check the rate and base in **Settings → Commission & invitations** (10% of goods sold by default). It applies to orders placed from then on.
 2. **Settings → Store settings** — store name, legal name, support contact, address, currency, SEO and social links.
 3. **Settings → Shipping & tax** — replace the example zones, methods and tax rates with your own. Tax rates are examples only; confirm your obligations with an adviser.
 4. Replace the starter pages (terms, privacy, returns, shipping) with your own reviewed text.
@@ -131,7 +133,8 @@ Custom domains for individual stores (`shop.maya.com`) are not supported yet —
 - Registration sends a verification email that arrives and links to your domain.
 - A test-mode order is paid via webhook, appears in **Admin → Orders**, and the confirmation email arrives.
 - `/api/cron` returns `ok` when called with the secret.
-- Uploading an image in **Admin → Media library** stores it in your Blob store or bucket, and it displays on the storefront.
+- Uploading an image in **Admin → Media library** stores it in your Blob store or bucket, and it displays on the storefront. A store logo uploaded from an owner's **Design & details** appears in that store's header and in its emails.
+- With a test store: a paid order shows its breakdown (goods, fulfilment cost, commission, earning) on the owner's and the admin's order pages, and the owner's ledger has one sale, one commission and one fulfilment line for it.
 
 ## Security notes
 

@@ -54,9 +54,9 @@ export async function openStoreAction(_state: ActionState, formData: FormData): 
   try {
     let opened: { storeId: string; ownerId: string };
     if (current) {
-      const parsed = openStoreSignedInSchema.safeParse({ storeName: formData.get("storeName"), slug: formData.get("slug") ?? undefined });
+      const parsed = openStoreSignedInSchema.safeParse({ storeName: formData.get("storeName"), slug: formData.get("slug") ?? undefined, referralCode: formData.get("referralCode") ?? undefined });
       if (!parsed.success) return zodFailure(parsed.error);
-      const store = await openStoreForUser(current.id, parsed.data);
+      const store = await openStoreForUser(current.id, parsed.data, { ipAddress: meta.ipAddress });
       opened = { storeId: store.id, ownerId: current.id };
     } else {
       const parsed = openStoreSchema.safeParse({
@@ -66,6 +66,7 @@ export async function openStoreAction(_state: ActionState, formData: FormData): 
         lastName: formData.get("lastName"),
         email: formData.get("email"),
         password: formData.get("password"),
+        referralCode: formData.get("referralCode") ?? undefined,
       });
       if (!parsed.success) return zodFailure(parsed.error);
       const { user, store, verificationToken } = await openStoreForNewOwner(parsed.data, { ipAddress: meta.ipAddress });

@@ -7,6 +7,8 @@ import { CatalogGrid, marginAt } from "@/components/platform/catalog-card";
 import { ButtonLink } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/misc";
 import { countCatalogProducts, getProductRail } from "@/features/catalog/queries";
+import { commissionRuleOf } from "@/features/finance/order-finance";
+import { getStoreSettings } from "@/features/settings/queries";
 import { getOwnedStore, getShelfProductIds } from "@/features/stores/queries";
 import { DEMO_STORE_SLUG, storeBaseDomain, storeUrl } from "@/lib/tenancy";
 import { getCurrentUser } from "@/server/auth/session";
@@ -43,13 +45,15 @@ const FAQ = [
 ];
 
 async function PreviewProducts() {
-  const products = (await getProductRail("featured", 4)).slice(0, 4);
+  const [featured, settings] = await Promise.all([getProductRail("featured", 4), getStoreSettings()]);
+  const products = featured.slice(0, 4);
   const fallback = products.length < 4 ? await getProductRail("new", 4) : [];
   const items = [...products, ...fallback].slice(0, 4);
+  const commission = commissionRuleOf(settings.platform);
   return (
     <ul className="grid grid-cols-2 gap-3 p-4">
       {items.map((product) => {
-        const margin = marginAt(product.priceCents, product.costCents);
+        const margin = marginAt(product.priceCents, product.costCents, commission);
         return (
           <li key={product.id} className="overflow-hidden rounded-md border border-line bg-surface">
             <div className="relative aspect-square bg-canvas">
@@ -70,13 +74,13 @@ async function PreviewProducts() {
 }
 
 async function CatalogPreview() {
-  const [products, total, user] = await Promise.all([getProductRail("best-sellers", 8), countCatalogProducts(), getCurrentUser()]);
+  const [products, total, user, settings] = await Promise.all([getProductRail("best-sellers", 8), countCatalogProducts(), getCurrentUser(), getStoreSettings()]);
   const items = products.length >= 4 ? products : await getProductRail("new", 8);
   const store = user ? await getOwnedStore(user.id) : null;
   const inStoreIds = store ? await getShelfProductIds(store.id) : [];
   return (
     <>
-      <CatalogGrid products={items} inStoreIds={inStoreIds} signedIn={!!user} />
+      <CatalogGrid products={items} inStoreIds={inStoreIds} signedIn={!!user} commission={commissionRuleOf(settings.platform)} />
       <div className="mt-10 flex justify-center">
         <ButtonLink href="/catalog" variant="secondary" size="lg" className="gap-2">
           Browse all {total.toLocaleString("en-US")} products <ArrowRight className="size-4" aria-hidden />

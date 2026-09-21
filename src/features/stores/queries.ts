@@ -28,7 +28,7 @@ const storeSelect = {
   accentColor: true,
   heroTitle: true,
   heroSubtitle: true,
-  logo: { select: { url: true } },
+  logo: { select: { url: true, width: true, height: true } },
   heroImage: { select: { url: true } },
 } satisfies Prisma.StoreSelect;
 
@@ -44,7 +44,7 @@ export function toStoreContext(row: StoreRow): StoreContext {
     aboutText: row.aboutText,
     supportEmail: row.supportEmail,
     accentColor: row.accentColor,
-    logoUrl: row.logo?.url ?? null,
+    logo: row.logo ? { url: row.logo.url, width: row.logo.width, height: row.logo.height } : null,
     heroImageUrl: row.heroImage?.url ?? null,
     heroTitle: row.heroTitle,
     heroSubtitle: row.heroSubtitle,

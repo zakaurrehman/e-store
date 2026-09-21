@@ -4,8 +4,9 @@ import { after } from "next/server";
 import { z } from "zod";
 import { emailSchema } from "@/features/auth/schemas";
 import { getCurrentStore } from "@/features/stores/current";
+import { openConversation } from "@/features/support/service";
 import { failure, success, zodFailure, type ActionState } from "@/server/actions";
-import { db } from "@/server/db";
+import { getCurrentUser } from "@/server/auth/session";
 import { dispatchNotification, sendDeliveries } from "@/server/notifications";
 import { getRequestMeta } from "@/server/request";
 import { rateLimit, retryAfterMessage } from "@/server/security/rate-limit";
@@ -38,8 +39,12 @@ export async function submitContactAction(_state: ActionState, formData: FormDat
   if (!limit.success) return failure(retryAfterMessage(limit.resetAt));
   const { website: _website, ...data } = parsed.data;
   // On a store host the message belongs to that store's owner; on the platform site it is for Zendropship.
-  const store = await getCurrentStore();
-  const message = await db.contactMessage.create({ data: { ...data, storeId: store?.id ?? null } });
+  const [store, user] = await Promise.all([getCurrentStore(), getCurrentUser()]);
+  const message = await openConversation({ ...data, storeId: store?.id ?? null, userId: user?.id ?? null });
   after(async () => sendDeliveries(await dispatchNotification({ type: "contact.received", messageId: message.id })));
-  return success("Thanks — we've received your message and will reply within one business day.");
+  return success(
+    user
+      ? "Thanks — we have your message. You can follow the reply in Customer service."
+      : "Thanks — we've received your message and will reply within one business day.",
+  );
 }

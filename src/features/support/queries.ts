@@ -8,39 +8,144 @@ export const SUPPORT_PAGE_SIZE = 20;
 export const SUPPORT_STATUS_LABELS: Record<ContactStatus, string> = { NEW: "New", IN_PROGRESS: "In progress", RESOLVED: "Resolved" };
 export const SUPPORT_STATUS_TONES: Record<ContactStatus, "warning" | "info" | "success"> = { NEW: "warning", IN_PROGRESS: "info", RESOLVED: "success" };
 
+/** The same states in the customer's words: "new" is the store's to-do, not something the customer did. */
+export const CUSTOMER_SUPPORT_STATUS_LABELS: Record<ContactStatus, string> = { NEW: "Waiting for a reply", IN_PROGRESS: "Answered", RESOLVED: "Resolved" };
+export const CUSTOMER_SUPPORT_STATUS_TONES: Record<ContactStatus, "neutral" | "info" | "success"> = { NEW: "neutral", IN_PROGRESS: "info", RESOLVED: "success" };
+
 export const parseSupportStatus = (value: unknown): ContactStatus | undefined =>
   typeof value === "string" && value in ContactStatus ? (value as ContactStatus) : undefined;
 
-/** The store's support inbox, newest first, with the counts behind the status filters. */
-export async function listStoreMessages(storeId: string, options: { status?: ContactStatus; page?: number; pageSize?: number } = {}) {
+const listSelect = {
+  id: true,
+  name: true,
+  email: true,
+  subject: true,
+  status: true,
+  orderNumber: true,
+  unreadForStaff: true,
+  unreadForCustomer: true,
+  lastMessageAt: true,
+  createdAt: true,
+  _count: { select: { replies: true } },
+} satisfies Prisma.ContactMessageSelect;
+
+const threadInclude = {
+  order: { select: { id: true, number: true, status: true, totalCents: true, currency: true } },
+  store: { select: { id: true, slug: true, name: true, ownerId: true, logo: { select: { url: true, width: true, height: true } } } },
+  user: { select: { id: true, email: true, firstName: true, lastName: true, createdAt: true } },
+  assignedTo: { select: { id: true, firstName: true, lastName: true } },
+  replies: { orderBy: { createdAt: "asc" as const }, include: { author: { select: { id: true, firstName: true, lastName: true } } } },
+} satisfies Prisma.ContactMessageInclude;
+
+function summarise(counts: Array<{ status: ContactStatus; _count: { _all: number } }>) {
+  return Object.fromEntries(counts.map((row) => [row.status, row._count._all])) as Partial<Record<ContactStatus, number>>;
+}
+
+// ─── The store owner's inbox ─────────────────────────────────────────────────
+
+/** Conversations with this store's customers, newest activity first, with the counts behind the filters. */
+export async function listStoreMessages(storeId: string, options: { status?: ContactStatus; q?: string; page?: number; pageSize?: number } = {}) {
   const pageSize = options.pageSize ?? SUPPORT_PAGE_SIZE;
   const page = Math.max(1, options.page ?? 1);
-  const where: Prisma.ContactMessageWhereInput = { storeId, ...(options.status ? { status: options.status } : {}) };
-  const [total, messages, counts] = await Promise.all([
+  const q = options.q?.trim().slice(0, 80);
+  const where: Prisma.ContactMessageWhereInput = {
+    storeId,
+    ...(options.status ? { status: options.status } : {}),
+    ...(q ? { OR: [{ subject: { contains: q, mode: "insensitive" } }, { name: { contains: q, mode: "insensitive" } }, { email: { contains: q, mode: "insensitive" } }, { message: { contains: q, mode: "insensitive" } }, { orderNumber: { contains: q, mode: "insensitive" } }] } : {}),
+  };
+  const [total, messages, counts, unread] = await Promise.all([
+    db.contactMessage.count({ where }),
+    db.contactMessage.findMany({ where, orderBy: { lastMessageAt: "desc" }, skip: (page - 1) * pageSize, take: pageSize, select: listSelect }),
+    db.contactMessage.groupBy({ by: ["status"], where: { storeId }, _count: { _all: true } }),
+    db.contactMessage.count({ where: { storeId, unreadForStaff: true } }),
+  ]);
+  return { total, page, pageCount: Math.max(1, Math.ceil(total / pageSize)), messages, counts: summarise(counts), unread };
+}
+
+/** One conversation with its history — only if it belongs to this store. */
+export async function getStoreMessage(storeId: string, messageId: string) {
+  const message = await db.contactMessage.findFirst({ where: { id: messageId, storeId }, include: threadInclude });
+  if (!message) return null;
+  // Internal notes are for Zendropship staff; the store owner sees the conversation itself.
+  return { ...message, replies: message.replies.filter((reply) => !reply.isInternal) };
+}
+
+/** The owner's own questions to Zendropship (conversations they opened on the platform site). */
+export async function listOwnerTickets(userId: string, take = 10) {
+  return db.contactMessage.findMany({ where: { userId, storeId: null }, orderBy: { lastMessageAt: "desc" }, take, select: listSelect });
+}
+
+// ─── Zendropship staff inbox ─────────────────────────────────────────────────
+
+export type StaffInboxOptions = { status?: ContactStatus; q?: string; page?: number; scope?: "all" | "platform" | "stores" | "mine"; assignedToId?: string };
+
+/** Every conversation on the platform: messages to Zendropship and messages in owners' stores. */
+export async function listSupportConversations(options: StaffInboxOptions = {}) {
+  const page = Math.max(1, options.page ?? 1);
+  const q = options.q?.trim().slice(0, 80);
+  const scope: Prisma.ContactMessageWhereInput =
+    options.scope === "platform" ? { storeId: null } : options.scope === "stores" ? { NOT: { storeId: null } } : options.scope === "mine" ? { assignedToId: options.assignedToId ?? "none" } : {};
+  const where: Prisma.ContactMessageWhereInput = {
+    ...scope,
+    ...(options.status ? { status: options.status } : {}),
+    ...(q
+      ? {
+          OR: [
+            { subject: { contains: q, mode: "insensitive" } },
+            { name: { contains: q, mode: "insensitive" } },
+            { email: { contains: q, mode: "insensitive" } },
+            { message: { contains: q, mode: "insensitive" } },
+            { orderNumber: { contains: q, mode: "insensitive" } },
+            { store: { name: { contains: q, mode: "insensitive" } } },
+          ],
+        }
+      : {}),
+  };
+  const [total, conversations, counts, unread] = await Promise.all([
     db.contactMessage.count({ where }),
     db.contactMessage.findMany({
       where,
-      orderBy: { createdAt: "desc" },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-      select: { id: true, name: true, email: true, subject: true, status: true, createdAt: true, _count: { select: { replies: true } } },
+      orderBy: { lastMessageAt: "desc" },
+      skip: (page - 1) * SUPPORT_PAGE_SIZE,
+      take: SUPPORT_PAGE_SIZE,
+      select: { ...listSelect, store: { select: { slug: true, name: true } }, assignedTo: { select: { firstName: true, lastName: true } } },
     }),
-    db.contactMessage.groupBy({ by: ["status"], where: { storeId }, _count: { _all: true } }),
+    db.contactMessage.groupBy({ by: ["status"], _count: { _all: true } }),
+    db.contactMessage.count({ where: { unreadForStaff: true } }),
   ]);
-  return {
-    total,
-    page,
-    pageCount: Math.max(1, Math.ceil(total / pageSize)),
-    messages,
-    counts: Object.fromEntries(counts.map((row) => [row.status, row._count._all])) as Partial<Record<ContactStatus, number>>,
-    unanswered: counts.find((row) => row.status === ContactStatus.NEW)?._count._all ?? 0,
-  };
+  return { total, page, pageCount: Math.max(1, Math.ceil(total / SUPPORT_PAGE_SIZE)), conversations, counts: summarise(counts), unread };
 }
 
-/** One message with its reply history — only if it belongs to this store. */
-export async function getStoreMessage(storeId: string, messageId: string) {
-  return db.contactMessage.findFirst({
-    where: { id: messageId, storeId },
-    include: { replies: { orderBy: { createdAt: "asc" }, include: { author: { select: { firstName: true, lastName: true } } } } },
+/** One conversation for staff, internal notes included. */
+export async function getSupportConversation(messageId: string) {
+  return db.contactMessage.findUnique({ where: { id: messageId }, include: threadInclude });
+}
+
+export async function staffMembers() {
+  return db.user.findMany({ where: { deletedAt: null, status: "ACTIVE", role: { isStaff: true } }, orderBy: { firstName: "asc" }, select: { id: true, firstName: true, lastName: true } });
+}
+
+// ─── The customer's own view ─────────────────────────────────────────────────
+
+/** A customer's conversations in one store. Scoped to their own account: ids from the client are never trusted. */
+export async function listCustomerConversations(userId: string, storeId: string | null) {
+  return db.contactMessage.findMany({
+    where: { userId, storeId },
+    orderBy: { lastMessageAt: "desc" },
+    take: 50,
+    select: { ...listSelect, message: true },
   });
+}
+
+/** One of the customer's own conversations, without internal notes. */
+export async function getCustomerConversation(userId: string, storeId: string | null, messageId: string) {
+  const message = await db.contactMessage.findFirst({
+    where: { id: messageId, userId, storeId },
+    include: { order: { select: { number: true, status: true } }, replies: { where: { isInternal: false }, orderBy: { createdAt: "asc" }, include: { author: { select: { firstName: true } } } } },
+  });
+  return message;
+}
+
+export async function countUnreadForCustomer(userId: string, storeId: string | null) {
+  return db.contactMessage.count({ where: { userId, storeId, unreadForCustomer: true } });
 }

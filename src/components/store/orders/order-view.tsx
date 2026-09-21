@@ -1,10 +1,11 @@
-import { Check, Package, Truck } from "lucide-react";
+import { Check, LifeBuoy, Package, Truck } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
+import { ButtonLink } from "@/components/ui/button";
 import { Alert } from "@/components/ui/misc";
 import type { CustomerOrder } from "@/features/orders/queries";
-import { FULFILMENT_STEPS, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, paymentTone, statusTone, stepIndex } from "@/features/orders/status";
+import { CUSTOMER_STATUS_LABELS, FULFILMENT_STEPS, PAYMENT_STATUS_LABELS, paymentTone, statusTone, stepIndex } from "@/features/orders/status";
 import { formatAddressLines } from "@/lib/address";
 import { cn } from "@/utils/cn";
 import { formatMoney } from "@/utils/money";
@@ -78,7 +79,7 @@ export function OrderView({ order, accessToken, paymentNotice }: { order: Custom
               <h2 className="text-lg font-semibold">Tracking</h2>
               {eta && <p className="mt-1 text-[0.9375rem] text-ink-600">Estimated delivery {eta}</p>}
             </div>
-            <Badge tone={statusTone(order.status)}>{ORDER_STATUS_LABELS[order.status]}</Badge>
+            <Badge tone={statusTone(order.status)}>{CUSTOMER_STATUS_LABELS[order.status]}</Badge>
           </div>
           <div className="mt-6">
             <OrderTimeline order={order} />
@@ -179,12 +180,13 @@ export function OrderView({ order, accessToken, paymentNotice }: { order: Custom
             </p>
           )}
         </section>
-        <p className="text-[0.8125rem] text-ink-500">
-          Need help with this order?{" "}
-          <Link href={`/contact?order=${order.number}`} className="underline underline-offset-4">
-            Contact us
-          </Link>
-        </p>
+        <section className="rounded-lg border border-line p-6">
+          <h2 className="text-lg font-semibold">Need help?</h2>
+          <p className="mt-2 text-[0.9375rem] leading-relaxed text-ink-600">Ask us about this order and we will reply by email — and in your account if you have one.</p>
+          <ButtonLink href={`/support/new?order=${order.number}`} variant="secondary" size="sm" className="mt-3">
+            <LifeBuoy className="size-4" aria-hidden /> Customer service
+          </ButtonLink>
+        </section>
       </aside>
     </div>
   );

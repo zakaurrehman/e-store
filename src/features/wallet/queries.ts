@@ -1,7 +1,7 @@
 import "server-only";
-import { DepositStatus, PayoutStatus, WalletEntryType } from "@/generated/prisma/enums";
+import { DepositStatus, WalletEntryStatus, WalletEntryType } from "@/generated/prisma/enums";
 import { db } from "@/server/db";
-import { getBalanceCents } from "./service";
+import { getAvailableCents, getBalanceCents, ORDER_ENTRY_TYPES, OPEN_PAYOUT_STATUSES } from "./service";
 
 export const WALLET_PAGE_SIZE = 20;
 
@@ -14,31 +14,64 @@ function periodStarts(now = new Date()) {
   return { today, week, month };
 }
 
-const earningTypes = [WalletEntryType.ORDER_EARNING, WalletEntryType.ORDER_REVERSAL];
+/** Everything an order does to the balance — the sale, the wholesale cost, the commission and any reversal. */
+const earningTypes = [...ORDER_ENTRY_TYPES];
 
-/** Balance, money on hold in withdrawals, and what the store earned today, this week and this month. */
+export const WALLET_ENTRY_LABELS: Record<WalletEntryType, string> = {
+  ORDER_SALE: "Sale",
+  ORDER_FULFILMENT: "Fulfilment cost",
+  ORDER_COMMISSION: "Zendropship commission",
+  ORDER_REFUND: "Refund",
+  FULFILMENT_REVERSAL: "Fulfilment cost returned",
+  COMMISSION_REVERSAL: "Commission returned",
+  ORDER_EARNING: "Order earnings",
+  ORDER_REVERSAL: "Order reversed",
+  PAYOUT: "Withdrawal",
+  PAYOUT_REVERSAL: "Withdrawal returned",
+  DEPOSIT: "Deposit",
+  ADJUSTMENT: "Adjustment",
+};
+
+/**
+ * Balance, what is withdrawable, money on its way, and what the store earned today, this week and this month.
+ * Every figure comes from the ledger; nothing is stored or cached.
+ */
 export async function getWalletSummary(storeId: string) {
   const { today, week, month } = periodStarts();
-  const earnedSince = async (since: Date) =>
-    (await db.walletEntry.aggregate({ where: { storeId, type: { in: earningTypes }, createdAt: { gte: since } }, _sum: { amountCents: true } }))._sum.amountCents ?? 0;
+  const sumOfTypes = async (types: WalletEntryType[], since?: Date) =>
+    (await db.walletEntry.aggregate({ where: { storeId, type: { in: types }, ...(since ? { createdAt: { gte: since } } : {}) }, _sum: { amountCents: true } }))._sum.amountCents ?? 0;
 
-  const [balanceCents, pendingPayouts, pendingDeposits, lifetime, earnedToday, earnedThisWeek, earnedThisMonth] = await Promise.all([
+  const [balanceCents, availableCents, pendingPayouts, pendingDeposits, deposited, fulfilment, commission, lifetime, earnedToday, earnedThisWeek, earnedThisMonth] = await Promise.all([
     getBalanceCents(storeId),
-    db.payout.aggregate({ where: { storeId, status: PayoutStatus.REQUESTED }, _sum: { amountCents: true }, _count: { _all: true } }),
-    db.deposit.count({ where: { storeId, status: DepositStatus.PENDING } }),
-    db.walletEntry.aggregate({ where: { storeId, type: { in: earningTypes } }, _sum: { amountCents: true } }),
-    earnedSince(today),
-    earnedSince(week),
-    earnedSince(month),
+    getAvailableCents(storeId),
+    db.payout.aggregate({ where: { storeId, status: { in: [...OPEN_PAYOUT_STATUSES] } }, _sum: { amountCents: true }, _count: { _all: true } }),
+    db.deposit.aggregate({ where: { storeId, status: DepositStatus.PENDING }, _sum: { amountCents: true }, _count: { _all: true } }),
+    sumOfTypes([WalletEntryType.DEPOSIT]),
+    sumOfTypes([WalletEntryType.ORDER_FULFILMENT, WalletEntryType.FULFILMENT_REVERSAL]),
+    sumOfTypes([WalletEntryType.ORDER_COMMISSION, WalletEntryType.COMMISSION_REVERSAL]),
+    sumOfTypes(earningTypes),
+    sumOfTypes(earningTypes, today),
+    sumOfTypes(earningTypes, week),
+    sumOfTypes(earningTypes, month),
   ]);
 
   return {
+    /** Everything the ledger says is owed, money still in transit included. */
     balanceCents,
-    /** Requested withdrawals that have not been paid yet (already deducted from the balance). */
+    /** What can be withdrawn now: entries whose money has been collected. */
+    availableCents,
+    /** Credited but not collected yet — cash on delivery that has not arrived. */
+    pendingCents: balanceCents - availableCents,
+    /** Requested withdrawals that have not been paid yet (already out of the balance). */
     pendingPayoutCents: pendingPayouts._sum.amountCents ?? 0,
     pendingPayoutCount: pendingPayouts._count._all,
-    pendingDepositCount: pendingDeposits,
-    lifetimeEarningsCents: lifetime._sum.amountCents ?? 0,
+    pendingDepositCents: pendingDeposits._sum.amountCents ?? 0,
+    pendingDepositCount: pendingDeposits._count._all,
+    totalDepositedCents: deposited,
+    /** Wholesale charged for fulfilment, net of anything returned (a negative number). */
+    fulfilmentChargedCents: fulfilment,
+    commissionChargedCents: commission,
+    lifetimeEarningsCents: lifetime,
     earnedTodayCents: earnedToday,
     earnedThisWeekCents: earnedThisWeek,
     earnedThisMonthCents: earnedThisMonth,
@@ -48,26 +81,28 @@ export async function getWalletSummary(storeId: string) {
 export type WalletSummary = Awaited<ReturnType<typeof getWalletSummary>>;
 
 /** The ledger, newest first, with a running balance so each row shows where the store stood afterwards. */
-export async function listWalletEntries(storeId: string, options: { page?: number; pageSize?: number } = {}) {
+export async function listWalletEntries(storeId: string, options: { page?: number; pageSize?: number; type?: WalletEntryType } = {}) {
   const pageSize = options.pageSize ?? WALLET_PAGE_SIZE;
   const page = Math.max(1, options.page ?? 1);
+  const where = { storeId, ...(options.type ? { type: options.type } : {}) };
   const [total, entries, balanceCents] = await Promise.all([
-    db.walletEntry.count({ where: { storeId } }),
+    db.walletEntry.count({ where }),
     db.walletEntry.findMany({
-      where: { storeId },
+      where,
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * pageSize,
       take: pageSize,
-      include: { order: { select: { number: true } }, payout: { select: { status: true } }, deposit: { select: { status: true } } },
+      include: { order: { select: { number: true } }, payout: { select: { status: true } }, deposit: { select: { status: true } }, createdBy: { select: { firstName: true, lastName: true } } },
     }),
     getBalanceCents(storeId),
   ]);
 
+  // The running balance only means anything on the full ledger; a filtered view leaves it out.
   // Rows newer than this page already count towards the balance, so step back over them first.
-  const newer = page === 1 ? [] : await db.walletEntry.findMany({ where: { storeId }, orderBy: { createdAt: "desc" }, take: (page - 1) * pageSize, select: { amountCents: true } });
+  const newer = options.type || page === 1 ? [] : await db.walletEntry.findMany({ where: { storeId }, orderBy: { createdAt: "desc" }, take: (page - 1) * pageSize, select: { amountCents: true } });
   let running = balanceCents - newer.reduce((sum, entry) => sum + entry.amountCents, 0);
   const rows = entries.map((entry) => {
-    const balanceAfterCents = running;
+    const balanceAfterCents = options.type ? null : running;
     running -= entry.amountCents;
     return { ...entry, balanceAfterCents };
   });
@@ -82,4 +117,19 @@ export async function listStoreTransfers(storeId: string, take = 10) {
     db.deposit.findMany({ where: { storeId }, orderBy: { createdAt: "desc" }, take }),
   ]);
   return { payouts, deposits };
+}
+
+/** Balances for a list of stores in one query — the admin stores table. */
+export async function balancesByStore(storeIds: string[]) {
+  if (storeIds.length === 0) return new Map<string, { balanceCents: number; availableCents: number }>();
+  const rows = await db.walletEntry.groupBy({ by: ["storeId", "status"], where: { storeId: { in: storeIds } }, _sum: { amountCents: true } });
+  const map = new Map<string, { balanceCents: number; availableCents: number }>();
+  for (const id of storeIds) map.set(id, { balanceCents: 0, availableCents: 0 });
+  for (const row of rows) {
+    const current = map.get(row.storeId)!;
+    const amount = row._sum.amountCents ?? 0;
+    current.balanceCents += amount;
+    if (row.status === WalletEntryStatus.CLEARED) current.availableCents += amount;
+  }
+  return map;
 }

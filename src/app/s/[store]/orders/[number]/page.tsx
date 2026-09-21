@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { Breadcrumbs } from "@/components/store/breadcrumbs";
+import { StoreBrand } from "@/components/store/header/store-brand";
 import { OrderView } from "@/components/store/orders/order-view";
 import { Skeleton } from "@/components/ui/misc";
 import { getOrderByAccessToken, getOrderForCustomer } from "@/features/orders/queries";
@@ -20,7 +21,8 @@ async function GuestOrderContent({ params, searchParams }: PageProps<"/s/[store]
   return (
     <>
       <Breadcrumbs items={[{ name: "Track order", href: "/track-order" }, { name: order.number, href: `/orders/${order.number}` }]} />
-      <h1 className="mt-6 text-3xl font-semibold tracking-[-0.025em] md:text-4xl">Order {order.number}</h1>
+      <StoreBrand store={store} className="mt-6" height={28} />
+      <h1 className="mt-4 text-3xl font-semibold tracking-[-0.025em] md:text-4xl">Order {order.number}</h1>
       <p className="mt-1 text-[0.9375rem] text-ink-500">Placed {new Intl.DateTimeFormat("en-US", { dateStyle: "long" }).format(order.placedAt)}</p>
       <div className="mt-8">
         <OrderView order={order} accessToken={token} />

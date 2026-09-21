@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isValidPhone, normalisePhone, PHONE_ERROR } from "@/lib/phone";
 import { PASSWORD_MAX_LENGTH } from "@/server/auth/password";
 
 export const emailSchema = z
@@ -56,13 +57,15 @@ export const changePasswordSchema = z
 export const profileSchema = z.object({
   firstName: nameSchema("first name"),
   lastName: nameSchema("last name"),
+  // Checked against the real numbering plan and stored in international form; see src/lib/phone.ts.
   phone: z
     .string()
     .trim()
     .max(32)
-    .regex(/^[+()\d\s.-]*$/, "Enter a valid phone number.")
     .optional()
-    .transform((value) => value || null),
+    .transform((value) => value || null)
+    .refine((value) => value === null || isValidPhone(value), PHONE_ERROR)
+    .transform((value) => (value ? (normalisePhone(value)?.e164 ?? value) : null)),
   marketingOptIn: z
     .union([z.literal("on"), z.literal("true"), z.literal(""), z.undefined()])
     .transform((value) => value === "on" || value === "true"),

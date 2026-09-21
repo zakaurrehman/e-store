@@ -50,6 +50,8 @@ export async function getAdminOrder(id: string) {
       payments: { orderBy: { createdAt: "desc" }, include: { transactions: { orderBy: { createdAt: "desc" } } } },
       shipments: { orderBy: { createdAt: "desc" } },
       couponRedemption: { include: { coupon: { select: { code: true, type: true, value: true } } } },
+      store: { select: { id: true, slug: true, name: true, ownerId: true, logo: { select: { url: true, width: true, height: true } }, owner: { select: { id: true, email: true, firstName: true, lastName: true } } } },
+      walletEntries: { orderBy: { createdAt: "asc" }, select: { id: true, type: true, amountCents: true, status: true, createdAt: true, description: true } },
     },
   });
 }

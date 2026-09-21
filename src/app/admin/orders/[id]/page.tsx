@@ -5,9 +5,14 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { OrderActions, OrderNoteForm } from "@/components/admin/orders/order-actions";
 import { Card, dateTime, DescriptionList, PageHeader, StatusBadge, Table, Td, Th } from "@/components/admin/ui";
-import { Skeleton } from "@/components/ui/misc";
+import { OrderFinanceTable } from "@/components/commerce/order-finance";
+import { StoreMark } from "@/components/store/header/store-brand";
+import { Alert, Skeleton } from "@/components/ui/misc";
 import { getAdminOrder } from "@/features/admin/orders/queries";
+import { storedOrderFinance } from "@/features/finance/order-finance";
 import { ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, paymentTone, statusTone } from "@/features/orders/status";
+import { WALLET_ENTRY_LABELS } from "@/features/wallet/queries";
+import { fulfilmentShortfallCents } from "@/features/wallet/service";
 import { formatAddressLines, isAddressSnapshot } from "@/lib/address";
 import { can, requirePagePermission } from "@/server/auth/guards";
 import { cn } from "@/utils/cn";
@@ -26,6 +31,8 @@ async function OrderDetail({ params }: PageProps<"/admin/orders/[id]">) {
   const paid = order.payments.find((payment) => payment.status === "PAID" || payment.status === "PARTIALLY_REFUNDED");
   const refundable = paid ? paid.capturedCents - paid.refundedCents : 0;
   const shipment = order.shipments[0] ?? null;
+  const finance = storedOrderFinance(order);
+  const shortfall = order.status === "AWAITING_FUNDS" ? await fulfilmentShortfallCents(order.id) : 0;
 
   return (
     <>
@@ -40,11 +47,18 @@ async function OrderDetail({ params }: PageProps<"/admin/orders/[id]">) {
         }
         description={`Placed ${dateTime.format(order.placedAt)} · ${order.paymentProvider}`}
       />
+      {order.status === "AWAITING_FUNDS" && (
+        <Alert tone="warning" title="Waiting for funds" className="mb-6">
+          {order.store.name} needs {formatMoney(shortfall, order.currency)} more in its balance before the {formatMoney(finance.fulfilmentCostCents, order.currency)} fulfilment cost can be charged. The order is
+          accepted automatically as soon as a deposit is confirmed.
+        </Alert>
+      )}
       <div className="mb-6">
         <OrderActions
           order={{ id: order.id, number: order.number, status: order.status, paymentStatus: order.paymentStatus, paymentProvider: order.paymentProvider, currency: order.currency, totalCents: order.totalCents, refundableCents: refundable }}
           tracking={shipment ? { carrier: shipment.carrier, trackingNumber: shipment.trackingNumber, trackingUrl: shipment.trackingUrl } : null}
           can={{ update: can(user, "orders.update"), refund: can(user, "orders.refund"), cancel: can(user, "orders.cancel") }}
+          needsAcceptance={order.status === "CONFIRMED" || order.status === "AWAITING_FUNDS"}
         />
       </div>
 
@@ -179,6 +193,39 @@ async function OrderDetail({ params }: PageProps<"/admin/orders/[id]">) {
         </div>
 
         <div className="space-y-6 xl:col-span-4">
+          <Card title="Store & money" description="The figures stored on this order — the same ones the owner sees.">
+            <div className="flex items-center gap-3">
+              <StoreMark store={order.store} size={40} />
+              <div className="min-w-0">
+                <Link href={`/admin/stores?q=${order.store.slug}`} className="block truncate font-medium text-ink-950 hover:underline">
+                  {order.store.name}
+                </Link>
+                <p className="truncate text-[0.8125rem] text-ink-500">{order.store.owner ? `${order.store.owner.firstName} ${order.store.owner.lastName} · ${order.store.owner.email}` : "Zendropship's own store"}</p>
+              </div>
+            </div>
+            <div className="mt-4 border-t border-line pt-4">
+              <OrderFinanceTable finance={finance} currency={order.currency} audience="staff" />
+            </div>
+            {order.walletEntries.length > 0 && (
+              <div className="mt-4 border-t border-line pt-4">
+                <p className="text-2xs font-semibold uppercase tracking-[0.08em] text-ink-500">Wallet movements</p>
+                <ul className="mt-2 space-y-1 text-[0.8125rem]">
+                  {order.walletEntries.map((entry) => (
+                    <li key={entry.id} className="flex items-baseline justify-between gap-3">
+                      <span className="text-ink-700">
+                        {WALLET_ENTRY_LABELS[entry.type]}
+                        {entry.status === "PENDING" && <span className="ml-1.5 text-warning">pending</span>}
+                      </span>
+                      <span className={cn("tabular", entry.amountCents >= 0 ? "text-success" : "text-ink-800")}>
+                        {entry.amountCents >= 0 ? "+" : "−"}
+                        {formatMoney(Math.abs(entry.amountCents), order.currency)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </Card>
           <Card title="Customer">
             {order.user ? (
               <div className="text-sm">

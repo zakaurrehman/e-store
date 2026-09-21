@@ -12,7 +12,7 @@ import { formatMoney } from "@/utils/money";
 
 export const metadata: Metadata = { title: "Orders" };
 
-const STATUS_FILTERS = ["", "PENDING", "CONFIRMED", "PROCESSING", "PACKED", "SHIPPED", "OUT_FOR_DELIVERY", "DELIVERED", "CANCELLED"] as const;
+const STATUS_FILTERS = ["", "PENDING", "CONFIRMED", "AWAITING_FUNDS", "ACCEPTED", "PROCESSING", "PACKED", "SHIPPED", "OUT_FOR_DELIVERY", "DELIVERED", "CANCELLED"] as const;
 
 async function OrdersTable({ searchParams }: PageProps<"/admin/orders">) {
   await requirePagePermission("orders.view", "/admin/orders");

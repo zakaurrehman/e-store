@@ -1,11 +1,15 @@
 import { Check } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { Card, DescriptionList, PageHeader, StatusBadge, Table, Td, Th, dateTime } from "@/components/admin/ui";
-import { Skeleton } from "@/components/ui/misc";
+import { Card, PageHeader, StatusBadge, Table, Td, Th, dateTime } from "@/components/admin/ui";
+import { OrderFinanceTable } from "@/components/commerce/order-finance";
+import { Alert, Skeleton } from "@/components/ui/misc";
+import { storedOrderFinance } from "@/features/finance/order-finance";
 import { FULFILMENT_STEPS, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, paymentTone, stepIndex, statusTone } from "@/features/orders/status";
 import { getStoreOrder } from "@/features/stores/dashboard";
+import { fulfilmentShortfallCents } from "@/features/wallet/service";
 import { requireStoreOwner } from "@/features/stores/guards";
 import { isAddressSnapshot } from "@/lib/address";
 import { cn } from "@/utils/cn";
@@ -18,10 +22,10 @@ async function OrderDetail({ params }: PageProps<"/dashboard/orders/[number]">) 
   const order = await getStoreOrder(store.id, number);
   if (!order) notFound();
   const address = isAddressSnapshot(order.shippingAddress) ? order.shippingAddress : null;
-  const margin = order.items.reduce((sum, item) => sum + (item.unitPriceCents - item.unitCostCents) * item.quantity, 0) - order.discountCents;
-  const wholesale = order.items.reduce((sum, item) => sum + item.unitCostCents * item.quantity, 0);
+  const finance = storedOrderFinance(order);
   const current = order.status === "CANCELLED" ? -1 : stepIndex(order.status);
   const shipment = order.shipments[0];
+  const shortfall = order.status === "AWAITING_FUNDS" ? await fulfilmentShortfallCents(order.id) : 0;
 
   return (
     <>
@@ -36,13 +40,26 @@ async function OrderDetail({ params }: PageProps<"/dashboard/orders/[number]">) 
           </>
         }
       />
+      {order.status === "AWAITING_FUNDS" && (
+        <Alert tone="warning" title="Deposit required to fulfil this order" className="mb-6">
+          <p>
+            The fulfilment cost is {formatMoney(finance.fulfilmentCostCents, order.currency)} and your balance is {formatMoney(shortfall, order.currency)} short. Deposit the difference and the order goes to
+            fulfilment as soon as Zendropship confirms it.
+          </p>
+          <p className="mt-2">
+            <Link href="/dashboard/balance" className="font-medium underline underline-offset-4">
+              Open your balance
+            </Link>
+          </p>
+        </Alert>
+      )}
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           <Card title="Fulfilment" description="Handled by Zendropship. You don't need to do anything to ship this order.">
             {order.status === "CANCELLED" ? (
               <p className="text-[0.9375rem] text-danger">This order was cancelled.</p>
             ) : (
-              <ol className="grid gap-3 sm:grid-cols-4 xl:grid-cols-7">
+              <ol className="grid gap-3 sm:grid-cols-4 xl:grid-cols-8">
                 {FULFILMENT_STEPS.map((step, index) => (
                   <li key={step.status} className="flex items-center gap-2 sm:flex-col sm:items-start">
                     <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold", index <= current ? "bg-success text-white" : "bg-canvas text-ink-400")}>
@@ -80,7 +97,7 @@ async function OrderDetail({ params }: PageProps<"/dashboard/orders/[number]">) 
                   <Th className="text-right">Qty</Th>
                   <Th className="text-right">Price</Th>
                   <Th className="text-right">You pay</Th>
-                  <Th className="text-right">You earn</Th>
+                  <Th className="text-right">Margin</Th>
                 </tr>
               </thead>
               <tbody>
@@ -98,6 +115,7 @@ async function OrderDetail({ params }: PageProps<"/dashboard/orders/[number]">) 
                 ))}
               </tbody>
             </Table>
+            <p className="border-t border-line px-5 py-3 text-[0.8125rem] text-ink-500">Margin is the price less what you pay, before Zendropship&rsquo;s commission. What you actually earn is under Money.</p>
           </Card>
 
           {order.events.length > 0 && (
@@ -118,19 +136,11 @@ async function OrderDetail({ params }: PageProps<"/dashboard/orders/[number]">) 
         </div>
 
         <div className="space-y-6">
-          <Card title="Money">
-            <DescriptionList
-              items={[
-                { label: "Subtotal", value: formatMoney(order.subtotalCents, order.currency) },
-                ...(order.discountCents ? [{ label: "Discount", value: `−${formatMoney(order.discountCents, order.currency)}` }] : []),
-                { label: "Shipping", value: formatMoney(order.shippingCents, order.currency) },
-                { label: "Tax", value: formatMoney(order.taxCents, order.currency) },
-                { label: "Customer paid", value: <span className="font-semibold">{formatMoney(order.totalCents, order.currency)}</span> },
-                { label: "Wholesale", value: formatMoney(wholesale, order.currency) },
-                { label: "Your margin", value: <span className={cn("font-semibold", margin > 0 ? "text-success" : "text-danger")}>{formatMoney(margin, order.currency)}</span> },
-              ]}
-            />
-            <p className="mt-3 text-[0.8125rem] text-ink-500">Shipping and tax go to fulfilment and are not part of your margin.</p>
+          <Card title="Money" description="Worked out when the order was placed — later rate changes never alter it.">
+            <OrderFinanceTable finance={finance} currency={order.currency} audience="owner" />
+            <p className="mt-3 text-[0.8125rem] text-ink-500">
+              Your earning is credited to your balance when the customer&rsquo;s payment is collected{order.paymentProvider === "cod" ? " — on delivery for cash on delivery." : "."}
+            </p>
           </Card>
           <Card title="Customer">
             <p className="text-[0.9375rem] text-ink-950">{address ? `${address.firstName} ${address.lastName}` : "—"}</p>

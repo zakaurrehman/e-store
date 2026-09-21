@@ -15,7 +15,9 @@ export const metadata: Metadata = { title: "Orders" };
 const PAGE_SIZE = 20;
 const FILTERS = [
   { label: "All", value: undefined },
-  { label: "With fulfilment", value: "PROCESSING" },
+  { label: "Awaiting funds", value: "AWAITING_FUNDS" },
+  { label: "Accepted", value: "ACCEPTED" },
+  { label: "Processing", value: "PROCESSING" },
   { label: "Confirmed", value: "CONFIRMED" },
   { label: "Shipped", value: "SHIPPED" },
   { label: "Delivered", value: "DELIVERED" },
@@ -76,7 +78,10 @@ async function OrdersTable({ searchParams }: PageProps<"/dashboard/orders">) {
                     <StatusBadge label={PAYMENT_STATUS_LABELS[order.paymentStatus]} tone={paymentTone(order.paymentStatus)} />
                   </Td>
                   <Td className="tabular text-right">{formatMoney(order.totalCents, order.currency)}</Td>
-                  <Td className={cn("tabular text-right font-medium", order.status === "CANCELLED" ? "text-ink-400 line-through" : "text-success")}>{formatMoney(order.marginCents, order.currency)}</Td>
+                  <Td className={cn("tabular text-right font-medium", order.status === "CANCELLED" ? "text-ink-400 line-through" : "text-success")}>
+                    {formatMoney(order.finance.ownerEarningCents, order.currency)}
+                    {order.finance.commissionCents > 0 && <span className="block text-[0.75rem] font-normal text-ink-500">after {formatMoney(order.finance.commissionCents, order.currency)} commission</span>}
+                  </Td>
                 </tr>
               );
             })}

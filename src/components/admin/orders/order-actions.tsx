@@ -5,18 +5,20 @@ import { ActionButton, ActionForm } from "@/components/admin/forms";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/field";
-import { addOrderNoteAction, cancelOrderAction, markOrderPaidAction, refundOrderAction, resendOrderConfirmationAction, saveTrackingAction, setOrderStatusAction } from "@/features/admin/orders/actions";
+import { acceptOrderAction, addOrderNoteAction, cancelOrderAction, markOrderPaidAction, refundOrderAction, resendOrderConfirmationAction, saveTrackingAction, setOrderStatusAction } from "@/features/admin/orders/actions";
 import type { OrderStatus } from "@/generated/prisma/enums";
-import { NEXT_STATUSES, ORDER_STATUS_LABELS } from "@/features/orders/status";
+import { CANCELLABLE_STATUSES, NEXT_STATUSES, ORDER_STATUS_LABELS } from "@/features/orders/status";
 import { formatMoney } from "@/utils/money";
 
 type Props = {
   order: { id: string; number: string; status: OrderStatus; paymentStatus: string; paymentProvider: string; currency: string; totalCents: number; refundableCents: number };
   tracking: { carrier: string | null; trackingNumber: string | null; trackingUrl: string | null } | null;
   can: { update: boolean; refund: boolean; cancel: boolean };
+  /** True while the order still has to be taken for fulfilment (which charges the owner's balance). */
+  needsAcceptance?: boolean;
 };
 
-export function OrderActions({ order, tracking, can }: Props) {
+export function OrderActions({ order, tracking, can, needsAcceptance }: Props) {
   const [statusOpen, setStatusOpen] = useState(false);
   const [trackingOpen, setTrackingOpen] = useState(false);
   const [refundOpen, setRefundOpen] = useState(false);
@@ -24,11 +26,25 @@ export function OrderActions({ order, tracking, can }: Props) {
   const [nextStatus, setNextStatus] = useState<OrderStatus | "">("");
   const [statusNote, setStatusNote] = useState("");
   const [cancelReason, setCancelReason] = useState("");
-  const nextOptions = NEXT_STATUSES[order.status];
-  const cancellable = ["PENDING", "CONFIRMED", "PROCESSING", "PACKED"].includes(order.status);
+  // Accepting is handled by its own button, so it never appears in the plain status list.
+  const nextOptions = NEXT_STATUSES[order.status].filter((status) => status !== "ACCEPTED");
+  const cancellable = CANCELLABLE_STATUSES.includes(order.status);
 
   return (
     <div className="flex flex-wrap gap-2">
+      {can.update && needsAcceptance && (
+        <ActionButton
+          action={() => acceptOrderAction(order.id)}
+          variant="primary"
+          confirm={{
+            title: `Accept order ${order.number} for fulfilment?`,
+            description: "The wholesale cost is charged to the store owner's balance. If their balance cannot cover it, the order waits for a deposit instead.",
+            confirmLabel: "Accept for fulfilment",
+          }}
+        >
+          Accept for fulfilment
+        </ActionButton>
+      )}
       {can.update && nextOptions.length > 0 && (
         <Button size="sm" onClick={() => setStatusOpen(true)}>
           Update status
@@ -109,7 +125,7 @@ export function OrderActions({ order, tracking, can }: Props) {
             <Field label="Tracking URL" htmlFor="trackingUrl" optional>
               <Input id="trackingUrl" name="trackingUrl" type="url" defaultValue={tracking?.trackingUrl ?? ""} placeholder="https://" />
             </Field>
-            {["CONFIRMED", "PROCESSING", "PACKED"].includes(order.status) && <Checkbox id="markShipped" name="markShipped" defaultChecked label="Mark the order as shipped and email the customer" />}
+            {["ACCEPTED", "PROCESSING", "PACKED"].includes(order.status) && <Checkbox id="markShipped" name="markShipped" defaultChecked label="Mark the order as shipped and email the customer" />}
           </div>
         </ActionForm>
       </Dialog>

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { profileSchema } from "@/features/auth/schemas";
-import { addressSchema } from "@/features/checkout/schemas";
+import { addressSchema, checkAddressPhone, normaliseAddressPhone } from "@/features/checkout/schemas";
 import { failure, handleActionError, success, zodFailure, type ActionState } from "@/server/actions";
 import { writeAudit } from "@/server/audit";
 import { assertSignedIn } from "@/server/auth/guards";
@@ -28,11 +28,15 @@ export async function updateProfileAction(_state: ActionState, formData: FormDat
   }
 }
 
-const addressFormSchema = addressSchema.extend({
-  id: z.string().max(40).optional(),
-  label: z.string().trim().max(40).optional().transform((value) => value || null),
-  isDefaultShipping: z.union([z.literal("on"), z.literal("true"), z.literal(""), z.undefined()]).transform((value) => value === "on" || value === "true"),
-});
+const addressFormSchema = addressSchema
+  .extend({
+    id: z.string().max(40).optional(),
+    label: z.string().trim().max(40).optional().transform((value) => value || null),
+    isDefaultShipping: z.union([z.literal("on"), z.literal("true"), z.literal(""), z.undefined()]).transform((value) => value === "on" || value === "true"),
+  })
+  // Same phone rules as checkout: a real, dialable number, stored in international form.
+  .superRefine(checkAddressPhone)
+  .transform(normaliseAddressPhone);
 
 export async function saveAddressAction(_state: ActionState, formData: FormData): Promise<ActionState> {
   try {

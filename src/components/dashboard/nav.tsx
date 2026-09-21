@@ -12,16 +12,25 @@ const ITEMS = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard, exact: true },
   { href: "/dashboard/products", label: "Products", icon: Package },
   { href: "/catalog", label: "Find products", icon: Search },
-  { href: "/dashboard/orders", label: "Orders", icon: ShoppingBag },
+  { href: "/dashboard/orders", label: "Orders", icon: ShoppingBag, badge: "orders" as const },
   { href: "/dashboard/balance", label: "Balance", icon: Wallet },
   { href: "/dashboard/customers", label: "Customers", icon: Users },
-  { href: "/dashboard/support", label: "Customer service", icon: LifeBuoy },
+  { href: "/dashboard/support", label: "Customer service", icon: LifeBuoy, badge: "support" as const },
   { href: "/dashboard/design", label: "Design & details", icon: Palette },
   { href: "/dashboard/pricing", label: "Pricing", icon: Tags },
   { href: "/dashboard/payments", label: "Payments", icon: CreditCard },
 ];
 
-export function DashboardNav({ store, user }: { store: { name: string; url: string; status: string }; user: { name: string; email: string } }) {
+export function DashboardNav({
+  store,
+  user,
+  badges,
+}: {
+  store: { name: string; url: string; status: string };
+  user: { name: string; email: string };
+  /** Small counts beside the nav items: unread messages, and orders that need money. */
+  badges: { support: number; orders: number };
+}) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   // Close the drawer on navigation — adjusted during render rather than in an effect.
@@ -63,6 +72,11 @@ export function DashboardNav({ store, user }: { store: { name: string; url: stri
                 >
                   <item.icon className="size-4" strokeWidth={1.7} />
                   {item.label}
+                  {item.badge && badges[item.badge] > 0 && (
+                    <span className={cn("tabular ml-auto rounded-full px-1.5 py-0.5 text-[0.6875rem] font-semibold", active ? "bg-white/20 text-white" : item.badge === "orders" ? "bg-warning/15 text-warning" : "bg-ink-950 text-white")}>
+                      {badges[item.badge]}
+                    </span>
+                  )}
                 </Link>
               </li>
             );

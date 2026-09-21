@@ -2,12 +2,18 @@ import { Suspense } from "react";
 import { AccountNav } from "@/components/store/account/account-nav";
 import { ResendVerificationButton } from "@/components/store/auth/auth-forms";
 import { Alert, Skeleton } from "@/components/ui/misc";
+import { getCurrentStore } from "@/features/stores/current";
+import { countUnreadForCustomer } from "@/features/support/queries";
 import { requireUser } from "@/server/auth/guards";
 import { db } from "@/server/db";
 
 async function AccountFrame({ children }: { children: React.ReactNode }) {
   const user = await requireUser("/account");
-  const unread = await db.notification.count({ where: { userId: user.id, readAt: null } });
+  const store = await getCurrentStore();
+  const [unread, unreadSupport] = await Promise.all([
+    db.notification.count({ where: { userId: user.id, readAt: null } }),
+    countUnreadForCustomer(user.id, store?.id ?? null),
+  ]);
   return (
     <div className="container-page pb-20 pt-8 md:pt-10">
       <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
@@ -27,7 +33,7 @@ async function AccountFrame({ children }: { children: React.ReactNode }) {
         </Alert>
       )}
       <div className="lg:grid lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-12 xl:grid-cols-[16rem_minmax(0,1fr)]">
-        <AccountNav unread={unread} isStaff={user.role.isStaff} />
+        <AccountNav unread={unread} unreadSupport={unreadSupport} isStaff={user.role.isStaff} />
         <div className="mt-6 min-w-0 lg:mt-0">{children}</div>
       </div>
     </div>

@@ -4,7 +4,8 @@ import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { OrderStatus } from "@/generated/prisma/enums";
-import { addOrderNote, cancelOrder, flushNotifications, markPaidManually, refundOrder, setShipmentTracking, updateOrderStatus } from "@/features/orders/service";
+import { acceptOrderForFulfilment, addOrderNote, cancelOrder, flushNotifications, markPaidManually, refundOrder, setShipmentTracking, updateOrderStatus } from "@/features/orders/service";
+import { fulfilmentShortfallCents } from "@/features/wallet/service";
 import { failure, handleActionError, success, type ActionState } from "@/server/actions";
 import { assertPermission } from "@/server/auth/guards";
 import { db } from "@/server/db";
@@ -15,6 +16,24 @@ function refresh(orderId: string) {
   revalidatePath(`/admin/orders/${orderId}`);
   revalidatePath("/admin/orders");
   revalidatePath("/admin");
+}
+
+/** Takes the order for fulfilment: charges the wholesale cost to the owner's balance, exactly once. */
+export async function acceptOrderAction(orderId: string): Promise<ActionState> {
+  try {
+    const user = await assertPermission("orders.update");
+    const notifications = await acceptOrderForFulfilment(String(orderId).slice(0, 40), user.id);
+    if (notifications.length) after(() => flushNotifications(notifications));
+    const order = await db.order.findUnique({ where: { id: String(orderId).slice(0, 40) }, select: { status: true } });
+    refresh(orderId);
+    if (order?.status === OrderStatus.AWAITING_FUNDS) {
+      const shortfall = await fulfilmentShortfallCents(orderId);
+      return failure(`The store's balance is ${(shortfall / 100).toFixed(2)} short of the fulfilment cost. The order is waiting for a deposit.`);
+    }
+    return success("Order accepted for fulfilment.");
+  } catch (error) {
+    return handleActionError(error);
+  }
 }
 
 export async function setOrderStatusAction(orderId: string, status: string, note?: string): Promise<ActionState> {
@@ -41,7 +60,8 @@ export async function saveTrackingAction(orderId: string, _state: ActionState, f
     const notifications: NotificationEvent[] = [];
     if (parsed.data.markShipped === "on") {
       const order = await db.order.findUniqueOrThrow({ where: { id: orderId } });
-      if (order.status !== OrderStatus.SHIPPED && ["CONFIRMED", "PROCESSING", "PACKED"].includes(order.status)) notifications.push(...(await updateOrderStatus(orderId, OrderStatus.SHIPPED, user.id)));
+      // Only an order fulfilment has accepted (and so has been paid for) can ship.
+      if (order.status !== OrderStatus.SHIPPED && ["ACCEPTED", "PROCESSING", "PACKED"].includes(order.status)) notifications.push(...(await updateOrderStatus(orderId, OrderStatus.SHIPPED, user.id)));
     }
     if (notifications.length) after(() => flushNotifications(notifications));
     refresh(orderId);

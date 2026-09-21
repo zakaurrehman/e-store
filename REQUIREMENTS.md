@@ -188,9 +188,39 @@ automatically. Decisions taken with the client:
 | Store addresses | Wildcard subdomains `<name>.zendropship.io` (requires Vercel nameservers). Custom domains per store later. |
 | "AI handles everything" | **Not claimed.** There is no AI in this release. The site describes only the automation that actually runs (order routing to fulfilment, live stock and prices, customer emails, owner notifications, instant store setup). An AI assistant may be added later and labelled as such when it exists. |
 
-### What this is not
+### What this is not (superseded — see Version 3)
 
-Opening a store is how the reference scheme lured victims, so the line is explicit. Zendropship stores are real shops
-selling to real customers. Owners **never pay upfront**: there are no deposits, balances, wallets, top-ups, "distribution"
-or pickup orders, invitation codes, government-ID uploads, crypto payments or withdrawal gates. An owner's earnings come
-only from real customer orders in their store, and the owner can see every order, its status and its margin.
+Version 2 had no deposits, balances or invitation codes at all. Version 3 adds them at the client's request, under the
+rules below, which keep the line that matters: an owner is never asked to pay for money Zendropship already holds.
+
+---
+
+## 2026-09-21 — Version 3: operations — finance, funding, invitations, support
+
+The client asked for the platform to run as an operational business: a transparent money breakdown on every order,
+a commission, a wallet ledger with deposits and withdrawals, a fulfilment funding gate, invite-only store opening, a
+full order lifecycle, and an internal support inbox.
+
+| Topic | Decision |
+| --- | --- |
+| Commission | **10% by default, configurable** in Admin → Settings → Commission & invitations. The code had no commission rule before, so the base is configurable too; the default is the goods the customer paid for after discount (shipping and tax excluded) — the client's own example ($299 paid, $29.90 commission). The rate and base are **stored on every order** when it is placed; a later change never rewrites an existing order. Orders placed before this release keep 0%. |
+| One calculation | `src/features/finance/order-finance.ts` is the only place money is worked out: customer paid, goods sold, fulfilment cost, commission, owner earning. The order stores the result; the owner dashboard, the admin order page, the ledger, the catalogue's "You earn" and the pricing screens all read it. |
+| Ledger | Append-only. Each order posts a **sale** (credit), **commission** (debit) and **fulfilment cost** (debit), each exactly once (idempotency key + a per-store database lock). Refunds and cancellations post compensating entries in proportion; nothing is edited. Entries are **pending** until the customer's money is collected (cash on delivery: on delivery) and then **cleared**; only cleared money can be withdrawn. |
+| Funding gate | When fulfilment accepts an order, the wholesale cost is charged to the owner's balance. **The customer's payment for that order is credited first**, so a normally priced order always funds itself. An order waits as **Awaiting funds** only when the balance cannot cover the charge — in practice when the owner sells below cost. A confirmed deposit releases waiting orders automatically. |
+| Deposits | Recorded by the owner (bank transfer or crypto, with reference and optional screenshot); **credited only when staff confirm** the money arrived. Declined deposits credit nothing and keep the reason. |
+| Withdrawals | Requested → Approved → Being sent → Paid, or Declined (amount returned). The amount leaves the available balance on request, so it cannot be spent twice. Payouts are sent by staff by hand; **automatic payouts (Stripe Connect) are not built**. |
+| Invitations | Store opening is invite-only while the setting is on (default on). Codes are random (`ZD-` + 8 characters, 40 bits), single-use unless staff choose more uses, can expire and be disabled, and record who used them and the store they opened. Codes are free — never sold. |
+| Order statuses | Awaiting payment → Confirmed → (Awaiting funds) → Accepted → Processing → Packed → Shipped → Out for delivery → Delivered, plus Cancelled. Refunded and failed are **payment** states, kept on the payment status rather than duplicated as order statuses. Only forward transitions are allowed; accepting always goes through the funding check. The order's event log is its timeline. |
+| Support | Conversations, not a contact form: customers write from the store (signed-in customers follow the thread in their account; guests get email). A store's customers reach its owner; everything is visible to Zendropship staff, who can reply, assign, add internal notes and resolve. |
+| Phone numbers | Validated with libphonenumber against the delivery country and stored in E.164. Format validation is **not** proof of ownership; one-time-code verification needs an SMS provider, which is not configured. |
+
+### The rules that keep this honest
+
+These are deliberate and should not be changed without the client understanding why:
+
+- **No order ever needs a deposit if its own payment covers it.** Zendropship collects the customer's money, so charging
+  the owner again for the same order would make them pay twice. Deposits are for genuine shortfalls only.
+- **Withdrawals never depend on a deposit, a fee or contacting support.** The form works on its own.
+- **Nothing credits money except a real event**: a collected customer payment or a deposit staff have confirmed.
+- **Invitation codes are free and carry no obligation.**
+- **Customers are never told a store is short of money**: an order waiting for funds shows as confirmed to them.

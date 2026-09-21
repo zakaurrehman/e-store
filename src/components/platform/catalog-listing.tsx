@@ -4,6 +4,8 @@ import { ButtonLink } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/misc";
 import type { SearchParamsRecord } from "@/features/catalog/filters";
 import { getCategoryTree, type ListingScope } from "@/features/catalog/queries";
+import { commissionRuleOf } from "@/features/finance/order-finance";
+import { getStoreSettings } from "@/features/settings/queries";
 import { getOwnedStore, getShelfProductIds } from "@/features/stores/queries";
 import { getCurrentUser } from "@/server/auth/session";
 import { cn } from "@/utils/cn";
@@ -36,7 +38,7 @@ export async function CatalogDepartments({ active }: { active?: string }) {
 
 /** The platform catalogue grid: every product, at suggested prices, with wholesale and margin for owners. */
 export async function CatalogListing({ basePath, scope, searchParams, hideCategoryFacet }: { basePath: string; scope: ListingScope; searchParams: SearchParamsRecord; hideCategoryFacet?: boolean }) {
-  const user = await getCurrentUser();
+  const [user, settings] = await Promise.all([getCurrentUser(), getStoreSettings()]);
   const store = user ? await getOwnedStore(user.id) : null;
   const inStoreIds = store ? await getShelfProductIds(store.id) : [];
   return (
@@ -46,7 +48,7 @@ export async function CatalogListing({ basePath, scope, searchParams, hideCatego
       catalog={null}
       searchParams={searchParams}
       hideCategoryFacet={hideCategoryFacet}
-      ownerView={{ inStoreIds, signedIn: !!user }}
+      ownerView={{ inStoreIds, signedIn: !!user, commission: commissionRuleOf(settings.platform) }}
       emptyState={<EmptyState title="No products here yet" description="New products are added to the catalogue regularly." action={<ButtonLink href="/catalog">Browse the whole catalogue</ButtonLink>} />}
     />
   );

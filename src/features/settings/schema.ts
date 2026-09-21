@@ -24,6 +24,18 @@ export const settingsSchema = {
     message: z.string().trim().max(140).default("Complimentary shipping on orders over $150 · 15-day returns"),
     href: z.string().trim().max(300).default("/pages/shipping"),
   }),
+  platform: z.object({
+    /** Zendropship's commission on every sale in an owner's store, in basis points (1000 = 10%). */
+    commissionRateBps: z.number().int().min(0).max(5000).default(1000),
+    /**
+     * What the commission is charged on:
+     *   ORDER_REVENUE — the goods the customer paid for, after discount (shipping and tax excluded)
+     *   OWNER_MARGIN  — the owner's margin, i.e. that revenue less the wholesale cost
+     */
+    commissionBase: z.enum(["ORDER_REVENUE", "OWNER_MARGIN"]).default("ORDER_REVENUE"),
+    /** Store creation is invite-only while this is on. */
+    requireReferralCode: z.boolean().default(true),
+  }),
   commerce: z.object({
     guestCheckout: z.boolean().default(true),
     returnWindowDays: z.number().int().min(0).max(365).default(15),

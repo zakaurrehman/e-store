@@ -2,27 +2,34 @@ import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
 import { OrderStatus, ProductStatus } from "@/generated/prisma/enums";
 import { db } from "@/server/db";
+import { storedOrderFinance, unitEarning, type CommissionRule } from "@/features/finance/order-finance";
+import { OPEN_STATUSES } from "@/features/orders/status";
 import { storePriceFor, summarisePrices, type StorePricingRules } from "./pricing";
 
 /** Orders that count as sales: placed and not cancelled (unpaid online checkouts are still PENDING). */
 const countedOrder = { status: { notIn: [OrderStatus.PENDING, OrderStatus.CANCELLED] } } satisfies Prisma.OrderWhereInput;
 
+/**
+ * The owner's headline figures. Money comes from each order's own stored breakdown (see
+ * features/finance), so the dashboard, the order page and the ledger cannot drift apart.
+ */
 export async function getStoreStats(storeId: string) {
   const since = new Date(Date.now() - 30 * 86_400_000);
-  const [activeProducts, hiddenProducts, orders, recentOrders, revenue, openOrders, customers, marginRows] = await Promise.all([
+  const [activeProducts, hiddenProducts, orders, recentOrders, totals, openOrders, customers, byStatus] = await Promise.all([
     db.storeProduct.count({ where: { storeId, isActive: true, product: { status: ProductStatus.ACTIVE, deletedAt: null } } }),
     db.storeProduct.count({ where: { storeId, isActive: false } }),
     db.order.count({ where: { storeId, ...countedOrder } }),
     db.order.count({ where: { storeId, ...countedOrder, placedAt: { gte: since } } }),
-    db.order.aggregate({ where: { storeId, ...countedOrder }, _sum: { totalCents: true, discountCents: true } }),
-    db.order.count({ where: { storeId, status: { in: [OrderStatus.CONFIRMED, OrderStatus.PROCESSING, OrderStatus.PACKED, OrderStatus.SHIPPED, OrderStatus.OUT_FOR_DELIVERY] } } }),
+    db.order.aggregate({
+      where: { storeId, ...countedOrder },
+      _sum: { totalCents: true, discountCents: true, subtotalCents: true, fulfilmentCostCents: true, commissionCents: true, ownerEarningCents: true },
+    }),
+    db.order.count({ where: { storeId, status: { in: OPEN_STATUSES } } }),
     db.order.groupBy({ by: ["email"], where: { storeId, ...countedOrder } }),
-    db.$queryRaw<Array<{ margin: bigint | null }>>`
-      SELECT SUM((i."unitPriceCents" - i."unitCostCents") * i."quantity") AS margin
-      FROM "OrderItem" i JOIN "Order" o ON o."id" = i."orderId"
-      WHERE o."storeId" = ${storeId} AND o."status" NOT IN ('PENDING', 'CANCELLED')`,
+    db.order.groupBy({ by: ["status"], where: { storeId }, _count: { _all: true } }),
   ]);
-  const grossMargin = Number(marginRows[0]?.margin ?? 0);
+  const counts = Object.fromEntries(byStatus.map((row) => [row.status, row._count._all])) as Partial<Record<OrderStatus, number>>;
+  const sum = totals._sum;
   return {
     activeProducts,
     hiddenProducts,
@@ -30,16 +37,30 @@ export async function getStoreStats(storeId: string) {
     recentOrders,
     openOrders,
     customers: customers.length,
-    revenueCents: revenue._sum.totalCents ?? 0,
-    /** Item margin minus discounts given; shipping and tax are passed through to fulfilment. */
-    marginCents: grossMargin - (revenue._sum.discountCents ?? 0),
+    /** What customers paid, shipping and tax included. */
+    revenueCents: sum.totalCents ?? 0,
+    /** The goods themselves, after discounts — what commission is worked out on. */
+    goodsSoldCents: Math.max(0, (sum.subtotalCents ?? 0) - (sum.discountCents ?? 0)),
+    fulfilmentCostCents: sum.fulfilmentCostCents ?? 0,
+    commissionCents: sum.commissionCents ?? 0,
+    /** Goods sold less wholesale less commission — the owner's share. */
+    earningsCents: sum.ownerEarningCents ?? 0,
+    byStatus: {
+      pendingPayment: counts.PENDING ?? 0,
+      awaitingFunds: counts.AWAITING_FUNDS ?? 0,
+      confirmed: (counts.CONFIRMED ?? 0) + (counts.ACCEPTED ?? 0),
+      processing: (counts.PROCESSING ?? 0) + (counts.PACKED ?? 0),
+      shipped: (counts.SHIPPED ?? 0) + (counts.OUT_FOR_DELIVERY ?? 0),
+      delivered: counts.DELIVERED ?? 0,
+      cancelled: counts.CANCELLED ?? 0,
+    },
   };
 }
 
 export type StoreProductRow = Awaited<ReturnType<typeof listStoreProducts>>["rows"][number];
 
 /** The owner's shelf with what each product costs them, what it sells for in their store and the margin. */
-export async function listStoreProducts(store: { id: string; pricing: StorePricingRules }, options: { page?: number; q?: string; pageSize?: number } = {}) {
+export async function listStoreProducts(store: { id: string; pricing: StorePricingRules }, options: { page?: number; q?: string; pageSize?: number; commission: CommissionRule }) {
   const pageSize = options.pageSize ?? 25;
   const page = Math.max(1, options.page ?? 1);
   const q = options.q?.trim().slice(0, 80);
@@ -91,7 +112,8 @@ export async function listStoreProducts(store: { id: string; pricing: StorePrici
       maxPriceCents: summary.maxPriceCents,
       costCents: summary.costCents,
       suggestedCents: suggested.priceCents,
-      marginCents: summary.priceCents - summary.costCents,
+      /** What the owner keeps per unit: price − wholesale − commission, the same rule as every order. */
+      marginCents: unitEarning(summary.priceCents, summary.costCents, options.commission).earningCents,
       hasVariants: entry.product.variants.length > 1,
     };
   });
@@ -121,7 +143,15 @@ export async function listStoreOrders(storeId: string, options: { page?: number;
         currency: true,
         placedAt: true,
         shippingAddress: true,
-        items: { select: { quantity: true, unitPriceCents: true, unitCostCents: true } },
+        subtotalCents: true,
+        shippingCents: true,
+        taxCents: true,
+        fulfilmentCostCents: true,
+        commissionCents: true,
+        commissionRateBps: true,
+        commissionBase: true,
+        ownerEarningCents: true,
+        items: { select: { quantity: true } },
       },
     }),
   ]);
@@ -132,7 +162,7 @@ export async function listStoreOrders(storeId: string, options: { page?: number;
     orders: orders.map((order) => ({
       ...order,
       itemCount: order.items.reduce((sum, item) => sum + item.quantity, 0),
-      marginCents: order.items.reduce((sum, item) => sum + (item.unitPriceCents - item.unitCostCents) * item.quantity, 0) - order.discountCents,
+      finance: storedOrderFinance(order),
     })),
   };
 }

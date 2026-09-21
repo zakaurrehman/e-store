@@ -7,6 +7,7 @@ import { CopyLink } from "@/components/dashboard/controls";
 import { BalancePanel } from "@/components/dashboard/wallet";
 import { Alert, Skeleton } from "@/components/ui/misc";
 import { ButtonLink } from "@/components/ui/button";
+import { formatRate } from "@/features/finance/order-finance";
 import { getStoreStats } from "@/features/stores/dashboard";
 import { getStoreSettings } from "@/features/settings/queries";
 import { requireStoreOwner } from "@/features/stores/guards";
@@ -22,6 +23,7 @@ export const metadata: Metadata = { title: "Overview" };
 async function Overview({ searchParams }: PageProps<"/dashboard">) {
   const [{ user, store }, query] = await Promise.all([requireStoreOwner("/dashboard"), searchParams]);
   const [stats, wallet, settings] = await Promise.all([getStoreStats(store.id), getWalletSummary(store.id), getStoreSettings()]);
+  const commissionRate = settings.platform.commissionRateBps;
   const url = storeUrl(store.slug);
   const emailLive = env.EMAIL_DRIVER !== "log";
 
@@ -66,8 +68,52 @@ async function Overview({ searchParams }: PageProps<"/dashboard">) {
       <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile label="Products live" value={stats.activeProducts} hint={stats.hiddenProducts ? `${stats.hiddenProducts} hidden` : undefined} href="/dashboard/products" />
         <StatTile label="Orders" value={stats.orders} hint={`${stats.recentOrders} in the last 30 days`} href="/dashboard/orders" />
-        <StatTile label="Sales" value={formatMoney(stats.revenueCents)} hint={`${stats.customers} customer${stats.customers === 1 ? "" : "s"}`} href="/dashboard/orders" />
-        <StatTile label="Your margin" value={formatMoney(stats.marginCents)} hint="Selling price minus wholesale" href="/dashboard/balance" />
+        <StatTile label="Customer sales" value={formatMoney(stats.revenueCents)} hint={`${stats.customers} customer${stats.customers === 1 ? "" : "s"}`} href="/dashboard/orders" />
+        <StatTile label="Your earnings" value={formatMoney(stats.earningsCents)} hint="After wholesale and commission" href="/dashboard/balance" />
+      </div>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <Card title="Orders" description="Where your orders are right now.">
+          <ul className="divide-y divide-line">
+            {[
+              { label: "Awaiting payment", value: stats.byStatus.pendingPayment, href: "/dashboard/orders?status=PENDING", tone: "" },
+              { label: "Awaiting funds", value: stats.byStatus.awaitingFunds, href: "/dashboard/orders?status=AWAITING_FUNDS", tone: "text-warning", hint: "Deposit needed before fulfilment can take these" },
+              { label: "With fulfilment", value: stats.byStatus.confirmed + stats.byStatus.processing, href: "/dashboard/orders", tone: "" },
+              { label: "Shipped", value: stats.byStatus.shipped, href: "/dashboard/orders?status=SHIPPED", tone: "" },
+              { label: "Delivered", value: stats.byStatus.delivered, href: "/dashboard/orders?status=DELIVERED", tone: "text-success" },
+            ].map((row) => (
+              <li key={row.label} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+                <div className="min-w-0">
+                  <Link href={row.href} className={cn("text-[0.9375rem] hover:underline", row.tone || "text-ink-800")}>
+                    {row.label}
+                  </Link>
+                  {row.hint && row.value > 0 && <p className="text-[0.75rem] text-ink-500">{row.hint}</p>}
+                </div>
+                <span className={cn("tabular text-lg font-semibold", row.value > 0 ? row.tone || "text-ink-950" : "text-ink-300")}>{row.value}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+
+        <Card title="Where the money goes" description={`Across every order in your store.${commissionRate > 0 ? ` Zendropship's commission is ${formatRate(commissionRate)}.` : ""}`}>
+          <dl className="divide-y divide-line">
+            {[
+              { label: "Customers paid", value: stats.revenueCents, hint: "Shipping and tax included", tone: "text-ink-950" },
+              { label: "Goods sold", value: stats.goodsSoldCents, hint: "After discounts — what commission is charged on", tone: "text-ink-950" },
+              { label: "Fulfilment cost", value: -stats.fulfilmentCostCents, hint: "Wholesale, charged to your balance", tone: "text-ink-700" },
+              { label: "Zendropship commission", value: -stats.commissionCents, hint: commissionRate > 0 ? `${formatRate(commissionRate)} of goods sold` : "No commission is charged", tone: "text-ink-700" },
+              { label: "Your earnings", value: stats.earningsCents, hint: "Credited as each payment is collected", tone: "text-success" },
+            ].map((row) => (
+              <div key={row.label} className="flex items-baseline justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+                <div className="min-w-0">
+                  <dt className="text-[0.9375rem] text-ink-800">{row.label}</dt>
+                  <p className="text-[0.75rem] text-ink-500">{row.hint}</p>
+                </div>
+                <dd className={cn("tabular text-[0.9375rem] font-semibold", row.tone)}>{row.value < 0 ? `−${formatMoney(Math.abs(row.value))}` : formatMoney(row.value)}</dd>
+              </div>
+            ))}
+          </dl>
+        </Card>
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">

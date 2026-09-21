@@ -10,7 +10,8 @@ export type StoreContext = {
   aboutText: string | null;
   supportEmail: string | null;
   accentColor: string;
-  logoUrl: string | null;
+  /** The store's own logo, with its real dimensions so it keeps its shape wherever it is shown. */
+  logo: { url: string; width: number | null; height: number | null } | null;
   heroImageUrl: string | null;
   heroTitle: string | null;
   heroSubtitle: string | null;

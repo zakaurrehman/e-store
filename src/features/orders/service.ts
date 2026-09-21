@@ -5,19 +5,22 @@ import { invalidateProducts } from "@/features/catalog/invalidate";
 import { adjustInventory, recomputeProductAggregates, recomputeProductSales } from "@/features/catalog/service";
 import { validateCoupon } from "@/features/checkout/coupons";
 import { calculateTotals } from "@/features/checkout/pricing";
+import { calculateOrderFinance, currentCommissionRule } from "@/features/finance/service";
 import { getShippingOptions, getTaxRate } from "@/features/checkout/shipping";
 import type { PlaceOrderInput } from "@/features/checkout/schemas";
 import { loadSettings } from "@/features/settings/service";
-import { creditOrderEarning, reverseOrderEarning } from "@/features/wallet/service";
+import { chargeOrderFulfilment, clearCollectedOrder, fulfilmentShortfallCents, recogniseOrderRevenue, reverseOrderLedger } from "@/features/wallet/service";
 import type { AddressSnapshot } from "@/lib/address";
+import { normalisePhone } from "@/lib/phone";
 import { storeUrl } from "@/lib/tenancy";
 import { writeAudit } from "@/server/audit";
 import { db, type DbClient, type Tx } from "@/server/db";
 import { DomainError, NotFoundError } from "@/server/errors";
-import { dispatchNotification, sendDeliveries, type NotificationEvent } from "@/server/notifications";
+import { dispatchNotification, orderAccessToken, sendDeliveries, type NotificationEvent } from "@/server/notifications";
 import { getPaymentProvider } from "@/server/payments/registry";
 import type { OrderForPayment, PaymentEvent } from "@/server/payments/types";
 import { hmacSha256, sha256 } from "@/server/security/crypto";
+import { formatMoney } from "@/utils/money";
 import { generateOrderNumber } from "./numbers";
 import { CANCELLABLE_STATUSES, NEXT_STATUSES, ORDER_STATUS_LABELS } from "./status";
 
@@ -98,13 +101,29 @@ export async function placeOrder(
   if (!method) throw new OrderError("SHIPPING_INVALID", "Choose a delivery method for your address.", { fieldErrors: { shippingMethodId: ["Choose a delivery method."] } });
   const taxRate = await getTaxRate(shipping.country, shipping.region);
   const totals = calculateTotals({ lines, coupon, shipping: method, tax: taxRate });
+  const lineByKey = new Map(cart.lines.map((line) => [line.variantId, line]));
+
+  // The commission rule in force right now is stored on the order, so a later rate change never rewrites it.
+  const store = await db.store.findUniqueOrThrow({ where: { id: cart.storeId }, select: { ownerId: true } });
+  const commissionRule = await currentCommissionRule();
+  const finance = calculateOrderFinance(
+    {
+      subtotalCents: totals.subtotalCents,
+      discountCents: totals.discountCents,
+      shippingCents: totals.shippingCents,
+      taxCents: totals.taxCents,
+      totalCents: totals.totalCents,
+      items: totals.lines.map((priced) => ({ unitCostCents: lineByKey.get(priced.key)!.unitCostCents, quantity: priced.quantity })),
+    },
+    // Zendropship's own store pays itself no commission.
+    store.ownerId ? commissionRule : { ...commissionRule, rateBps: 0 },
+  );
 
   const provider = getPaymentProvider(input.paymentProvider);
   if (!provider || !provider.isAvailable({ country: shipping.country, totalCents: totals.totalCents, currency: settings.store.currency })) {
     throw new OrderError("PAYMENT_METHOD_INVALID", "That payment method isn't available for this order.", { fieldErrors: { paymentProvider: ["Choose another payment method."] } });
   }
 
-  const lineByKey = new Map(cart.lines.map((line) => [line.variantId, line]));
   const notifications: NotificationEvent[] = [];
   const isOffline = provider.flow === "offline";
 
@@ -134,7 +153,7 @@ export async function placeOrder(
           storeId: cart.storeId,
           userId: context.userId,
           email: input.email,
-          phone: input.phone ?? shipping.phone ?? null,
+          phone: normalisePhone(input.phone ?? shipping.phone, shipping.country)?.e164 ?? input.phone ?? shipping.phone ?? null,
           status: isOffline ? OrderStatus.CONFIRMED : OrderStatus.PENDING,
           paymentStatus: PaymentStatus.PENDING,
           paymentProvider: provider.key,
@@ -144,6 +163,11 @@ export async function placeOrder(
           shippingCents: totals.shippingCents,
           taxCents: totals.taxCents,
           totalCents: totals.totalCents,
+          fulfilmentCostCents: finance.fulfilmentCostCents,
+          commissionRateBps: finance.commissionRateBps,
+          commissionBase: finance.commissionBase,
+          commissionCents: finance.commissionCents,
+          ownerEarningCents: finance.ownerEarningCents,
           couponCode: coupon?.code ?? null,
           shippingAddress: shipping as Prisma.InputJsonValue,
           billingAddress: billing as Prisma.InputJsonValue,
@@ -215,11 +239,74 @@ export async function placeOrder(
   if (isOffline) {
     await checkLowStock(order.items.map((item) => item.variantId).filter(Boolean) as string[], notifications);
     notifications.push({ type: "order.confirmed", orderId: order.id });
-    return { result: { orderId: order.id, orderNumber: order.number, paymentId: null, next: { kind: "confirmation", url: `/checkout/confirmation/${order.number}` } }, notifications };
+    notifications.push(...(await acceptOrderForFulfilment(order.id)));
+    return { result: { orderId: order.id, orderNumber: order.number, paymentId: null, next: confirmationTarget(order) }, notifications };
   }
 
   const result = await startPayment(order.id, order.payments[0].id, context.appUrl);
   return { result, notifications };
+}
+
+/**
+ * Where the customer goes once the order exists. The signed token is included so a guest — who has no
+ * session and may not have their email yet — can open the page, refresh it, or come back to it later.
+ */
+function confirmationTarget(order: { number: string; email: string }): { kind: "confirmation"; url: string } {
+  return { kind: "confirmation", url: `/checkout/confirmation/${order.number}?token=${orderAccessToken(order)}` };
+}
+
+/**
+ * Hands the order to Zendropship fulfilment. The wholesale cost is charged to the owner's balance here —
+ * exactly once, whatever happens — and the order waits as AWAITING_FUNDS if the balance cannot cover it.
+ * Safe to call again at any time: an order that is already accepted is left alone.
+ */
+export async function acceptOrderForFulfilment(orderId: string, actorId?: string | null): Promise<NotificationEvent[]> {
+  const before = await db.order.findUnique({ where: { id: orderId }, select: { status: true } });
+  if (!before || (before.status !== OrderStatus.CONFIRMED && before.status !== OrderStatus.AWAITING_FUNDS)) return [];
+
+  const outcome = await db.$transaction(async (tx) => {
+    // Lock the order row first: acceptances of the same order queue up here, so the status read below is
+    // the real one and only the first of several simultaneous clicks writes anything.
+    await tx.$executeRaw`SELECT 1 FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`;
+    const order = await tx.order.findUniqueOrThrow({ where: { id: orderId }, select: { status: true, currency: true } });
+    if (order.status !== OrderStatus.CONFIRMED && order.status !== OrderStatus.AWAITING_FUNDS) return { changed: false as const };
+
+    const funding = await chargeOrderFulfilment(tx, orderId);
+    if (!funding.ok) {
+      if (order.status === OrderStatus.AWAITING_FUNDS) return { changed: false as const };
+      await tx.order.update({ where: { id: orderId }, data: { status: OrderStatus.AWAITING_FUNDS } });
+      await addEvent(tx, orderId, OrderEventType.STATUS_CHANGED, `Waiting for funds — the store balance is ${formatMoney(funding.shortfallCents, order.currency)} short of the fulfilment cost`, {
+        data: { status: OrderStatus.AWAITING_FUNDS, shortfallCents: funding.shortfallCents },
+        actorId,
+      });
+      return { changed: true as const, to: OrderStatus.AWAITING_FUNDS, shortfallCents: funding.shortfallCents };
+    }
+    await tx.order.update({ where: { id: orderId }, data: { status: OrderStatus.ACCEPTED, acceptedAt: new Date() } });
+    await addEvent(tx, orderId, OrderEventType.STATUS_CHANGED, funding.chargedCents > 0 ? `Accepted by fulfilment — ${formatMoney(funding.chargedCents, order.currency)} charged to the store balance` : "Accepted by fulfilment", {
+      data: { status: OrderStatus.ACCEPTED, chargedCents: funding.chargedCents },
+      actorId,
+    });
+    return { changed: true as const, to: OrderStatus.ACCEPTED, from: order.status };
+  });
+
+  if (!outcome.changed) return [];
+  // The owner hears when an order starts waiting for money, and when a waiting order finally goes through.
+  if (outcome.to === OrderStatus.AWAITING_FUNDS) return [{ type: "order.awaiting-funds", orderId, shortfallCents: outcome.shortfallCents }];
+  return outcome.from === OrderStatus.AWAITING_FUNDS ? [{ type: "order.accepted", orderId }] : [];
+}
+
+/** After a deposit is confirmed: take every order that was waiting for money and could now be paid for. */
+export async function acceptFundedOrders(storeId: string): Promise<NotificationEvent[]> {
+  const waiting = await db.order.findMany({ where: { storeId, status: OrderStatus.AWAITING_FUNDS }, orderBy: { placedAt: "asc" }, select: { id: true }, take: 50 });
+  const notifications: NotificationEvent[] = [];
+  for (const order of waiting) {
+    try {
+      notifications.push(...(await acceptOrderForFulfilment(order.id)));
+    } catch (error) {
+      console.error(`[orders] could not accept ${order.id} after funding`, error);
+    }
+  }
+  return notifications;
 }
 
 function toOrderForPayment(order: { id: string; number: string; email: string; currency: string; totalCents: number; shippingCents: number; taxCents: number; discountCents: number; items: Array<{ productName: string; variantTitle: string | null; quantity: number; unitPriceCents: number }> }): OrderForPayment {
@@ -255,20 +342,21 @@ async function startPayment(orderId: string, paymentId: string, appUrl: string):
   if (initiated.kind === "redirect") {
     return { orderId: order.id, orderNumber: order.number, paymentId: payment.id, next: { kind: "redirect", url: initiated.url } };
   }
-  return { orderId: order.id, orderNumber: order.number, paymentId: payment.id, next: { kind: "confirmation", url: `/checkout/confirmation/${order.number}` } };
+  return { orderId: order.id, orderNumber: order.number, paymentId: payment.id, next: confirmationTarget(order) };
 }
 
 /** Re-opens payment for an unpaid order (failed/expired/abandoned attempts create a fresh Payment). */
 export async function resumePayment(orderId: string, appUrl: string, providerKey?: string): Promise<PlaceOrderResult> {
   const order = await db.order.findUniqueOrThrow({ where: { id: orderId }, include: { payments: { orderBy: { createdAt: "desc" } } } });
   if (order.paymentStatus === PaymentStatus.PAID || order.status === OrderStatus.CANCELLED) {
-    return { orderId: order.id, orderNumber: order.number, paymentId: null, next: { kind: "confirmation", url: `/checkout/confirmation/${order.number}` } };
+    return { orderId: order.id, orderNumber: order.number, paymentId: null, next: confirmationTarget(order) };
   }
   const provider = getPaymentProvider(providerKey ?? order.paymentProvider);
   if (!provider) throw new OrderError("PAYMENT_METHOD_INVALID", "This payment method is no longer available.");
   if (provider.flow === "offline") {
     await db.order.update({ where: { id: order.id }, data: { paymentProvider: provider.key, status: OrderStatus.CONFIRMED } });
-    return { orderId: order.id, orderNumber: order.number, paymentId: null, next: { kind: "confirmation", url: `/checkout/confirmation/${order.number}` } };
+    await acceptOrderForFulfilment(order.id);
+    return { orderId: order.id, orderNumber: order.number, paymentId: null, next: confirmationTarget(order) };
   }
   const reusable = order.payments.find((payment) => payment.provider === provider.key && payment.status === PaymentStatus.PENDING);
   const payment = reusable ?? (await db.payment.create({ data: { orderId: order.id, provider: provider.key, status: PaymentStatus.PENDING, amountCents: order.totalCents, currency: order.currency } }));
@@ -308,8 +396,9 @@ export async function applyPaymentEvent(providerKey: string, event: PaymentEvent
       await recomputeProductSales(items.map((item) => item.productId).filter(Boolean) as string[]);
       await invalidateProducts(items.map((item) => item.productId));
       await checkLowStock(items.map((item) => item.variantId).filter(Boolean) as string[], notifications);
-      await creditOrderEarning(order.id);
+      await recogniseOrderRevenue(order.id);
       notifications.push(order.status === OrderStatus.PENDING ? { type: "order.confirmed", orderId: order.id } : { type: "order.payment-received", orderId: order.id });
+      notifications.push(...(await acceptOrderForFulfilment(order.id)));
       break;
     }
     case "payment.failed": {
@@ -380,6 +469,16 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus, ac
   if (status === OrderStatus.CONFIRMED && order.paymentStatus !== PaymentStatus.PAID && order.paymentProvider !== "cod") {
     throw new OrderError("UNPAID", "Record the payment before confirming this order.");
   }
+  // Accepting an order moves money, so it goes through the funding check rather than a plain status write.
+  if (status === OrderStatus.ACCEPTED) {
+    const outcome = await acceptOrderForFulfilment(orderId, actorId);
+    const accepted = await db.order.findUniqueOrThrow({ where: { id: orderId }, select: { status: true } });
+    if (accepted.status !== OrderStatus.ACCEPTED) {
+      const shortfall = await fulfilmentShortfallCents(orderId);
+      throw new OrderError("AWAITING_FUNDS", `This store needs $${(shortfall / 100).toFixed(2)} more in its balance before fulfilment can take the order.`);
+    }
+    return outcome;
+  }
   const notifications: NotificationEvent[] = [];
   await db.$transaction(async (tx) => {
     await tx.order.update({ where: { id: orderId }, data: { status, ...(status === OrderStatus.DELIVERED ? { deliveredAt: new Date() } : {}) } });
@@ -400,8 +499,8 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus, ac
     notifications.push({ type: "order.shipped", orderId, shipmentId: shipment.id });
   }
   if (status === OrderStatus.DELIVERED) {
-    // Cash on delivery is collected by the courier, so the owner earns it once the parcel arrives.
-    await creditOrderEarning(orderId);
+    // Cash on delivery is collected by the courier, so the money counts once the parcel arrives.
+    await clearCollectedOrder(orderId);
     notifications.push({ type: "order.delivered", orderId });
   }
   return notifications;
@@ -435,7 +534,9 @@ export async function markPaidManually(orderId: string, actorId: string, note?: 
   const items = await db.orderItem.findMany({ where: { orderId }, select: { productId: true } });
   await recomputeProductSales(items.map((item) => item.productId).filter(Boolean) as string[]);
   await invalidateProducts(items.map((item) => item.productId));
-  return [{ type: "order.payment-received", orderId }];
+  // The money is in: record the sale (or clear a cash-on-delivery order's pending entries) and fund fulfilment.
+  await recogniseOrderRevenue(orderId);
+  return [{ type: "order.payment-received", orderId }, ...(await acceptOrderForFulfilment(orderId, actorId))];
 }
 
 async function recordRefund(paymentId: string, amountCents: number, transactionId: string | null, reason: string, actorId: string | null, notifications: NotificationEvent[], client: DbClient = db) {
@@ -450,7 +551,7 @@ async function recordRefund(paymentId: string, amountCents: number, transactionI
     data: { refundedCents: orderRefunded, paymentStatus: orderRefunded >= payment.order.totalCents ? PaymentStatus.REFUNDED : PaymentStatus.PARTIALLY_REFUNDED },
   });
   await addEvent(client, payment.orderId, OrderEventType.REFUND, `Refunded ${(amountCents / 100).toFixed(2)} ${payment.currency} — ${reason}`, { actorId, data: { amountCents, transactionId } });
-  await reverseOrderEarning(payment.orderId, "refunded");
+  await reverseOrderLedger(payment.orderId, { refundedCents: orderRefunded, reason: "refunded", actorId, client });
   notifications.push({ type: "order.refunded", orderId: payment.orderId, amountCents });
 }
 
@@ -502,7 +603,7 @@ export async function cancelOrder(orderId: string, reason: string, actorId: stri
     await addEvent(tx, orderId, OrderEventType.STATUS_CHANGED, `Order cancelled — ${reason}`, { data: { status: OrderStatus.CANCELLED }, actorId });
   });
   // A cancelled order earns the owner nothing (a refund has already reversed it when one was issued).
-  await reverseOrderEarning(orderId, "cancelled");
+  await reverseOrderLedger(orderId, { reason: "cancelled", actorId });
   for (const item of order.items) if (item.productId) await recomputeProductAggregates(item.productId);
   await invalidateProducts(order.items.map((item) => item.productId));
   if (actorId) await writeAudit({ actorId, action: "order.cancel", entityType: "Order", entityId: orderId, summary: `Order ${order.number} cancelled: ${reason}` });

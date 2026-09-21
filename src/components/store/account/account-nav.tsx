@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, Clock, Heart, LogOut, MapPin, Package, Shield, Star, User, LayoutDashboard } from "lucide-react";
+import { Bell, Clock, Heart, LifeBuoy, LogOut, MapPin, Package, Shield, Star, User, LayoutDashboard } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { logoutAction } from "@/features/auth/actions";
@@ -9,6 +9,7 @@ import { cn } from "@/utils/cn";
 const LINKS = [
   { href: "/account", label: "Overview", icon: LayoutDashboard, exact: true },
   { href: "/account/orders", label: "Orders", icon: Package },
+  { href: "/support", label: "Customer service", icon: LifeBuoy },
   { href: "/account/wishlist", label: "Wishlist", icon: Heart },
   { href: "/account/recently-viewed", label: "Recently viewed", icon: Clock },
   { href: "/account/reviews", label: "Reviews", icon: Star },
@@ -18,13 +19,13 @@ const LINKS = [
   { href: "/account/security", label: "Password & security", icon: Shield },
 ];
 
-export function AccountNav({ unread, isStaff }: { unread: number; isStaff: boolean }) {
+export function AccountNav({ unread, unreadSupport, isStaff }: { unread: number; unreadSupport: number; isStaff: boolean }) {
   const pathname = usePathname();
   return (
     <nav aria-label="Account" className="lg:sticky lg:top-24">
       <ul className="scrollbar-none -mx-4 flex gap-1 overflow-x-auto px-4 pb-2 lg:mx-0 lg:flex-col lg:px-0 lg:pb-0">
         {LINKS.map((link) => {
-          const active = link.exact ? pathname === link.href : pathname.startsWith(link.href);
+          const active = link.exact ? pathname === link.href : pathname === link.href || pathname.startsWith(`${link.href}/`);
           return (
             <li key={link.href} className="shrink-0">
               <Link
@@ -37,8 +38,10 @@ export function AccountNav({ unread, isStaff }: { unread: number; isStaff: boole
               >
                 <link.icon className="size-4" strokeWidth={1.7} aria-hidden />
                 {link.label}
-                {link.href === "/account/notifications" && unread > 0 && (
-                  <span className={cn("tabular ml-auto rounded-full px-1.5 text-[0.6875rem] font-semibold", active ? "bg-white/20 text-white" : "bg-ink-950 text-white")}>{unread}</span>
+                {((link.href === "/account/notifications" && unread > 0) || (link.href === "/support" && unreadSupport > 0)) && (
+                  <span className={cn("tabular ml-auto rounded-full px-1.5 text-[0.6875rem] font-semibold", active ? "bg-white/20 text-white" : "bg-ink-950 text-white")}>
+                    {link.href === "/support" ? unreadSupport : unread}
+                  </span>
                 )}
               </Link>
             </li>

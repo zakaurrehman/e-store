@@ -7,6 +7,8 @@ import { ProductPriceEditor, RemoveProductButton, VisibilityToggle } from "@/com
 import { ButtonLink } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { Skeleton } from "@/components/ui/misc";
+import { commissionRuleOf } from "@/features/finance/order-finance";
+import { getStoreSettings } from "@/features/settings/queries";
 import { listStoreProducts } from "@/features/stores/dashboard";
 import { requireStoreOwner } from "@/features/stores/guards";
 import { storeUrl } from "@/lib/tenancy";
@@ -22,7 +24,8 @@ async function ProductsTable({ searchParams }: PageProps<"/dashboard/products">)
   const page = Math.max(1, Number.parseInt(typeof query.page === "string" ? query.page : "1", 10) || 1);
   const q = typeof query.q === "string" ? query.q : "";
   const rule = { mode: store.pricingMode, markupBps: store.markupBps };
-  const data = await listStoreProducts({ id: store.id, pricing: rule }, { page, q, pageSize: PAGE_SIZE });
+  const commission = commissionRuleOf((await getStoreSettings()).platform);
+  const data = await listStoreProducts({ id: store.id, pricing: rule }, { page, q, pageSize: PAGE_SIZE, commission });
   const url = storeUrl(store.slug);
 
   return (
@@ -88,7 +91,7 @@ async function ProductsTable({ searchParams }: PageProps<"/dashboard/products">)
                 </Td>
                 <Td className={cn("tabular text-right font-medium", row.marginCents > 0 ? "text-success" : "text-danger")}>{formatMoney(row.marginCents)}</Td>
                 <Td>
-                  <ProductPriceEditor row={row} storeRule={rule} />
+                  <ProductPriceEditor row={row} storeRule={rule} commission={commission} />
                 </Td>
                 <Td className="text-[0.8125rem]">
                   {!row.sellable ? <span className="text-danger">Withdrawn by supplier</span> : row.inStock ? <span className="text-ink-600">{row.stock} available</span> : <span className="text-warning">Out of stock</span>}

@@ -15,8 +15,15 @@ test.describe("checkout, payment and orders", () => {
 
     // Order creation
     await page.waitForURL(/\/checkout\/confirmation\//);
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Thank you — your order is confirmed");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Thank you for your order!");
     const number = await orderNumberOn(page);
+
+    // The page is read from the database, not from the browser: a refresh shows the same order, never a 404.
+    await page.reload();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Thank you for your order!");
+    await expect(page.getByText(number).first()).toBeVisible();
+    await expect(page.getByRole("link", { name: "Track your order" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Continue shopping" })).toBeVisible();
 
     // Order tracking
     await page.goto("/track-order");
@@ -40,7 +47,7 @@ test.describe("checkout, payment and orders", () => {
     await page.waitForURL(/\/checkout\/sandbox\//);
     await page.getByRole("button", { name: /^Pay \$/ }).click();
     await page.waitForURL(/\/checkout\/confirmation\//);
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Thank you — your order is confirmed");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Thank you for your order!");
   });
 
   test("coupon: a code created in the admin takes 10% off the bag", async ({ browser }) => {

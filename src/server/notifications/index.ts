@@ -32,7 +32,15 @@ export type NotificationEvent =
   | { type: "inventory.low-stock"; variantIds: string[] }
   | { type: "review.submitted"; reviewId: string }
   | { type: "contact.received"; messageId: string }
-  | { type: "contact.replied"; messageId: string; replyId: string };
+  | { type: "contact.replied"; messageId: string; replyId: string }
+  | { type: "support.customer-replied"; messageId: string; replyId: string }
+  | { type: "order.accepted"; orderId: string }
+  | { type: "order.awaiting-funds"; orderId: string; shortfallCents: number }
+  | { type: "wallet.deposit-submitted"; depositId: string }
+  | { type: "wallet.deposit-settled"; depositId: string; confirmed: boolean }
+  | { type: "wallet.payout-requested"; payoutId: string }
+  | { type: "wallet.payout-settled"; payoutId: string; paid: boolean }
+  | { type: "store.opened"; storeId: string };
 
 const MAX_ATTEMPTS = 5;
 const BACKOFF_MINUTES = [1, 5, 30, 120, 720];
@@ -42,11 +50,14 @@ export function orderAccessToken(order: { number: string; email: string }) {
   return hmacSha256(`order-access:${order.number}:${order.email.toLowerCase()}`);
 }
 
-type StoreForEmail = { slug: string; name: string; supportEmail: string | null; ownerId: string | null };
+type StoreForEmail = { slug: string; name: string; supportEmail: string | null; ownerId: string | null; logo?: { url: string } | null };
+
+/** Everything an email needs to go out in a store's name — including that store's own logo. */
+export const storeForEmailSelect = { slug: true, name: true, supportEmail: true, ownerId: true, logo: { select: { url: true } } } as const;
 
 async function loadStore(storeId: string | null | undefined): Promise<StoreForEmail | null> {
   if (!storeId) return null;
-  return db.store.findUnique({ where: { id: storeId }, select: { slug: true, name: true, supportEmail: true, ownerId: true } });
+  return db.store.findUnique({ where: { id: storeId }, select: storeForEmailSelect });
 }
 
 /** Where a customer's links point: their store's domain, or the platform site. */
@@ -63,12 +74,15 @@ export function orderUrl(order: { number: string; email: string; userId: string 
 async function getBrand(store: StoreForEmail | null = null): Promise<EmailBrand> {
   const settings = await loadSettings();
   if (store?.ownerId) {
+    const origin = originFor(store);
     return {
       storeName: store.name,
       legalName: store.name,
       supportEmail: store.supportEmail ?? settings.store.supportEmail,
       address: "",
-      appUrl: originFor(store),
+      appUrl: origin,
+      // The logo belongs to this store and no other: it comes from the same row the name does.
+      logoUrl: store.logo?.url ? new URL(store.logo.url, origin).toString() : null,
     };
   }
   return {
@@ -83,7 +97,7 @@ async function getBrand(store: StoreForEmail | null = null): Promise<EmailBrand>
 async function loadOrderEmailData(orderId: string) {
   const order = await db.order.findUniqueOrThrow({
     where: { id: orderId },
-    include: { items: true, user: { select: { firstName: true } }, store: { select: { slug: true, name: true, supportEmail: true, ownerId: true } } },
+    include: { items: true, user: { select: { firstName: true } }, store: { select: storeForEmailSelect } },
   });
   const shipping = isAddressSnapshot(order.shippingAddress) ? order.shippingAddress : null;
   if (!shipping) throw new Error(`Order ${order.number} has an invalid shipping address snapshot`);
@@ -116,6 +130,14 @@ async function loadOrderEmailData(orderId: string) {
   };
   const brand = await getBrand(order.store);
   return { order, data, url: orderUrl(order, originFor(order.store)), brand };
+}
+
+/** The owner of a store, when there is one and the account is still active. */
+async function storeOwner(storeId: string) {
+  const store = await db.store.findUnique({ where: { id: storeId }, select: { name: true, slug: true, ownerId: true } });
+  if (!store?.ownerId) return null;
+  const owner = await db.user.findFirst({ where: { id: store.ownerId, deletedAt: null }, select: { id: true, email: true, firstName: true } });
+  return owner ? { store, owner } : null;
 }
 
 async function staffRecipients(permission: Permission) {
@@ -330,7 +352,7 @@ async function plan(event: NotificationEvent): Promise<Planned[]> {
     }
 
     case "contact.received": {
-      const message = await db.contactMessage.findUniqueOrThrow({ where: { id: event.messageId }, include: { store: { select: { slug: true, name: true, supportEmail: true, ownerId: true } } } });
+      const message = await db.contactMessage.findUniqueOrThrow({ where: { id: event.messageId }, include: { store: { select: storeForEmailSelect } } });
       const owner = message.store?.ownerId ? await db.user.findUnique({ where: { id: message.store.ownerId }, select: { id: true, email: true, deletedAt: true } }) : null;
       // A message written in an owner's store is that owner's to answer; everything else reaches Zendropship staff.
       if (owner && !owner.deletedAt) {
@@ -360,9 +382,251 @@ async function plan(event: NotificationEvent): Promise<Planned[]> {
       ];
     }
 
+    case "support.customer-replied": {
+      const message = await db.contactMessage.findUniqueOrThrow({ where: { id: event.messageId }, include: { store: { select: storeForEmailSelect } } });
+      const reply = await db.contactReply.findUniqueOrThrow({ where: { id: event.replyId } });
+      const lines = [`${message.name} (${message.email}) wrote back about "${message.subject}"`, reply.body.slice(0, 300)];
+      // A reply in a store's conversation is the owner's to answer; on the platform site it is Zendropship's.
+      if (message.storeId) {
+        const target = await storeOwner(message.storeId);
+        if (!target) return [];
+        return [
+          {
+            inApp: { audience: NotificationAudience.CUSTOMER, userId: target.owner.id, type: "support.customer-replied", title: `New reply from ${message.name}`, body: message.subject, href: `/dashboard/support?id=${message.id}` },
+            emails: [
+              {
+                to: target.owner.email,
+                template: "owner.support-reply",
+                rendered: templates.staffAlertEmail(platformBrand, { title: `New reply in ${target.store.name}`, lines, href: app(`/dashboard/support?id=${message.id}`), cta: "Read and reply" }),
+                replyTo: message.email,
+              },
+            ],
+          },
+        ];
+      }
+      const staff = await staffRecipients("messages.view");
+      return [
+        {
+          inApp: { audience: NotificationAudience.STAFF, userId: null, type: "support.customer-replied", title: `New reply from ${message.name}`, body: message.subject, href: `/admin/messages?id=${message.id}` },
+          emails: staff.map((member) => ({
+            to: member.email,
+            template: "staff.support-reply",
+            rendered: templates.staffAlertEmail(platformBrand, { title: "New reply in a support conversation", lines, href: app(`/admin/messages?id=${message.id}`), cta: "Open conversation" }),
+          })),
+        },
+      ];
+    }
+
+    case "order.accepted": {
+      const order = await db.order.findUniqueOrThrow({ where: { id: event.orderId }, select: { id: true, number: true, storeId: true, currency: true, fulfilmentCostCents: true, ownerEarningCents: true } });
+      const target = await storeOwner(order.storeId);
+      if (!target) return [];
+      return [
+        {
+          inApp: {
+            audience: NotificationAudience.CUSTOMER,
+            userId: target.owner.id,
+            type: "order.accepted",
+            title: `Order ${order.number} is with fulfilment`,
+            body: `${formatMoney(order.fulfilmentCostCents, order.currency)} fulfilment cost · you keep ${formatMoney(order.ownerEarningCents, order.currency)}`,
+            href: `/dashboard/orders/${order.number}`,
+          },
+          emails: [
+            {
+              to: target.owner.email,
+              template: "owner.order-accepted",
+              rendered: templates.staffAlertEmail(platformBrand, {
+                title: `Order ${order.number} accepted for fulfilment`,
+                lines: [
+                  `Fulfilment cost charged to your balance: ${formatMoney(order.fulfilmentCostCents, order.currency)}`,
+                  `Your earning on this order: ${formatMoney(order.ownerEarningCents, order.currency)}`,
+                ],
+                href: app(`/dashboard/orders/${order.number}`),
+                cta: "View the order",
+              }),
+            },
+          ],
+        },
+      ];
+    }
+
+    case "order.awaiting-funds": {
+      const order = await db.order.findUniqueOrThrow({ where: { id: event.orderId }, select: { id: true, number: true, storeId: true, currency: true, fulfilmentCostCents: true } });
+      const target = await storeOwner(order.storeId);
+      const staff = await staffRecipients("orders.view");
+      const shortfall = formatMoney(event.shortfallCents, order.currency);
+      return [
+        ...(target
+          ? [
+              {
+                inApp: {
+                  audience: NotificationAudience.CUSTOMER,
+                  userId: target.owner.id,
+                  type: "order.awaiting-funds",
+                  title: `Order ${order.number} needs funds`,
+                  body: `Deposit ${shortfall} so fulfilment can take it.`,
+                  href: "/dashboard/balance",
+                },
+                emails: [
+                  {
+                    to: target.owner.email,
+                    template: "owner.order-awaiting-funds",
+                    rendered: templates.staffAlertEmail(platformBrand, {
+                      title: `Order ${order.number} is waiting for funds`,
+                      lines: [
+                        `The fulfilment cost is ${formatMoney(order.fulfilmentCostCents, order.currency)} and your balance is ${shortfall} short.`,
+                        "Deposit the difference and the order goes to fulfilment as soon as we confirm it.",
+                      ],
+                      href: app("/dashboard/balance"),
+                      cta: "Open your balance",
+                    }),
+                  },
+                ],
+              },
+            ]
+          : []),
+        {
+          inApp: { audience: NotificationAudience.STAFF, userId: null, type: "order.awaiting-funds", title: `Order ${order.number} is waiting for funds`, body: `${target?.store.name ?? "A store"} is ${shortfall} short`, href: `/admin/orders/${order.id}` },
+          emails: staff.map((member) => ({
+            to: member.email,
+            template: "staff.order-awaiting-funds",
+            rendered: templates.staffAlertEmail(platformBrand, { title: `Order ${order.number} is waiting for funds`, lines: [`${target?.store.name ?? "A store"} is ${shortfall} short of the fulfilment cost.`], href: app(`/admin/orders/${order.id}`), cta: "Open order" }),
+          })),
+        },
+      ];
+    }
+
+    case "wallet.deposit-submitted": {
+      const deposit = await db.deposit.findUniqueOrThrow({ where: { id: event.depositId }, include: { store: { select: { name: true } } } });
+      const staff = await staffRecipients("stores.manage");
+      const lines = [
+        `${deposit.store.name} says they have sent ${formatMoney(deposit.amountCents)}`,
+        `Method: ${deposit.method === "CRYPTO" ? (deposit.network ?? "crypto") : "bank transfer"}${deposit.reference ? ` · reference ${deposit.reference}` : ""}`,
+        deposit.proofMediaId ? "A screenshot is attached — check the transfer itself before confirming." : "No screenshot was attached.",
+      ];
+      return [
+        {
+          inApp: { audience: NotificationAudience.STAFF, userId: null, type: event.type, title: `Deposit to confirm: ${formatMoney(deposit.amountCents)}`, body: deposit.store.name, href: "/admin/payouts" },
+          emails: staff.map((member) => ({
+            to: member.email,
+            template: "staff.deposit-submitted",
+            rendered: templates.staffAlertEmail(platformBrand, { title: "A deposit is waiting to be confirmed", lines, href: app("/admin/payouts"), cta: "Check deposits" }),
+          })),
+        },
+      ];
+    }
+
+    case "wallet.deposit-settled": {
+      const deposit = await db.deposit.findUniqueOrThrow({ where: { id: event.depositId }, select: { id: true, amountCents: true, storeId: true, note: true } });
+      const target = await storeOwner(deposit.storeId);
+      if (!target) return [];
+      const amount = formatMoney(deposit.amountCents);
+      return [
+        {
+          inApp: {
+            audience: NotificationAudience.CUSTOMER,
+            userId: target.owner.id,
+            type: event.type,
+            title: event.confirmed ? `${amount} added to your balance` : `Deposit of ${amount} declined`,
+            body: event.confirmed ? "The transfer has been confirmed." : (deposit.note ?? "We could not find the transfer."),
+            href: "/dashboard/balance",
+          },
+          emails: [
+            {
+              to: target.owner.email,
+              template: event.confirmed ? "owner.deposit-confirmed" : "owner.deposit-rejected",
+              rendered: templates.staffAlertEmail(platformBrand, {
+                title: event.confirmed ? `${amount} is in your balance` : `We could not confirm your ${amount} deposit`,
+                lines: event.confirmed ? ["Your deposit has been confirmed and credited.", "Any order waiting for funds goes to fulfilment automatically."] : [deposit.note ?? "We could not find the transfer.", "Nothing has been credited. Contact support with the transaction details and we will look again."],
+                href: app("/dashboard/balance"),
+                cta: "Open your balance",
+              }),
+            },
+          ],
+        },
+      ];
+    }
+
+    case "wallet.payout-requested": {
+      const payout = await db.payout.findUniqueOrThrow({ where: { id: event.payoutId }, include: { store: { select: { name: true } } } });
+      const staff = await staffRecipients("stores.manage");
+      return [
+        {
+          inApp: { audience: NotificationAudience.STAFF, userId: null, type: event.type, title: `Withdrawal to send: ${formatMoney(payout.amountCents)}`, body: payout.store.name, href: "/admin/payouts" },
+          emails: staff.map((member) => ({
+            to: member.email,
+            template: "staff.payout-requested",
+            rendered: templates.staffAlertEmail(platformBrand, {
+              title: `${payout.store.name} asked to withdraw ${formatMoney(payout.amountCents)}`,
+              lines: [`Send to: ${payout.method === "PAYPAL" ? "PayPal" : "bank transfer"} · ${payout.destination}`, "Mark it paid once the transfer has been sent."],
+              href: app("/admin/payouts"),
+              cta: "Open withdrawals",
+            }),
+          })),
+        },
+      ];
+    }
+
+    case "wallet.payout-settled": {
+      const payout = await db.payout.findUniqueOrThrow({ where: { id: event.payoutId }, select: { amountCents: true, storeId: true, reference: true } });
+      const target = await storeOwner(payout.storeId);
+      if (!target) return [];
+      const amount = formatMoney(payout.amountCents);
+      return [
+        {
+          inApp: {
+            audience: NotificationAudience.CUSTOMER,
+            userId: target.owner.id,
+            type: event.type,
+            title: event.paid ? `${amount} sent to you` : `Withdrawal of ${amount} declined`,
+            body: event.paid ? (payout.reference ?? "The transfer is on its way.") : (payout.reference ?? "The amount is back in your balance."),
+            href: "/dashboard/balance",
+          },
+          emails: [
+            {
+              to: target.owner.email,
+              template: event.paid ? "owner.payout-paid" : "owner.payout-rejected",
+              rendered: templates.staffAlertEmail(platformBrand, {
+                title: event.paid ? `We have sent you ${amount}` : `Your ${amount} withdrawal was declined`,
+                lines: event.paid
+                  ? [`Reference: ${payout.reference ?? "—"}`, "Bank transfers usually arrive within a few working days."]
+                  : [payout.reference ?? "The details did not check out.", "The amount is back in your balance and you can request it again."],
+                href: app("/dashboard/balance"),
+                cta: "Open your balance",
+              }),
+            },
+          ],
+        },
+      ];
+    }
+
+    case "store.opened": {
+      const store = await db.store.findUniqueOrThrow({ where: { id: event.storeId }, include: { owner: { select: { email: true, firstName: true, lastName: true } }, referral: { include: { code: { select: { code: true } } } } } });
+      const staff = await staffRecipients("stores.view");
+      return [
+        {
+          inApp: { audience: NotificationAudience.STAFF, userId: null, type: event.type, title: `New store: ${store.name}`, body: `${store.slug} · ${store.owner?.email ?? "no owner"}`, href: `/admin/stores?q=${store.slug}` },
+          emails: staff.map((member) => ({
+            to: member.email,
+            template: "staff.store-opened",
+            rendered: templates.staffAlertEmail(platformBrand, {
+              title: `${store.name} has opened`,
+              lines: [
+                `Address: ${storeUrl(store.slug)}`,
+                `Owner: ${store.owner ? `${store.owner.firstName} ${store.owner.lastName} (${store.owner.email})` : "unknown"}`,
+                store.referral[0]?.code ? `Invitation used: ${store.referral[0].code.code}` : "No invitation code recorded.",
+              ],
+              href: app(`/admin/stores?q=${store.slug}`),
+              cta: "Open stores",
+            }),
+          })),
+        },
+      ];
+    }
+
     case "contact.replied": {
       const [message, reply] = await Promise.all([
-        db.contactMessage.findUniqueOrThrow({ where: { id: event.messageId }, include: { store: { select: { slug: true, name: true, supportEmail: true, ownerId: true } } } }),
+        db.contactMessage.findUniqueOrThrow({ where: { id: event.messageId }, include: { store: { select: storeForEmailSelect } } }),
         db.contactReply.findUniqueOrThrow({ where: { id: event.replyId } }),
       ]);
       const brand = await getBrand(message.store);

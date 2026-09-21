@@ -1,23 +1,24 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { ProductCardData } from "@/features/catalog/queries";
+import { unitEarning, type CommissionRule } from "@/features/finance/order-finance";
 import { cn } from "@/utils/cn";
 import { formatMoney } from "@/utils/money";
 import { AddToStoreButton } from "./add-to-store-button";
 
-/** What an owner keeps per unit at the suggested price, before payment-processing fees. */
-export function marginAt(retailCents: number, costCents: number) {
-  const cents = Math.max(0, retailCents - costCents);
-  return { cents, percent: retailCents > 0 ? Math.round((cents / retailCents) * 100) : 0 };
+/** What an owner keeps per unit at the suggested price, after the wholesale cost and Zendropship's commission. */
+export function marginAt(retailCents: number, costCents: number, rule: CommissionRule) {
+  const { earningCents, percent } = unitEarning(retailCents, costCents, rule);
+  return { cents: earningCents, percent };
 }
 
 /**
  * Platform catalogue card for prospective and current store owners: the product, what it costs them,
  * what it sells for, and one tap to put it in their store.
  */
-export function CatalogCard({ product, inStore, signedIn, priority = false }: { product: ProductCardData; inStore: boolean; signedIn: boolean; priority?: boolean }) {
+export function CatalogCard({ product, inStore, signedIn, commission, priority = false }: { product: ProductCardData; inStore: boolean; signedIn: boolean; commission: CommissionRule; priority?: boolean }) {
   const image = product.images[0];
-  const margin = marginAt(product.priceCents, product.costCents);
+  const margin = marginAt(product.priceCents, product.costCents, commission);
   const href = `/catalog/p/${product.slug}`;
   return (
     <article className="group relative flex h-full flex-col rounded-md">
@@ -70,13 +71,28 @@ export function CatalogCard({ product, inStore, signedIn, priority = false }: { 
   );
 }
 
-export function CatalogGrid({ products, inStoreIds, signedIn, priorityCount = 0, className }: { products: ProductCardData[]; inStoreIds: string[]; signedIn: boolean; priorityCount?: number; className?: string }) {
+export function CatalogGrid({
+  products,
+  inStoreIds,
+  signedIn,
+  commission,
+  priorityCount = 0,
+  className,
+}: {
+  products: ProductCardData[];
+  inStoreIds: string[];
+  signedIn: boolean;
+  /** The commission in force, so "You earn" is what the owner would really keep. */
+  commission: CommissionRule;
+  priorityCount?: number;
+  className?: string;
+}) {
   const owned = new Set(inStoreIds);
   return (
     <ul className={cn("grid grid-cols-2 gap-x-3 gap-y-9 sm:gap-x-5 md:grid-cols-3 xl:grid-cols-4", className)}>
       {products.map((product, index) => (
         <li key={product.id}>
-          <CatalogCard product={product} inStore={owned.has(product.id)} signedIn={signedIn} priority={index < priorityCount} />
+          <CatalogCard product={product} inStore={owned.has(product.id)} signedIn={signedIn} commission={commission} priority={index < priorityCount} />
         </li>
       ))}
     </ul>

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { emailSchema } from "@/features/auth/schemas";
+import { normaliseReferralCode } from "@/features/referrals/codes";
 import { PASSWORD_MAX_LENGTH } from "@/server/auth/password";
 
 const nameSchema = (label: string) => z.string().trim().min(1, `Enter your ${label}.`).max(60, `${label[0].toUpperCase()}${label.slice(1)} is too long.`);
@@ -15,10 +16,19 @@ export const storeSlugSchema = z
   .optional()
   .transform((value) => value || undefined);
 
+/** Blank is allowed here; whether an invitation is required is a platform setting, checked on the server. */
+export const referralCodeSchema = z
+  .string()
+  .trim()
+  .max(20, "Invitation codes are shorter than that.")
+  .optional()
+  .transform((value) => (value ? normaliseReferralCode(value) : null));
+
 /** Opening a store as a new visitor: account details plus the store name. */
 export const openStoreSchema = z.object({
   storeName: storeNameSchema,
   slug: storeSlugSchema,
+  referralCode: referralCodeSchema,
   firstName: nameSchema("first name"),
   lastName: nameSchema("last name"),
   email: emailSchema,
@@ -26,7 +36,7 @@ export const openStoreSchema = z.object({
 });
 
 /** Opening a store while already signed in. */
-export const openStoreSignedInSchema = openStoreSchema.pick({ storeName: true, slug: true });
+export const openStoreSignedInSchema = openStoreSchema.pick({ storeName: true, slug: true, referralCode: true });
 
 const optionalText = (max: number) =>
   z

@@ -6,25 +6,16 @@ import { BalancePanel } from "@/components/dashboard/wallet";
 import { EmptyState, Skeleton } from "@/components/ui/misc";
 import { getStoreSettings } from "@/features/settings/queries";
 import { requireStoreOwner } from "@/features/stores/guards";
-import { listStoreTransfers, listWalletEntries, getWalletSummary, WALLET_PAGE_SIZE } from "@/features/wallet/queries";
+import { listStoreTransfers, listWalletEntries, getWalletSummary, WALLET_ENTRY_LABELS, WALLET_PAGE_SIZE } from "@/features/wallet/queries";
 import { MIN_DEPOSIT_CENTS, MIN_PAYOUT_CENTS } from "@/features/wallet/service";
-import { DepositStatus, PayoutStatus, WalletEntryType } from "@/generated/prisma/enums";
+import { DepositStatus, PayoutStatus, WalletEntryStatus } from "@/generated/prisma/enums";
 import { cn } from "@/utils/cn";
 import { formatMoney } from "@/utils/money";
 
 export const metadata: Metadata = { title: "Balance" };
 
-const ENTRY_LABELS: Record<WalletEntryType, string> = {
-  ORDER_EARNING: "Order earnings",
-  ORDER_REVERSAL: "Order reversed",
-  PAYOUT: "Withdrawal",
-  PAYOUT_REVERSAL: "Withdrawal returned",
-  DEPOSIT: "Deposit",
-  ADJUSTMENT: "Adjustment",
-};
-
-const PAYOUT_TONES: Record<PayoutStatus, "warning" | "success" | "danger"> = { REQUESTED: "warning", PAID: "success", REJECTED: "danger" };
-const PAYOUT_LABELS: Record<PayoutStatus, string> = { REQUESTED: "Being sent", PAID: "Paid", REJECTED: "Declined" };
+const PAYOUT_TONES: Record<PayoutStatus, "warning" | "success" | "danger"> = { REQUESTED: "warning", APPROVED: "warning", PROCESSING: "warning", PAID: "success", REJECTED: "danger" };
+const PAYOUT_LABELS: Record<PayoutStatus, string> = { REQUESTED: "Requested", APPROVED: "Approved", PROCESSING: "Being sent", PAID: "Paid", REJECTED: "Declined" };
 const DEPOSIT_TONES: Record<DepositStatus, "warning" | "success" | "danger"> = { PENDING: "warning", CONFIRMED: "success", REJECTED: "danger" };
 const DEPOSIT_LABELS: Record<DepositStatus, string> = { PENDING: "Waiting for confirmation", CONFIRMED: "Credited", REJECTED: "Declined" };
 
@@ -63,14 +54,17 @@ async function Balance({ searchParams }: PageProps<"/dashboard/balance">) {
               <tr key={entry.id}>
                 <Td className="whitespace-nowrap text-[0.875rem] text-ink-600">{dateTime.format(entry.createdAt)}</Td>
                 <Td>
-                  <p className="font-medium text-ink-950">{ENTRY_LABELS[entry.type]}</p>
+                  <p className="font-medium text-ink-950">
+                    {WALLET_ENTRY_LABELS[entry.type]}
+                    {entry.status === WalletEntryStatus.PENDING && <span className="ml-2 rounded-full bg-warning/10 px-2 py-0.5 text-[0.6875rem] font-semibold text-warning">On its way</span>}
+                  </p>
                   <p className="text-[0.8125rem] text-ink-500">{entry.description}</p>
                 </Td>
                 <Td className={cn("tabular text-right font-medium", entry.amountCents >= 0 ? "text-success" : "text-ink-950")}>
                   {entry.amountCents >= 0 ? "+" : "−"}
                   {formatMoney(Math.abs(entry.amountCents))}
                 </Td>
-                <Td className="tabular text-right text-ink-600">{formatMoney(entry.balanceAfterCents)}</Td>
+                <Td className="tabular text-right text-ink-600">{entry.balanceAfterCents === null ? "—" : formatMoney(entry.balanceAfterCents)}</Td>
               </tr>
             ))}
           </tbody>
@@ -109,7 +103,9 @@ async function Balance({ searchParams }: PageProps<"/dashboard/balance">) {
                 <li key={deposit.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3 first:pt-0 last:pb-0">
                   <div className="min-w-0">
                     <p className="tabular font-medium text-ink-950">{formatMoney(deposit.amountCents)}</p>
-                    <p className="text-[0.8125rem] text-ink-500">{dateTime.format(deposit.createdAt)}</p>
+                    <p className="text-[0.8125rem] text-ink-500">
+                      {dateTime.format(deposit.createdAt)} · {deposit.method === "CRYPTO" ? (deposit.network ?? "Crypto") : "Bank transfer"}
+                    </p>
                     {deposit.reference && <p className="text-[0.75rem] text-ink-500">{deposit.reference}</p>}
                   </div>
                   <StatusBadge label={DEPOSIT_LABELS[deposit.status]} tone={DEPOSIT_TONES[deposit.status]} />

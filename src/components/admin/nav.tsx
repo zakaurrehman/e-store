@@ -51,10 +51,11 @@ const GROUPS: NavGroup[] = [
     items: [
       { href: "/admin/stores", label: "Stores", icon: Store, permission: "stores.view" },
       { href: "/admin/payouts", label: "Withdrawals", icon: Wallet, permission: "stores.view" },
+      { href: "/admin/referrals", label: "Invitations", icon: Ticket, permission: "stores.view" },
       { href: "/admin/orders", label: "Orders", icon: ShoppingBag, permission: "orders.view" },
       { href: "/admin/customers", label: "Customers", icon: Users, permission: "customers.view" },
       { href: "/admin/discounts", label: "Discounts", icon: Ticket, permission: "discounts.manage" },
-      { href: "/admin/messages", label: "Messages", icon: Inbox, permission: "messages.view" },
+      { href: "/admin/messages", label: "Support inbox", icon: Inbox, permission: "messages.view" },
     ],
   },
   {

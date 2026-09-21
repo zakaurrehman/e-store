@@ -62,50 +62,54 @@ model RolePermission {
 }
 
 model User {
-  id                String              @id @default(cuid())
-  email             String              @unique // always stored lower-cased
-  passwordHash      String?
-  firstName         String
-  lastName          String
-  phone             String?
-  roleId            String
-  status            UserStatus          @default(ACTIVE)
-  emailVerifiedAt   DateTime?
-  mustResetPassword Boolean             @default(false)
-  marketingOptIn    Boolean             @default(false)
-  failedLoginCount  Int                 @default(0)
-  lockedUntil       DateTime?
-  lastLoginAt       DateTime?
+  id                  String               @id @default(cuid())
+  email               String               @unique // always stored lower-cased
+  passwordHash        String?
+  firstName           String
+  lastName            String
+  phone               String?
+  roleId              String
+  status              UserStatus           @default(ACTIVE)
+  emailVerifiedAt     DateTime?
+  mustResetPassword   Boolean              @default(false)
+  marketingOptIn      Boolean              @default(false)
+  failedLoginCount    Int                  @default(0)
+  lockedUntil         DateTime?
+  lastLoginAt         DateTime?
   /// The store this customer signed up on (null for platform sign-ups and staff)
-  registeredStoreId String?
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
-  deletedAt         DateTime?
-  role              Role                @relation(fields: [roleId], references: [id], onDelete: Restrict)
-  store             Store?              @relation("StoreOwner")
-  registeredStore   Store?              @relation("StoreSignups", fields: [registeredStoreId], references: [id], onDelete: SetNull)
-  sessions          Session[]
-  tokens            VerificationToken[]
-  addresses         Address[]
-  carts             Cart[]
-  contactReplies    ContactReply[]
-  walletEntries     WalletEntry[]       @relation("WalletEntryAuthor")
-  payoutsRequested  Payout[]            @relation("PayoutRequester")
-  payoutsProcessed  Payout[]            @relation("PayoutProcessor")
-  depositsCreated   Deposit[]           @relation("DepositCreator")
-  depositsConfirmed Deposit[]           @relation("DepositConfirmer")
-  wishlist          Wishlist?
-  orders            Order[]
-  reviews           Review[]
-  notifications     Notification[]
-  recentlyViewed    RecentlyViewed[]
-  searchHistory     SearchHistory[]
-  auditLogs         AuditLog[]
-  orderEvents       OrderEvent[]
-  mediaUploads      MediaAsset[]
-  couponRedemptions CouponRedemption[]
-  couponCustomers   CouponCustomer[]
-  inventoryMoves    InventoryMovement[]
+  registeredStoreId   String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  deletedAt           DateTime?
+  role                Role                 @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  store               Store?               @relation("StoreOwner")
+  registeredStore     Store?               @relation("StoreSignups", fields: [registeredStoreId], references: [id], onDelete: SetNull)
+  sessions            Session[]
+  tokens              VerificationToken[]
+  addresses           Address[]
+  carts               Cart[]
+  contactReplies      ContactReply[]
+  supportRequests     ContactMessage[]     @relation("SupportRequester")
+  supportAssignments  ContactMessage[]     @relation("SupportAssignee")
+  referralCodes       ReferralCode[]       @relation("ReferralCodeAuthor")
+  referralRedemptions ReferralRedemption[] @relation("ReferralInvitee")
+  walletEntries       WalletEntry[]        @relation("WalletEntryAuthor")
+  payoutsRequested    Payout[]             @relation("PayoutRequester")
+  payoutsProcessed    Payout[]             @relation("PayoutProcessor")
+  depositsCreated     Deposit[]            @relation("DepositCreator")
+  depositsConfirmed   Deposit[]            @relation("DepositConfirmer")
+  wishlist            Wishlist?
+  orders              Order[]
+  reviews             Review[]
+  notifications       Notification[]
+  recentlyViewed      RecentlyViewed[]
+  searchHistory       SearchHistory[]
+  auditLogs           AuditLog[]
+  orderEvents         OrderEvent[]
+  mediaUploads        MediaAsset[]
+  couponRedemptions   CouponRedemption[]
+  couponCustomers     CouponCustomer[]
+  inventoryMoves      InventoryMovement[]
 
   @@index([roleId])
   @@index([createdAt])
@@ -587,16 +591,16 @@ enum StorePricingMode {
 /// A dropshipper's store: its own subdomain, branding, product selection and orders.
 /// Products, stock, shipping and fulfilment come from the platform catalogue.
 model Store {
-  id                String           @id @default(cuid())
+  id                String               @id @default(cuid())
   /// Subdomain: <slug>.zendropship.io — lower-case letters, digits and hyphens
-  slug              String           @unique
+  slug              String               @unique
   name              String
-  ownerId           String?          @unique
-  status            StoreStatus      @default(ACTIVE)
-  pricingMode       StorePricingMode @default(SUGGESTED)
+  ownerId           String?              @unique
+  status            StoreStatus          @default(ACTIVE)
+  pricingMode       StorePricingMode     @default(SUGGESTED)
   /// Markup over wholesale in basis points (4000 = 40%) when pricingMode is MARKUP
-  markupBps         Int              @default(4000)
-  currency          String           @default("USD")
+  markupBps         Int                  @default(4000)
+  currency          String               @default("USD")
   tagline           String?
   aboutText         String?
   supportEmail      String?
@@ -606,18 +610,18 @@ model Store {
   heroTitle         String?
   heroSubtitle      String?
   /// Accent colour as #rrggbb
-  accentColor       String           @default("#5446ff")
+  accentColor       String               @default("#5446ff")
   /// Owner's own domain (verified separately); null until connected
-  customDomain      String?          @unique
+  customDomain      String?              @unique
   /// Stripe Connect account id once the owner has started onboarding
-  stripeAccountId   String?          @unique
+  stripeAccountId   String?              @unique
   stripeOnboardedAt DateTime?
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
   deletedAt         DateTime?
-  owner             User?            @relation("StoreOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-  logo              MediaAsset?      @relation("StoreLogo", fields: [logoId], references: [id], onDelete: SetNull)
-  heroImage         MediaAsset?      @relation("StoreHero", fields: [heroImageId], references: [id], onDelete: SetNull)
+  owner             User?                @relation("StoreOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  logo              MediaAsset?          @relation("StoreLogo", fields: [logoId], references: [id], onDelete: SetNull)
+  heroImage         MediaAsset?          @relation("StoreHero", fields: [heroImageId], references: [id], onDelete: SetNull)
   products          StoreProduct[]
   orders            Order[]
   carts             Cart[]
@@ -626,7 +630,8 @@ model Store {
   walletEntries     WalletEntry[]
   payouts           Payout[]
   deposits          Deposit[]
-  signups           User[]           @relation("StoreSignups")
+  referral          ReferralRedemption[]
+  signups           User[]               @relation("StoreSignups")
 
   @@index([status])
   @@index([createdAt])
@@ -724,8 +729,14 @@ model RecentlyViewed {
 // ─────────────────────────────────────────────────────────────────────────────
 
 enum OrderStatus {
+  /// Placed, waiting for the customer's online payment
   PENDING
+  /// The customer's payment is in (or cash on delivery is agreed)
   CONFIRMED
+  /// Fulfilment needs money the owner's balance cannot cover yet
+  AWAITING_FUNDS
+  /// Funded and taken by Zendropship fulfilment; the wholesale cost has been charged to the owner
+  ACCEPTED
   PROCESSING
   PACKED
   SHIPPED
@@ -757,52 +768,65 @@ enum OrderEventType {
 }
 
 model Order {
-  id                 String              @id @default(cuid())
-  number             String              @unique
-  storeId            String
-  userId             String?
-  email              String
-  phone              String?
-  status             OrderStatus         @default(PENDING)
-  paymentStatus      PaymentStatus       @default(PENDING)
-  paymentProvider    String
-  currency           String
-  subtotalCents      Int
-  discountCents      Int                 @default(0)
-  shippingCents      Int                 @default(0)
-  taxCents           Int                 @default(0)
-  totalCents         Int
-  refundedCents      Int                 @default(0)
-  couponCode         String?
+  id                  String              @id @default(cuid())
+  number              String              @unique
+  storeId             String
+  userId              String?
+  email               String
+  phone               String?
+  status              OrderStatus         @default(PENDING)
+  paymentStatus       PaymentStatus       @default(PENDING)
+  paymentProvider     String
+  currency            String
+  subtotalCents       Int
+  discountCents       Int                 @default(0)
+  shippingCents       Int                 @default(0)
+  taxCents            Int                 @default(0)
+  totalCents          Int
+  refundedCents       Int                 @default(0)
+  /// Wholesale cost of the goods, charged to the owner's balance when fulfilment accepts the order
+  fulfilmentCostCents Int                 @default(0)
+  /// Zendropship's commission rate at the time of the order (basis points) — historical orders never recalculate
+  commissionRateBps   Int                 @default(0)
+  /// What that rate was applied to: ORDER_REVENUE (goods sold, after discount) or OWNER_MARGIN
+  commissionBase      String              @default("ORDER_REVENUE")
+  commissionCents     Int                 @default(0)
+  /// Goods sold (after discount) less wholesale cost less commission
+  ownerEarningCents   Int                 @default(0)
+  couponCode          String?
   /// Address snapshots — immune to later address-book edits
-  shippingAddress    Json
-  billingAddress     Json
-  shippingMethodId   String?
-  shippingMethodName String
-  customerNote       String?
+  shippingAddress     Json
+  billingAddress      Json
+  shippingMethodId    String?
+  shippingMethodName  String
+  customerNote        String?
   /// Prevents duplicate orders from double submits / retries
-  idempotencyKey     String              @unique
+  idempotencyKey      String              @unique
   /// SHA-256 of the token that lets a guest view this order
-  accessTokenHash    String?
-  inventoryReleased  Boolean             @default(false)
-  placedAt           DateTime            @default(now())
-  paidAt             DateTime?
-  cancelledAt        DateTime?
-  deliveredAt        DateTime?
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  user               User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
-  store              Store               @relation(fields: [storeId], references: [id], onDelete: Restrict)
-  shippingMethod     ShippingMethod?     @relation(fields: [shippingMethodId], references: [id], onDelete: SetNull)
-  items              OrderItem[]
-  events             OrderEvent[]
-  payments           Payment[]
-  shipments          Shipment[]
-  couponRedemption   CouponRedemption?
-  inventoryMoves     InventoryMovement[]
-  walletEntries      WalletEntry[]
+  accessTokenHash     String?
+  inventoryReleased   Boolean             @default(false)
+  placedAt            DateTime            @default(now())
+  paidAt              DateTime?
+  /// When fulfilment took the order (and the owner's balance was charged)
+  acceptedAt          DateTime?
+  cancelledAt         DateTime?
+  deliveredAt         DateTime?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  user                User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  store               Store               @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  shippingMethod      ShippingMethod?     @relation(fields: [shippingMethodId], references: [id], onDelete: SetNull)
+  items               OrderItem[]
+  events              OrderEvent[]
+  payments            Payment[]
+  shipments           Shipment[]
+  couponRedemption    CouponRedemption?
+  inventoryMoves      InventoryMovement[]
+  walletEntries       WalletEntry[]
+  supportMessages     ContactMessage[]
 
   @@index([userId, createdAt])
+  @@index([storeId, status])
   @@index([status, createdAt])
   @@index([paymentStatus])
   @@index([email])
@@ -1329,34 +1353,58 @@ enum ContactStatus {
   RESOLVED
 }
 
+/// A support conversation: the first message plus every reply. Customers of a store reach its owner;
+/// messages sent on the platform site (including an owner's own questions) reach Zendropship staff.
 model ContactMessage {
-  id          String         @id @default(cuid())
+  id                String         @id @default(cuid())
   /// The store the customer wrote to; null for messages sent to Zendropship itself
-  storeId     String?
-  name        String
-  email       String
-  subject     String
-  message     String
-  orderNumber String?
-  status      ContactStatus  @default(NEW)
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  store       Store?         @relation(fields: [storeId], references: [id], onDelete: SetNull)
-  replies     ContactReply[]
+  storeId           String?
+  /// The signed-in account that opened the conversation, when there was one
+  userId            String?
+  name              String
+  email             String
+  subject           String
+  message           String
+  orderNumber       String?
+  /// The order the conversation is about, resolved from orderNumber when it matches
+  orderId           String?
+  status            ContactStatus  @default(NEW)
+  /// Staff member handling it (Zendropship inbox only)
+  assignedToId      String?
+  /// There is something here the inbox owner has not read
+  unreadForStaff    Boolean        @default(true)
+  /// There is a reply the customer has not read
+  unreadForCustomer Boolean        @default(false)
+  /// Newest message in the thread, for ordering the inbox
+  lastMessageAt     DateTime       @default(now())
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  store             Store?         @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  user              User?          @relation("SupportRequester", fields: [userId], references: [id], onDelete: SetNull)
+  order             Order?         @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  assignedTo        User?          @relation("SupportAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  replies           ContactReply[]
 
-  @@index([status, createdAt])
-  @@index([storeId, createdAt])
+  @@index([status, lastMessageAt])
+  @@index([storeId, lastMessageAt])
+  @@index([userId, lastMessageAt])
+  @@index([assignedToId, status])
 }
 
-/// A reply sent to the customer from the owner dashboard or the admin, kept as the conversation history.
+/// One turn in a conversation: an answer from the store or Zendropship, the customer writing back,
+/// or a note staff keep to themselves (never emailed, never shown to the customer).
 model ContactReply {
-  id        String         @id @default(cuid())
-  messageId String
-  authorId  String?
-  body      String
-  createdAt DateTime       @default(now())
-  message   ContactMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  author    User?          @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  id             String         @id @default(cuid())
+  messageId      String
+  authorId       String?
+  body           String
+  /// True when the customer wrote it
+  isFromCustomer Boolean        @default(false)
+  /// Internal note: staff-only, not emailed
+  isInternal     Boolean        @default(false)
+  createdAt      DateTime       @default(now())
+  message        ContactMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  author         User?          @relation(fields: [authorId], references: [id], onDelete: SetNull)
 
   @@index([messageId, createdAt])
 }
@@ -1433,9 +1481,21 @@ model ImportRecord {
 // ─────────────────────────────────────────────────────────────────────────────
 
 enum WalletEntryType {
-  /// Margin earned on an order, credited once the customer's money has been collected
+  /// What the customer paid for the goods, after discount (credit)
+  ORDER_SALE
+  /// Wholesale cost of the goods charged when fulfilment accepted the order (debit)
+  ORDER_FULFILMENT
+  /// Zendropship's commission on the sale (debit)
+  ORDER_COMMISSION
+  /// Reverses a sale when the order is refunded or cancelled (debit)
+  ORDER_REFUND
+  /// Returns the wholesale cost when a refunded or cancelled order is not fulfilled after all (credit)
+  FULFILMENT_REVERSAL
+  /// Returns the commission on a refunded or cancelled order (credit)
+  COMMISSION_REVERSAL
+  /// Net margin credited by the pre-commission ledger (before sales and costs were recorded separately)
   ORDER_EARNING
-  /// Reverses an earning when the order is refunded or cancelled
+  /// Reverses an ORDER_EARNING when the order is refunded or cancelled
   ORDER_REVERSAL
   /// Money paid out to the owner (held when a withdrawal is requested)
   PAYOUT
@@ -1447,32 +1507,52 @@ enum WalletEntryType {
   ADJUSTMENT
 }
 
-/// Append-only ledger. The balance is the sum of its amounts; nothing else may change it.
-model WalletEntry {
-  id          String          @id @default(cuid())
-  storeId     String
-  type        WalletEntryType
-  /// Positive credits the owner, negative debits them
-  amountCents Int
-  description String
-  orderId     String?
-  payoutId    String?
-  depositId   String?
-  createdById String?
-  createdAt   DateTime        @default(now())
-  store       Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  order       Order?          @relation(fields: [orderId], references: [id], onDelete: SetNull)
-  payout      Payout?         @relation(fields: [payoutId], references: [id], onDelete: SetNull)
-  deposit     Deposit?        @relation(fields: [depositId], references: [id], onDelete: SetNull)
-  createdBy   User?           @relation("WalletEntryAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+/// Whether the money behind an entry has actually been collected yet.
+enum WalletEntryStatus {
+  /// Recorded, but the customer's money is still in transit (cash on delivery before the parcel arrives)
+  PENDING
+  /// Collected: counts towards the balance the owner can withdraw
+  CLEARED
+}
 
-  /// One earning and one reversal per order, so replayed events cannot double-credit
-  @@unique([orderId, type])
+/// Append-only ledger. The balance is the sum of its amounts; nothing else may change it.
+/// An entry's status may move from PENDING to CLEARED when the money is collected — amounts never change.
+model WalletEntry {
+  id             String            @id @default(cuid())
+  storeId        String
+  type           WalletEntryType
+  /// Positive credits the owner, negative debits them
+  amountCents    Int
+  currency       String            @default("USD")
+  status         WalletEntryStatus @default(CLEARED)
+  description    String
+  orderId        String?
+  payoutId       String?
+  depositId      String?
+  createdById    String?
+  /// Set on postings that must happen exactly once (an order's sale, cost and commission; a deposit; a payout)
+  idempotencyKey String?           @unique
+  createdAt      DateTime          @default(now())
+  clearedAt      DateTime?
+  store          Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  order          Order?            @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  payout         Payout?           @relation(fields: [payoutId], references: [id], onDelete: SetNull)
+  deposit        Deposit?          @relation(fields: [depositId], references: [id], onDelete: SetNull)
+  createdBy      User?             @relation("WalletEntryAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
   @@index([storeId, createdAt])
+  @@index([storeId, status])
+  @@index([orderId])
+  @@index([type, createdAt])
 }
 
 enum PayoutStatus {
+  /// The owner has asked for the money and it is held out of their available balance
   REQUESTED
+  /// Staff have checked the request and are sending the money
+  APPROVED
+  /// Handed to the bank or provider
+  PROCESSING
   PAID
   REJECTED
 }
@@ -1506,6 +1586,46 @@ model Payout {
 
   @@index([storeId, createdAt])
   @@index([status, createdAt])
+}
+
+/// An invitation that lets someone open a store. Codes are random and single-use unless staff raise maxUses.
+model ReferralCode {
+  id          String               @id @default(cuid())
+  /// Shown and typed as ZD-XXXXXXXX; stored upper-case
+  code        String               @unique
+  /// What the code is for, e.g. a campaign or the person it was given to
+  label       String?
+  note        String?
+  /// How many stores may be opened with it; null = unlimited (a campaign code)
+  maxUses     Int?                 @default(1)
+  usedCount   Int                  @default(0)
+  isActive    Boolean              @default(true)
+  expiresAt   DateTime?
+  createdById String?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  createdBy   User?                @relation("ReferralCodeAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  redemptions ReferralRedemption[]
+
+  @@index([isActive, createdAt])
+  @@index([createdAt])
+}
+
+/// Who used a code, and the store it opened.
+model ReferralRedemption {
+  id        String       @id @default(cuid())
+  codeId    String
+  userId    String
+  storeId   String?
+  ipAddress String?
+  createdAt DateTime     @default(now())
+  code      ReferralCode @relation(fields: [codeId], references: [id], onDelete: Cascade)
+  user      User         @relation("ReferralInvitee", fields: [userId], references: [id], onDelete: Cascade)
+  store     Store?       @relation(fields: [storeId], references: [id], onDelete: SetNull)
+
+  @@unique([codeId, userId])
+  @@index([userId])
+  @@index([storeId])
 }
 
 enum DepositStatus {

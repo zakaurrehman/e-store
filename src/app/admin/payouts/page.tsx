@@ -5,7 +5,7 @@ import { Suspense } from "react";
 import { ActionButton } from "@/components/admin/forms";
 import { Card, dateTime, PageHeader, StatTile, StatusBadge, Table, TableEmpty, Td, Th } from "@/components/admin/ui";
 import { Skeleton } from "@/components/ui/misc";
-import { confirmDepositAction, markPayoutPaidAction, rejectDepositAction, rejectPayoutAction } from "@/features/wallet/actions";
+import { confirmDepositAction, markPayoutPaidAction, rejectDepositAction, rejectPayoutAction, setPayoutStatusAction } from "@/features/wallet/actions";
 import { DepositStatus, PayoutStatus } from "@/generated/prisma/enums";
 import { can, requirePagePermission } from "@/server/auth/guards";
 import { db } from "@/server/db";
@@ -13,8 +13,8 @@ import { formatMoney } from "@/utils/money";
 
 export const metadata: Metadata = { title: "Withdrawals & deposits" };
 
-const PAYOUT_LABELS: Record<PayoutStatus, string> = { REQUESTED: "Requested", PAID: "Paid", REJECTED: "Declined" };
-const PAYOUT_TONES: Record<PayoutStatus, "warning" | "success" | "danger"> = { REQUESTED: "warning", PAID: "success", REJECTED: "danger" };
+const PAYOUT_LABELS: Record<PayoutStatus, string> = { REQUESTED: "Requested", APPROVED: "Approved", PROCESSING: "Being sent", PAID: "Paid", REJECTED: "Declined" };
+const PAYOUT_TONES: Record<PayoutStatus, "warning" | "success" | "danger"> = { REQUESTED: "warning", APPROVED: "warning", PROCESSING: "warning", PAID: "success", REJECTED: "danger" };
 const DEPOSIT_LABELS: Record<DepositStatus, string> = { PENDING: "Awaiting confirmation", CONFIRMED: "Credited", REJECTED: "Declined" };
 const DEPOSIT_TONES: Record<DepositStatus, "warning" | "success" | "danger"> = { PENDING: "warning", CONFIRMED: "success", REJECTED: "danger" };
 
@@ -26,7 +26,8 @@ async function Payouts() {
     db.deposit.findMany({ orderBy: [{ status: "asc" }, { createdAt: "desc" }], take: 100, include: { store: { select: { name: true, slug: true } }, proof: { select: { url: true, width: true, height: true } } } }),
     db.walletEntry.aggregate({ _sum: { amountCents: true } }),
   ]);
-  const requested = payouts.filter((payout) => payout.status === PayoutStatus.REQUESTED);
+  const open: PayoutStatus[] = [PayoutStatus.REQUESTED, PayoutStatus.APPROVED, PayoutStatus.PROCESSING];
+  const requested = payouts.filter((payout) => open.includes(payout.status));
   const pendingDeposits = deposits.filter((deposit) => deposit.status === DepositStatus.PENDING);
 
   return (
@@ -74,8 +75,18 @@ async function Payouts() {
                 </Td>
                 {canManage && (
                   <Td className="whitespace-nowrap text-right">
-                    {payout.status === PayoutStatus.REQUESTED && (
+                    {open.includes(payout.status) && (
                       <span className="flex justify-end gap-2">
+                        {payout.status === PayoutStatus.REQUESTED && (
+                          <ActionButton action={setPayoutStatusAction.bind(null, payout.id, "APPROVED")} size="xs" variant="ghost">
+                            Approve
+                          </ActionButton>
+                        )}
+                        {payout.status === PayoutStatus.APPROVED && (
+                          <ActionButton action={setPayoutStatusAction.bind(null, payout.id, "PROCESSING")} size="xs" variant="ghost">
+                            Sending
+                          </ActionButton>
+                        )}
                         <ActionButton
                           action={markPayoutPaidAction.bind(null, payout.id, undefined)}
                           size="xs"

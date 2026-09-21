@@ -231,7 +231,19 @@ export function BalancePanel({
   depositDetails,
   compact,
 }: {
-  summary: { balanceCents: number; pendingPayoutCents: number; pendingPayoutCount: number; pendingDepositCount: number; earnedTodayCents: number; earnedThisWeekCents: number; earnedThisMonthCents: number };
+  summary: {
+    balanceCents: number;
+    availableCents: number;
+    pendingCents: number;
+    pendingPayoutCents: number;
+    pendingPayoutCount: number;
+    pendingDepositCents: number;
+    pendingDepositCount: number;
+    totalDepositedCents: number;
+    earnedTodayCents: number;
+    earnedThisWeekCents: number;
+    earnedThisMonthCents: number;
+  };
   minimumPayoutCents: number;
   minimumDepositCents: number;
   supportEmail: string | null;
@@ -248,21 +260,43 @@ export function BalancePanel({
       <div className="rounded-lg border border-line bg-surface p-5">
         <p className="text-2xs font-semibold uppercase tracking-[0.12em] text-ink-500">Balance</p>
         <p className="tabular mt-2 text-3xl font-semibold tracking-[-0.02em] text-ink-950">{formatMoney(summary.balanceCents)}</p>
-        <p className="mt-1 text-[0.8125rem] text-ink-500">
-          {summary.pendingPayoutCount > 0
-            ? `${formatMoney(summary.pendingPayoutCents)} in ${summary.pendingPayoutCount} withdrawal${summary.pendingPayoutCount === 1 ? "" : "s"} being sent`
-            : "Yours to withdraw whenever you like"}
-        </p>
-        {summary.pendingDepositCount > 0 && (
-          <p className="mt-1 text-[0.8125rem] text-warning">
-            {summary.pendingDepositCount} deposit{summary.pendingDepositCount === 1 ? "" : "s"} waiting to be confirmed
-          </p>
-        )}
+        <dl className="mt-3 space-y-1 text-[0.8125rem]">
+          <div className="flex items-baseline justify-between gap-3">
+            <dt className="text-ink-600" title="Money that has been collected and can be withdrawn now.">
+              Available to withdraw
+            </dt>
+            <dd className="tabular font-medium text-ink-950">{formatMoney(summary.availableCents)}</dd>
+          </div>
+          {summary.pendingCents !== 0 && (
+            <div className="flex items-baseline justify-between gap-3">
+              <dt className="text-ink-600" title="Cash-on-delivery orders: yours once the parcel is paid for on arrival.">
+                On its way
+              </dt>
+              <dd className="tabular font-medium text-warning">{formatMoney(summary.pendingCents)}</dd>
+            </div>
+          )}
+          {summary.pendingPayoutCount > 0 && (
+            <div className="flex items-baseline justify-between gap-3">
+              <dt className="text-ink-600">
+                In {summary.pendingPayoutCount} withdrawal{summary.pendingPayoutCount === 1 ? "" : "s"}
+              </dt>
+              <dd className="tabular font-medium text-ink-700">{formatMoney(summary.pendingPayoutCents)}</dd>
+            </div>
+          )}
+          {summary.pendingDepositCount > 0 && (
+            <div className="flex items-baseline justify-between gap-3">
+              <dt className="text-warning">
+                {summary.pendingDepositCount} deposit{summary.pendingDepositCount === 1 ? "" : "s"} to confirm
+              </dt>
+              <dd className="tabular font-medium text-warning">{formatMoney(summary.pendingDepositCents)}</dd>
+            </div>
+          )}
+        </dl>
         <div className="mt-4 flex flex-wrap gap-2">
-          <WithdrawDialog balanceCents={summary.balanceCents} minimumCents={minimumPayoutCents} disabled={summary.balanceCents < minimumPayoutCents} />
+          <WithdrawDialog balanceCents={summary.availableCents} minimumCents={minimumPayoutCents} disabled={summary.availableCents < minimumPayoutCents} />
           <DepositDialog minimumCents={minimumDepositCents} supportEmail={supportEmail} details={depositDetails} />
         </div>
-        {summary.balanceCents < minimumPayoutCents && <p className="mt-2 text-[0.8125rem] text-ink-500">Withdrawals start at {formatMoney(minimumPayoutCents)}.</p>}
+        {summary.availableCents < minimumPayoutCents && <p className="mt-2 text-[0.8125rem] text-ink-500">Withdrawals start at {formatMoney(minimumPayoutCents)}.</p>}
         <p className="mt-3">
           <SupportLink />
         </p>
@@ -278,7 +312,7 @@ export function BalancePanel({
             </div>
           ))}
         </dl>
-        <p className="mt-2 text-[0.8125rem] text-ink-500">Your margin on orders whose payment has been collected.</p>
+        <p className="mt-2 text-[0.8125rem] text-ink-500">What you keep after the wholesale cost and Zendropship&rsquo;s commission.</p>
       </div>
     </div>
   );

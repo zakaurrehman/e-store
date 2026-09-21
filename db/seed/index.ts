@@ -7,6 +7,7 @@ import { seedContent } from "./content";
 import { seedDemoData } from "./demo";
 import { seedSettings } from "./settings";
 import { seedShippingAndTax } from "./shipping";
+import { seedReferralCode } from "./referrals";
 import { seedPlatformStore } from "./stores";
 
 /**
@@ -22,6 +23,7 @@ async function main() {
   await seedAdmin();
   if (process.env.SEED_SKIP_CATALOG !== "true") await seedCatalog();
   await seedPlatformStore();
+  await seedReferralCode();
   await seedContent();
   if (process.env.SEED_DEMO_DATA === "true") await seedDemoData();
   console.log(`Seed finished in ${((Date.now() - started) / 1000).toFixed(1)}s`);

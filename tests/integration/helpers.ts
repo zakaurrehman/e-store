@@ -7,9 +7,25 @@ import { addItem, createGuestCart } from "@/features/cart/service";
 import { saveProduct } from "@/features/catalog/service";
 import type { PlaceOrderInput } from "@/features/checkout/schemas";
 import { getShippingOptions } from "@/features/checkout/shipping";
+import { generateReferralCode } from "@/features/referrals/codes";
 import { ProductStatus } from "@/generated/prisma/enums";
 import { db } from "@/server/db";
 import { SandboxProvider } from "@/server/payments/providers/sandbox";
+
+/** A fresh invitation code — stores are invite-only, so most tests need one. */
+export async function invitation(options: { maxUses?: number | null; expiresAt?: Date | null; isActive?: boolean } = {}) {
+  const code = generateReferralCode();
+  await db.referralCode.create({
+    data: {
+      code,
+      maxUses: options.maxUses === undefined ? 1 : options.maxUses,
+      expiresAt: options.expiresAt ?? null,
+      isActive: options.isActive ?? true,
+      label: "Integration test",
+    },
+  });
+  return code;
+}
 
 export function assertTestDatabase() {
   const name = new URL(process.env.DATABASE_URL ?? "postgresql://invalid/none").pathname.replace(/^\//, "");

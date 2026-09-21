@@ -59,7 +59,8 @@ describe("checkout and payments", () => {
     expect(first.duplicate).toBe(false);
     const paid = await db.order.findUniqueOrThrow({ where: { id: order.id } });
     expect(paid.paymentStatus).toBe(PaymentStatus.PAID);
-    expect(paid.status).toBe(OrderStatus.CONFIRMED);
+    // The platform's own store has no balance to charge, so fulfilment takes the order at once.
+    expect(paid.status).toBe(OrderStatus.ACCEPTED);
 
     const second = await processWebhook("sandbox", delivery());
     expect(second.duplicate).toBe(true);
@@ -115,7 +116,7 @@ describe("checkout and payments", () => {
     const outcome = await placeOrder(await orderInput({ paymentProvider: "cod" }), orderContext(cart.id));
     expect(outcome.result.next.kind).toBe("confirmation");
     const order = await db.order.findUniqueOrThrow({ where: { id: outcome.result.orderId } });
-    expect(order.status).toBe(OrderStatus.CONFIRMED);
+    expect(order.status).toBe(OrderStatus.ACCEPTED);
     expect(order.paymentStatus).not.toBe(PaymentStatus.PAID);
   });
 });

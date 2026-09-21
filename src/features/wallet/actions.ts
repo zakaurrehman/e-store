@@ -1,14 +1,30 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { z } from "zod";
 import { ingestImage } from "@/features/media/service";
-import { DepositMethod, PayoutMethod } from "@/generated/prisma/enums";
+import { DepositMethod, PayoutMethod, PayoutStatus } from "@/generated/prisma/enums";
+import { acceptFundedOrders, flushNotifications } from "@/features/orders/service";
 import { assertStoreOwner } from "@/features/stores/guards";
 import { failure, handleActionError, success, zodFailure, type ActionState } from "@/server/actions";
 import { assertPermission } from "@/server/auth/guards";
+import { dispatchNotification, sendDeliveries, type NotificationEvent } from "@/server/notifications";
 import { rateLimit, retryAfterMessage } from "@/server/security/rate-limit";
-import { confirmDeposit, rejectDeposit, rejectPayout, markPayoutPaid, recordDeposit, requestPayout } from "./service";
+import { confirmDeposit, rejectDeposit, rejectPayout, markPayoutPaid, recordDeposit, requestPayout, setPayoutStatus } from "./service";
+
+/** Money events are emailed after the response, so a slow mail server never holds up the form. */
+function notifyAfter(...events: NotificationEvent[]) {
+  after(async () => {
+    for (const event of events) {
+      try {
+        await sendDeliveries(await dispatchNotification(event));
+      } catch (error) {
+        console.error(`[wallet] ${event.type} notification failed`, error);
+      }
+    }
+  });
+}
 
 /** "12.50", "$1,250" → cents. */
 const amountSchema = z
@@ -52,6 +68,7 @@ export async function requestPayoutAction(_state: ActionState, formData: FormDat
       note: parsed.data.note,
       requestedById: user.id,
     });
+    notifyAfter({ type: "wallet.payout-requested", payoutId: payout.id });
     revalidatePath("/dashboard");
     revalidatePath("/dashboard/balance");
     return success(`Withdrawal of $${(payout.amountCents / 100).toFixed(2)} requested. Zendropship will send it to you and mark it paid here.`);
@@ -103,6 +120,7 @@ export async function recordDepositAction(_state: ActionState, formData: FormDat
       proofMediaId,
       createdById: user.id,
     });
+    notifyAfter({ type: "wallet.deposit-submitted", depositId: deposit.id });
     revalidatePath("/dashboard");
     revalidatePath("/dashboard/balance");
     return success(`Deposit of $${(deposit.amountCents / 100).toFixed(2)} recorded. It is added to your balance once Zendropship confirms the transfer arrived.`);
@@ -116,9 +134,23 @@ export async function recordDepositAction(_state: ActionState, formData: FormDat
 export async function markPayoutPaidAction(payoutId: string, reference?: string): Promise<ActionState> {
   try {
     const admin = await assertPermission("stores.manage");
-    await markPayoutPaid(payoutId, admin.id, reference ?? null);
+    const payout = await markPayoutPaid(payoutId, admin.id, reference ?? null);
+    notifyAfter({ type: "wallet.payout-settled", payoutId: payout.id, paid: true });
     revalidatePath("/admin/payouts");
     return success("Withdrawal marked as paid.");
+  } catch (error) {
+    return handleActionError(error);
+  }
+}
+
+/** Moves a withdrawal through checking and sending, before the money actually leaves. */
+export async function setPayoutStatusAction(payoutId: string, status: "APPROVED" | "PROCESSING"): Promise<ActionState> {
+  try {
+    const admin = await assertPermission("stores.manage");
+    if (status !== PayoutStatus.APPROVED && status !== PayoutStatus.PROCESSING) return failure("Unknown status.");
+    await setPayoutStatus(payoutId, status, admin.id);
+    revalidatePath("/admin/payouts");
+    return success(status === PayoutStatus.APPROVED ? "Withdrawal approved — send the money, then mark it paid." : "Withdrawal marked as being sent.");
   } catch (error) {
     return handleActionError(error);
   }
@@ -127,7 +159,8 @@ export async function markPayoutPaidAction(payoutId: string, reference?: string)
 export async function rejectPayoutAction(payoutId: string, reason: string): Promise<ActionState> {
   try {
     const admin = await assertPermission("stores.manage");
-    await rejectPayout(payoutId, admin.id, String(reason ?? "").slice(0, 300));
+    const payout = await rejectPayout(payoutId, admin.id, String(reason ?? "").slice(0, 300));
+    notifyAfter({ type: "wallet.payout-settled", payoutId: payout.id, paid: false });
     revalidatePath("/admin/payouts");
     return success("Withdrawal declined and the amount returned to the owner's balance.");
   } catch (error) {
@@ -139,8 +172,17 @@ export async function confirmDepositAction(depositId: string): Promise<ActionSta
   try {
     const admin = await assertPermission("stores.manage");
     const deposit = await confirmDeposit(depositId, admin.id);
+    // Money has arrived: anything that was waiting for funds can go to fulfilment now.
+    const resumed = await acceptFundedOrders(deposit.storeId);
+    after(() => flushNotifications(resumed));
+    notifyAfter({ type: "wallet.deposit-settled", depositId: deposit.id, confirmed: true });
     revalidatePath("/admin/payouts");
-    return success(`Deposit of $${(deposit.amountCents / 100).toFixed(2)} confirmed and credited.`);
+    revalidatePath("/admin/orders");
+    return success(
+      resumed.length > 0
+        ? `Deposit of $${(deposit.amountCents / 100).toFixed(2)} confirmed. ${resumed.length} order(s) waiting for funds have been dealt with.`
+        : `Deposit of $${(deposit.amountCents / 100).toFixed(2)} confirmed and credited.`,
+    );
   } catch (error) {
     return handleActionError(error);
   }
@@ -149,7 +191,8 @@ export async function confirmDepositAction(depositId: string): Promise<ActionSta
 export async function rejectDepositAction(depositId: string, reason: string): Promise<ActionState> {
   try {
     const admin = await assertPermission("stores.manage");
-    await rejectDeposit(depositId, admin.id, String(reason ?? "").slice(0, 300));
+    const deposit = await rejectDeposit(depositId, admin.id, String(reason ?? "").slice(0, 300));
+    notifyAfter({ type: "wallet.deposit-settled", depositId: deposit.id, confirmed: false });
     revalidatePath("/admin/payouts");
     return success("Deposit declined. Nothing was credited.");
   } catch (error) {

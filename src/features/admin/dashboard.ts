@@ -73,7 +73,7 @@ export async function getDashboardData(rangeKey?: string) {
       WHERE o."paymentStatus" IN ('PAID','PARTIALLY_REFUNDED','REFUNDED') AND o."status" <> 'CANCELLED' AND o."placedAt" >= ${from}
       GROUP BY 1, 2 ORDER BY revenue DESC LIMIT 8`,
     db.order.groupBy({ by: ["status"], where: { placedAt: { gte: from } }, _count: { _all: true } }),
-    db.order.count({ where: { status: { in: [OrderStatus.CONFIRMED, OrderStatus.PROCESSING, OrderStatus.PACKED] } } }),
+    db.order.count({ where: { status: { in: [OrderStatus.CONFIRMED, OrderStatus.AWAITING_FUNDS, OrderStatus.ACCEPTED, OrderStatus.PROCESSING, OrderStatus.PACKED] } } }),
     db.order.count({ where: { paymentStatus: PaymentStatus.FAILED, status: { not: OrderStatus.CANCELLED } } }),
     db.$queryRaw<Array<{ id: string; sku: string | null; title: string; stockQuantity: number; lowStockThreshold: number; productId: string; productName: string }>>`
       SELECT v."id", v."sku", v."title", v."stockQuantity", v."lowStockThreshold", p."id" AS "productId", p."name" AS "productName"

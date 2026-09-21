@@ -7,14 +7,14 @@ import { addProductsToStore, setStoreStatus, updateStoreProduct, updateStoreSett
 import { DiscountType, StoreStatus } from "@/generated/prisma/enums";
 import { db } from "@/server/db";
 import { isDomainError } from "@/server/errors";
-import { createProduct, orderContext, orderInput, testStore } from "./helpers";
+import { createProduct, invitation, orderContext, orderInput, testStore } from "./helpers";
 
 const password = "Correct-horse-battery-7";
 let sequence = 0;
 
 async function openStore(name = "Maya Studio") {
   sequence += 1;
-  return openStoreForNewOwner({ storeName: name, firstName: "Maya", lastName: "Okafor", email: `owner.${sequence}.${Date.now()}@example.com`, password });
+  return openStoreForNewOwner({ storeName: name, firstName: "Maya", lastName: "Okafor", email: `owner.${sequence}.${Date.now()}@example.com`, password, referralCode: await invitation() });
 }
 
 /** A product that costs the owner $30 and is suggested at $50. */
@@ -44,9 +44,9 @@ describe("stores", () => {
     expect(owner.role.key).toBe("STORE_OWNER");
     expect(owner.role.isStaff).toBe(false);
 
-    expect(await errorCode(openStoreForNewOwner({ storeName: "Another", firstName: "A", lastName: "B", email: owner.email, password }))).toBe("EMAIL_TAKEN");
+    expect(await errorCode(openStoreForNewOwner({ storeName: "Another", firstName: "A", lastName: "B", email: owner.email, password, referralCode: await invitation() }))).toBe("EMAIL_TAKEN");
     expect(await errorCode(openStoreForUser(owner.id, { storeName: "Second store" }))).toBe("STORE_EXISTS");
-    expect(await errorCode(openStoreForNewOwner({ storeName: "Reserved", slug: "admin", firstName: "A", lastName: "B", email: "reserved@example.com", password }))).toBe("SLUG_INVALID");
+    expect(await errorCode(openStoreForNewOwner({ storeName: "Reserved", slug: "admin", firstName: "A", lastName: "B", email: "reserved@example.com", password, referralCode: await invitation() }))).toBe("SLUG_INVALID");
   });
 
   it("new catalogue products appear in the platform store, but an owner's store sells only what the owner added", async () => {

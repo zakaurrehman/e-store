@@ -2,6 +2,7 @@ import { SearchX } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { CatalogGrid } from "@/components/platform/catalog-card";
+import type { CommissionRule } from "@/features/finance/order-finance";
 import { ProductGrid } from "@/components/store/product/product-card";
 import { ButtonLink } from "@/components/ui/button";
 import { EmptyState, Skeleton } from "@/components/ui/misc";
@@ -22,7 +23,7 @@ type ProductListingProps = {
   hideBrandFacet?: boolean;
   emptyState?: ReactNode;
   /** Platform catalogue: cards show wholesale, retail and margin with "Add to my store" instead of shopping actions. */
-  ownerView?: { inStoreIds: string[]; signedIn: boolean };
+  ownerView?: { inStoreIds: string[]; signedIn: boolean; commission: CommissionRule };
 };
 
 /** Faceted, paginated product listing shared by category, brand, collection, shop and search pages. */
@@ -79,7 +80,7 @@ export async function ProductListing({ basePath, scope, catalog, searchParams, d
           ) : (
             <>
               {ownerView ? (
-                <CatalogGrid products={result.products} inStoreIds={ownerView.inStoreIds} signedIn={ownerView.signedIn} priorityCount={4} />
+                <CatalogGrid products={result.products} inStoreIds={ownerView.inStoreIds} signedIn={ownerView.signedIn} commission={ownerView.commission} priorityCount={4} />
               ) : (
                 <ProductGrid products={result.products} layout={view} priorityCount={4} />
               )}
