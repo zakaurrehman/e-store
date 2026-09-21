@@ -1,5 +1,5 @@
 import { Prisma } from "@/generated/prisma/client";
-import { DepositStatus, OrderStatus, PaymentStatus, PayoutStatus, WalletEntryType, type PayoutMethod } from "@/generated/prisma/enums";
+import { DepositStatus, OrderStatus, PaymentStatus, PayoutStatus, WalletEntryType, type DepositMethod, type PayoutMethod } from "@/generated/prisma/enums";
 import { writeAudit } from "@/server/audit";
 import { db, type DbClient } from "@/server/db";
 import { DomainError, NotFoundError } from "@/server/errors";
@@ -157,15 +157,37 @@ export async function rejectPayout(payoutId: string, actorId: string, reason: st
  * Records that the owner says they have transferred money to Zendropship. Nothing is credited here:
  * the balance changes only when staff confirm the transfer arrived.
  */
-export async function recordDeposit(input: { storeId: string; amountCents: number; reference?: string | null; note?: string | null; createdById: string }) {
+export async function recordDeposit(input: {
+  storeId: string;
+  amountCents: number;
+  method: DepositMethod;
+  network?: string | null;
+  reference?: string | null;
+  note?: string | null;
+  proofMediaId?: string | null;
+  createdById: string;
+}) {
   if (!Number.isInteger(input.amountCents) || input.amountCents < MIN_DEPOSIT_CENTS) {
     throw new WalletError("DEPOSIT_TOO_SMALL", `The smallest deposit is $${(MIN_DEPOSIT_CENTS / 100).toFixed(2)}.`, { fieldErrors: { amount: [`Enter at least $${(MIN_DEPOSIT_CENTS / 100).toFixed(2)}.`] } });
   }
   if (input.amountCents > MAX_DEPOSIT_CENTS) throw new WalletError("DEPOSIT_TOO_LARGE", "That amount is too large — contact support for help.", { fieldErrors: { amount: ["Enter a smaller amount."] } });
+  // Crypto cannot be matched against a bank statement, so it needs something to check: a transaction id or a screenshot.
+  if (input.method === "CRYPTO" && !input.reference?.trim() && !input.proofMediaId) {
+    throw new WalletError("PROOF_REQUIRED", "Add the transaction id or a screenshot so we can check the transfer.", { fieldErrors: { reference: ["Add the transaction id, or upload a screenshot."] } });
+  }
   const deposit = await db.deposit.create({
-    data: { storeId: input.storeId, amountCents: input.amountCents, reference: input.reference?.trim() || null, note: input.note?.trim() || null, createdById: input.createdById },
+    data: {
+      storeId: input.storeId,
+      amountCents: input.amountCents,
+      method: input.method,
+      network: input.network?.trim() || null,
+      reference: input.reference?.trim() || null,
+      note: input.note?.trim() || null,
+      proofMediaId: input.proofMediaId ?? null,
+      createdById: input.createdById,
+    },
   });
-  await writeAudit({ actorId: input.createdById, action: "wallet.deposit.record", entityType: "Deposit", entityId: deposit.id, summary: `Deposit of ${(input.amountCents / 100).toFixed(2)} declared` });
+  await writeAudit({ actorId: input.createdById, action: "wallet.deposit.record", entityType: "Deposit", entityId: deposit.id, summary: `${input.method === "CRYPTO" ? "Crypto" : "Bank"} deposit of ${(input.amountCents / 100).toFixed(2)} declared` });
   return deposit;
 }
 

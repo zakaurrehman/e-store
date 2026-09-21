@@ -52,11 +52,18 @@ export async function ingestImage(input: IngestImageInput) {
   if (duplicate) return duplicate;
 
   const maxDimension = input.maxDimension ?? 2400;
-  const { data, info } = await sharp(input.buffer, { limitInputPixels: MAX_INPUT_PIXELS, animated: false })
-    .rotate()
-    .resize({ width: maxDimension, height: maxDimension, fit: "inside", withoutEnlargement: true })
-    .webp({ quality: 84, effort: 5, smartSubsample: true })
-    .toBuffer({ resolveWithObject: true });
+  let data: Buffer;
+  let info: { width: number; height: number };
+  try {
+    ({ data, info } = await sharp(input.buffer, { limitInputPixels: MAX_INPUT_PIXELS, animated: false })
+      .rotate()
+      .resize({ width: maxDimension, height: maxDimension, fit: "inside", withoutEnlargement: true })
+      .webp({ quality: 84, effort: 5, smartSubsample: true })
+      .toBuffer({ resolveWithObject: true }));
+  } catch {
+    // The header parsed but the pixels did not: a truncated or corrupted file.
+    throw new DomainError("INVALID_IMAGE", `“${sanitiseFilename(input.filename)}” could not be read. Try saving the screenshot again, or upload a different file.`);
+  }
 
   const now = new Date();
   const storageKey = `${folder}/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, "0")}/${randomToken(12).toLowerCase().replace(/[^a-z0-9]/g, "")}.webp`;

@@ -206,6 +206,7 @@ model MediaAsset {
   banners       Banner[]         @relation("BannerImage")
   mobileBanners Banner[]         @relation("BannerMobileImage")
   reviewImages  ReviewImage[]
+  depositProofs Deposit[]        @relation("DepositProof")
   storeLogos    Store[]          @relation("StoreLogo")
   storeHeroes   Store[]          @relation("StoreHero")
 
@@ -1513,12 +1514,22 @@ enum DepositStatus {
   REJECTED
 }
 
+enum DepositMethod {
+  BANK_TRANSFER
+  CRYPTO
+}
+
 /// Money the owner says they have transferred to Zendropship. Credited only once staff confirm it arrived.
 model Deposit {
   id            String        @id @default(cuid())
   storeId       String
   amountCents   Int
   status        DepositStatus @default(PENDING)
+  method        DepositMethod @default(BANK_TRANSFER)
+  /// Chain the owner used, e.g. "USDT (TRC20)"
+  network       String?
+  /// Screenshot or receipt the owner uploaded as proof, checked by staff before crediting
+  proofMediaId  String?
   /// The owner's transfer reference, so staff can match it against the bank statement
   reference     String?
   note          String?
@@ -1530,6 +1541,7 @@ model Deposit {
   store         Store         @relation(fields: [storeId], references: [id], onDelete: Cascade)
   createdBy     User?         @relation("DepositCreator", fields: [createdById], references: [id], onDelete: SetNull)
   confirmedBy   User?         @relation("DepositConfirmer", fields: [confirmedById], references: [id], onDelete: SetNull)
+  proof         MediaAsset?   @relation("DepositProof", fields: [proofMediaId], references: [id], onDelete: SetNull)
   entries       WalletEntry[]
 
   @@index([storeId, createdAt])

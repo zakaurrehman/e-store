@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { AdminPagination, Card, dateTime, PageHeader, StatusBadge, Table, TableEmpty, Td, Th } from "@/components/admin/ui";
 import { BalancePanel } from "@/components/dashboard/wallet";
 import { EmptyState, Skeleton } from "@/components/ui/misc";
+import { getStoreSettings } from "@/features/settings/queries";
 import { requireStoreOwner } from "@/features/stores/guards";
 import { listStoreTransfers, listWalletEntries, getWalletSummary, WALLET_PAGE_SIZE } from "@/features/wallet/queries";
 import { MIN_DEPOSIT_CENTS, MIN_PAYOUT_CENTS } from "@/features/wallet/service";
@@ -30,12 +31,12 @@ const DEPOSIT_LABELS: Record<DepositStatus, string> = { PENDING: "Waiting for co
 async function Balance({ searchParams }: PageProps<"/dashboard/balance">) {
   const [{ store }, query] = await Promise.all([requireStoreOwner("/dashboard/balance"), searchParams]);
   const page = Math.max(1, Number(query.page ?? 1) || 1);
-  const [summary, history, transfers] = await Promise.all([getWalletSummary(store.id), listWalletEntries(store.id, { page }), listStoreTransfers(store.id)]);
+  const [summary, history, transfers, settings] = await Promise.all([getWalletSummary(store.id), listWalletEntries(store.id, { page }), listStoreTransfers(store.id), getStoreSettings()]);
   const base = query as Record<string, string | string[] | undefined>;
 
   return (
     <>
-      <BalancePanel summary={summary} minimumPayoutCents={MIN_PAYOUT_CENTS} minimumDepositCents={MIN_DEPOSIT_CENTS} supportEmail={store.supportEmail} />
+      <BalancePanel summary={summary} minimumPayoutCents={MIN_PAYOUT_CENTS} minimumDepositCents={MIN_DEPOSIT_CENTS} supportEmail={store.supportEmail} depositDetails={settings.deposits} />
 
       <Card className="mt-6" title="Transactions" description="Every movement in your balance, newest first." padded={false}>
         <Table>

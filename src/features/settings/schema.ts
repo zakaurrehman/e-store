@@ -41,6 +41,12 @@ export const settingsSchema = {
       .max(200)
       .default("Shop considered fashion, beauty, watches, jewellery, tech and home essentials from independent house labels. Free returns within 15 days."),
   }),
+  deposits: z.object({
+    bankDetails: z.string().trim().max(600).default(""),
+    cryptoNetwork: z.string().trim().max(60).default(""),
+    cryptoAddress: z.string().trim().max(200).default(""),
+    instructions: z.string().trim().max(600).default("Send the transfer first, then record it here with proof. Your balance is credited once we confirm it arrived."),
+  }),
   social: z.object({
     instagram: optionalUrl,
     tiktok: optionalUrl,

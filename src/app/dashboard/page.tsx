@@ -8,6 +8,7 @@ import { BalancePanel } from "@/components/dashboard/wallet";
 import { Alert, Skeleton } from "@/components/ui/misc";
 import { ButtonLink } from "@/components/ui/button";
 import { getStoreStats } from "@/features/stores/dashboard";
+import { getStoreSettings } from "@/features/settings/queries";
 import { requireStoreOwner } from "@/features/stores/guards";
 import { getWalletSummary } from "@/features/wallet/queries";
 import { MIN_DEPOSIT_CENTS, MIN_PAYOUT_CENTS } from "@/features/wallet/service";
@@ -20,7 +21,7 @@ export const metadata: Metadata = { title: "Overview" };
 
 async function Overview({ searchParams }: PageProps<"/dashboard">) {
   const [{ user, store }, query] = await Promise.all([requireStoreOwner("/dashboard"), searchParams]);
-  const [stats, wallet] = await Promise.all([getStoreStats(store.id), getWalletSummary(store.id)]);
+  const [stats, wallet, settings] = await Promise.all([getStoreStats(store.id), getWalletSummary(store.id), getStoreSettings()]);
   const url = storeUrl(store.slug);
   const emailLive = env.EMAIL_DRIVER !== "log";
 
@@ -60,7 +61,7 @@ async function Overview({ searchParams }: PageProps<"/dashboard">) {
         }
       />
 
-      <BalancePanel summary={wallet} minimumPayoutCents={MIN_PAYOUT_CENTS} minimumDepositCents={MIN_DEPOSIT_CENTS} supportEmail={store.supportEmail} />
+      <BalancePanel summary={wallet} minimumPayoutCents={MIN_PAYOUT_CENTS} minimumDepositCents={MIN_DEPOSIT_CENTS} supportEmail={store.supportEmail} depositDetails={settings.deposits} />
 
       <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile label="Products live" value={stats.activeProducts} hint={stats.hiddenProducts ? `${stats.hiddenProducts} hidden` : undefined} href="/dashboard/products" />

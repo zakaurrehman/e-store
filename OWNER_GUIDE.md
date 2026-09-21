@@ -60,7 +60,17 @@ Messages sent from your store's contact page arrive in **Customer service**, and
 
 ### Depositing
 
-**Deposit** records money you have transferred *to* Zendropship. Nothing is credited when you submit the form: your balance changes only after Zendropship confirms the transfer arrived. You do not need to deposit anything to sell — your customers' payments are collected by Zendropship and your margin is credited automatically.
+**Deposit** records money you have transferred *to* Zendropship, by bank transfer or crypto when Zendropship has published an address.
+
+1. Send the money first, using the account or wallet details shown in the dialog. For crypto, check the address **and** the network — transfers on the wrong network cannot be recovered.
+2. Record it: the amount, the bank reference or transaction id, and a screenshot of the transfer. Crypto deposits need the transaction id or a screenshot so the team can find the payment.
+3. Zendropship checks the transfer and confirms it. **Only then** is your balance credited — nothing is added automatically, and a deposit that can't be found is declined.
+
+You do not need to deposit anything to sell: your customers' payments are collected by Zendropship and your margin is credited on its own.
+
+### Help with money
+
+Every money screen has a link to **Contact Zendropship support** — use it for a deposit that hasn't been confirmed, a withdrawal that hasn't arrived, or anything that looks wrong. Withdrawing never depends on contacting support; the form works on its own.
 
 ## Getting paid by card
 

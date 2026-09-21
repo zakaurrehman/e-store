@@ -148,7 +148,7 @@ describe("store wallet", () => {
 
   it("credits a deposit only when staff confirm it arrived", async () => {
     const { user, store } = await storeWithProduct();
-    const deposit = await recordDeposit({ storeId: store.id, amountCents: 5000, reference: "TRF-1", createdById: user.id });
+    const deposit = await recordDeposit({ storeId: store.id, amountCents: 5000, method: "BANK_TRANSFER", reference: "TRF-1", createdById: user.id });
     expect(await getBalanceCents(store.id)).toBe(0);
     expect((await getWalletSummary(store.id)).pendingDepositCount).toBe(1);
 
@@ -157,8 +157,26 @@ describe("store wallet", () => {
     expect(await getBalanceCents(store.id)).toBe(5000);
     expect((await db.deposit.findUniqueOrThrow({ where: { id: deposit.id } })).status).toBe(DepositStatus.CONFIRMED);
 
-    const declined = await recordDeposit({ storeId: store.id, amountCents: 2500, createdById: user.id });
+    const declined = await recordDeposit({ storeId: store.id, amountCents: 2500, method: "BANK_TRANSFER", createdById: user.id });
     await rejectDeposit(declined.id, admin.id, "No transfer found");
+    expect(await getBalanceCents(store.id)).toBe(5000);
+  });
+
+  it("records how a deposit was sent, and asks for proof when it was crypto", async () => {
+    const { user, store } = await storeWithProduct();
+    expect(await errorCode(recordDeposit({ storeId: store.id, amountCents: 5000, method: "CRYPTO", network: "USDT (TRC20)", createdById: user.id }))).toBe("PROOF_REQUIRED");
+
+    const withHash = await recordDeposit({ storeId: store.id, amountCents: 5000, method: "CRYPTO", network: "USDT (TRC20)", reference: "0xabc123", createdById: user.id });
+    expect(withHash.method).toBe("CRYPTO");
+    expect(withHash.network).toBe("USDT (TRC20)");
+    expect(await getBalanceCents(store.id)).toBe(0);
+
+    // A screenshot alone is enough to ask staff to check it.
+    const withProof = await recordDeposit({ storeId: store.id, amountCents: 2500, method: "CRYPTO", proofMediaId: null, reference: "tx-2", createdById: user.id });
+    expect(withProof.status).toBe(DepositStatus.PENDING);
+
+    const admin = await staff();
+    await confirmDeposit(withHash.id, admin.id);
     expect(await getBalanceCents(store.id)).toBe(5000);
   });
 

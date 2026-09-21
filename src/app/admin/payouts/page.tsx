@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 import { ActionButton } from "@/components/admin/forms";
@@ -22,7 +23,7 @@ async function Payouts() {
   const canManage = can(user, "stores.manage");
   const [payouts, deposits, owed] = await Promise.all([
     db.payout.findMany({ orderBy: [{ status: "asc" }, { createdAt: "desc" }], take: 100, include: { store: { select: { name: true, slug: true } }, requestedBy: { select: { email: true } } } }),
-    db.deposit.findMany({ orderBy: [{ status: "asc" }, { createdAt: "desc" }], take: 100, include: { store: { select: { name: true, slug: true } } } }),
+    db.deposit.findMany({ orderBy: [{ status: "asc" }, { createdAt: "desc" }], take: 100, include: { store: { select: { name: true, slug: true } }, proof: { select: { url: true, width: true, height: true } } } }),
     db.walletEntry.aggregate({ _sum: { amountCents: true } }),
   ]);
   const requested = payouts.filter((payout) => payout.status === PayoutStatus.REQUESTED);
@@ -107,13 +108,14 @@ async function Payouts() {
               <Th>Recorded</Th>
               <Th>Store</Th>
               <Th className="text-right">Amount</Th>
-              <Th>Reference</Th>
+              <Th>Sent by</Th>
+              <Th>Proof</Th>
               <Th>Status</Th>
               {canManage && <Th />}
             </tr>
           </thead>
           <tbody>
-            {deposits.length === 0 && <TableEmpty colSpan={canManage ? 6 : 5}>No deposits yet.</TableEmpty>}
+            {deposits.length === 0 && <TableEmpty colSpan={canManage ? 7 : 6}>No deposits yet.</TableEmpty>}
             {deposits.map((deposit) => (
               <tr key={deposit.id}>
                 <Td className="whitespace-nowrap text-[0.875rem] text-ink-600">{dateTime.format(deposit.createdAt)}</Td>
@@ -123,9 +125,23 @@ async function Payouts() {
                   </Link>
                 </Td>
                 <Td className="tabular text-right font-medium">{formatMoney(deposit.amountCents)}</Td>
-                <Td className="text-[0.8125rem] text-ink-600">
-                  {deposit.reference ?? "—"}
+                <Td className="max-w-[16rem] text-[0.8125rem] text-ink-600">
+                  <p className="font-medium text-ink-800">{deposit.method === "CRYPTO" ? (deposit.network ?? "Crypto") : "Bank transfer"}</p>
+                  {deposit.reference && (
+                    <p className="break-all font-mono text-[0.75rem]" title={deposit.reference}>
+                      {deposit.reference}
+                    </p>
+                  )}
                   {deposit.note && <p className="text-[0.75rem] text-ink-500">{deposit.note}</p>}
+                </Td>
+                <Td>
+                  {deposit.proof ? (
+                    <a href={deposit.proof.url} target="_blank" rel="noopener noreferrer" className="block w-16 overflow-hidden rounded-sm border border-line hover:border-ink-950" title="Open the full screenshot">
+                      <Image src={deposit.proof.url} alt="Deposit proof" width={64} height={64} className="h-16 w-16 object-cover" />
+                    </a>
+                  ) : (
+                    <span className="text-[0.8125rem] text-ink-400">None</span>
+                  )}
                 </Td>
                 <Td>
                   <StatusBadge label={DEPOSIT_LABELS[deposit.status]} tone={DEPOSIT_TONES[deposit.status]} />
@@ -137,7 +153,14 @@ async function Payouts() {
                         <ActionButton
                           action={confirmDepositAction.bind(null, deposit.id)}
                           size="xs"
-                          confirm={{ title: `Credit ${formatMoney(deposit.amountCents)}?`, description: "Confirm only if this money has arrived in the Zendropship account.", confirmLabel: "Confirm and credit" }}
+                          confirm={{
+                            title: `Credit ${formatMoney(deposit.amountCents)}?`,
+                            description:
+                              deposit.method === "CRYPTO"
+                                ? "Check the transaction on the blockchain first — a screenshot is not proof. Confirm only once the funds have arrived in the Zendropship wallet."
+                                : "Confirm only if this money has arrived in the Zendropship bank account.",
+                            confirmLabel: "Confirm and credit",
+                          }}
                         >
                           Confirm
                         </ActionButton>
