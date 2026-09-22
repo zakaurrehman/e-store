@@ -161,7 +161,7 @@ async function Messages({ searchParams }: PageProps<"/admin/messages">) {
                     <p className="mt-1 text-ink-600">
                       {selected.deposit && (
                         <>
-                          About a <Link href="/admin/payouts" className="font-medium text-ink-950 hover:underline">deposit</Link> of {formatMoney(selected.deposit.amountCents)} ·{" "}
+                          About a <Link href="/admin/deposits" className="font-medium text-ink-950 hover:underline">deposit</Link> of {formatMoney(selected.deposit.amountCents)} ·{" "}
                           {selected.deposit.method === "CRYPTO" ? (selected.deposit.network ?? "crypto") : "bank transfer"} · {selected.deposit.status.toLowerCase()}
                           {selected.deposit.reference ? ` · ${selected.deposit.reference}` : ""}
                         </>

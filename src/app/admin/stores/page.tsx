@@ -61,10 +61,12 @@ async function StoresTable({ searchParams }: PageProps<"/admin/stores">) {
                 <span className="flex items-center gap-2.5">
                   <StoreMark store={store} size={32} />
                   <span className="min-w-0">
-                    <a href={storeUrl(store.slug)} target="_blank" rel="noopener noreferrer" className="font-medium text-ink-950 hover:underline">
+                    <Link href={`/admin/stores/${store.id}`} className="font-medium text-ink-950 hover:underline">
                       {store.name}
+                    </Link>
+                    <a href={storeUrl(store.slug)} target="_blank" rel="noopener noreferrer" className="block text-[0.75rem] text-ink-500 hover:text-ink-950 hover:underline">
+                      {storeUrl(store.slug).replace(/^https?:\/\//, "")}
                     </a>
-                    <span className="block text-[0.75rem] text-ink-500">{storeUrl(store.slug).replace(/^https?:\/\//, "")}</span>
                     {store.invitation && <span className="block font-mono text-[0.6875rem] text-ink-400">{store.invitation}</span>}
                   </span>
                 </span>
@@ -88,7 +90,7 @@ async function StoresTable({ searchParams }: PageProps<"/admin/stores">) {
               <Td className="tabular text-right">{formatMoney(store.salesCents)}</Td>
               <Td className="tabular text-right">
                 {store.owner ? (
-                  <Link href="/admin/payouts" className="hover:underline">
+                  <Link href={`/admin/stores/${store.id}#ledger`} className="hover:underline">
                     {formatMoney(store.balanceCents)}
                     {store.awaitingFunds > 0 && <span className="block text-[0.75rem] font-medium text-warning">{store.awaitingFunds} awaiting funds</span>}
                   </Link>

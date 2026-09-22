@@ -20,8 +20,9 @@ Managers cannot delete or import products, refund or cancel orders, change custo
 | --- | --- | --- |
 | Dashboard / Analytics | Revenue, orders, customers, top products and categories, low stock, recent orders; 7 / 30 / 90-day and 12-month ranges; each chart has a table view | `dashboard.view` / `analytics.view` |
 | Notifications | New orders, payment failures, low stock, new reviews and messages | any staff |
-| Stores | Every store with its owner, products, orders and sales; suspend and reopen | `stores.view`, `stores.manage` |
-| Withdrawals | Owners' balances: withdrawals to send and deposits to confirm | `stores.view`, `stores.manage` |
+| Stores | Every store with its owner, products, orders and sales; suspend and reopen. Opening a store shows the owner's account, the store, its wallet ledger, deposits, orders and history on one page | `stores.view`, `stores.manage` |
+| Deposits | Deposit requests from owners: who sent what, the proof they attached, and approve-and-credit or reject | `stores.view`, `stores.manage` |
+| Withdrawals | Owners' balances and the withdrawals waiting to be sent | `stores.view`, `stores.manage` |
 | Invitations | Invitation codes for opening a store: generate, disable, see who used each one | `stores.view`, `stores.manage` |
 | Orders | Every store's orders; search and filter (including by store); order detail with timeline, payment, shipment and notes | `orders.view` |
 | Customers | Search accounts; history, addresses, reviews, activity | `customers.view` |
@@ -54,11 +55,19 @@ Fulfilment is the same for every store: orders from all stores arrive in **Order
 Each owner has a balance kept as an append-only ledger — no screen writes a balance directly. Every order posts three lines: the **sale** (what the customer paid for the goods), Zendropship's **commission**, and the **fulfilment cost** (wholesale). Deposits, withdrawals and corrections are lines too. Lines for money not yet collected (cash on delivery before delivery) are *pending*; only cleared money can be withdrawn.
 
 - **Withdrawals to send.** An owner asks to withdraw; the amount leaves their available balance straight away. **Approve** it once the details check out, **Sending** when the transfer is on its way, then **Mark paid** (add the bank reference if you have one). **Decline** returns the amount to their balance and tells them why. Payouts are sent by hand — nothing is paid out automatically.
-- **Deposits to confirm.** An owner records a transfer they say they have made, by bank transfer or crypto, with a reference or transaction id and usually a screenshot (click the thumbnail to see it full size). **Confirm only when the money is in the Zendropship account or wallet** — confirming is what credits their balance. For crypto, check the transaction on the blockchain: a screenshot proves nothing on its own. **Decline** credits nothing.
+- **Deposit requests** have their own screen. Each row carries the owner's name, email and phone, their store, the amount, the method and reference, the proof they uploaded (click it to see it full size) and when they submitted it. Filter by *Pending*, *Approved* or *Rejected*, or search by owner, store or reference.
+- **Approve & credit** opens the proof beside the figures and asks for the amount to credit — prefilled with what the owner declared, editable when a different amount actually arrived. Pressing it credits their wallet as **one ledger entry**, records who approved it and when, and releases any of their orders that were waiting for funds. Nothing is credited before that; approving is the only thing that moves money. **Reject** asks for a reason, credits nothing, and tells the owner.
+- **Confirm only when the money is in the Zendropship account or wallet.** For crypto, check the transaction on the blockchain: a screenshot proves nothing on its own.
 - **Where owners send money** is set in **Settings → Owner deposits**: bank details, crypto network and wallet address, and the instructions shown in the deposit form. Leave the wallet address empty to hide the crypto option. Check the address character by character whenever you change it, and consider your obligations around accepting crypto (identity checks, sanctions screening and record keeping) before you publish one.
 - **Owed to owners** at the top is the total of every store balance, which is the money the platform holds on their behalf.
 
 Confirming a deposit also releases any of that owner's orders that were **Awaiting funds**: they go to fulfilment on their own, charged once.
+
+## A store and its owner
+
+Clicking a store in **Stores** opens everything about it in one place: the owner's name, email, phone, account status, when they joined and last signed in; the store's address, opening date, invitation code, pricing rule and currency; the wallet balance with what is available and what is still on its way; the **wallet ledger** with a running balance; their deposits with the proof and what was credited; their withdrawals; recent orders; and an **activity history** of what the owner and staff have done, with times and IP addresses.
+
+**There is no password to look up.** Passwords are only ever stored as a hash, so nobody — staff included — can read or show one. To get an owner back into their account, use **Send password reset**: their sessions end immediately, they cannot sign in until they follow the emailed link, and they choose the new password themselves. **Disable account** blocks sign-in altogether while keeping the store and its history. Both are written to the audit log.
 
 ## Commission
 
@@ -133,7 +142,7 @@ Limits are enforced when the order is placed. Deleting a coupon stops the code w
 
 - **Disable account** signs the customer out everywhere and blocks sign-in; order history is kept.
 - **Reset access** ends their sessions and emails a password-reset link; they can't sign in until they set a new password.
-- **Support inbox** holds every conversation: messages to Zendropship (including owners' own questions) and messages in owners' stores. Filter by where it came from (*To Zendropship*, *In owners' stores*, *Assigned to me*) and by status, and search by subject, customer, order number or store. A dot marks unread conversations; opening one marks it read.
+- **Support inbox** holds every conversation: messages to Zendropship (including owners' own questions), messages in owners' stores, and anything written from the **Customer Service** button that floats in the corner of the platform site and every storefront — all of it the same kind of conversation, answered the same way. Filter by where it came from (*To Zendropship*, *In owners' stores*, *Assigned to me*) and by status, and search by subject, customer, order number or store. A dot marks unread conversations; opening one marks it read.
 - Open a conversation to see the customer, whether they have an account, the store and the order it is about (linked only if the order really is theirs). **Assign** it to a colleague, **reply** — the customer gets it by email and, if signed in, in their account — or tick **Internal note** to leave a note only staff can see. A customer writing back reopens the conversation.
 - When an owner asks about a deposit or a withdrawal, the payment is shown above the thread — amount, method, status and reference — so it can be checked without leaving the inbox. Replies land in the owner's dashboard under **Customer service → Your questions to Zendropship**, marked as new, and go out by email; internal notes are never shown to them.
 
@@ -148,7 +157,7 @@ Limits are enforced when the order is placed. Deleting a coupon stops the code w
 
 ## Settings
 
-- **Store settings** — store name and legal details, support contact, currency and locale, **commission and invitations**, announcement bar, commerce options (guest checkout, return window, reviews, low-stock threshold), SEO defaults, owner deposit details and social links.
+- **Store settings** — store name and legal details, support contact (the **support phone** here is the number the floating Customer Service panel offers to call, and the panel hides the call option until one is set), currency and locale, **commission and invitations**, announcement bar, commerce options (guest checkout, return window, reviews, low-stock threshold), SEO defaults, owner deposit details and social links.
 - **Shipping & tax** — a destination uses the first zone listing its country, and `*` is the rest-of-world fallback. Each method has a price, optional free-shipping threshold and delivery estimate. Prices are shown before tax; a region-specific tax rate overrides the country rate.
 - **Staff & roles** — add staff (an existing account with that email is promoted instead) and assign roles. You can only manage people and roles ranked below you, and only grant permissions you hold yourself. Changing someone's role signs them out; removing access turns the account back into a customer account.
 - **Audit log** — every administrative and security-relevant action, with actor, time and IP address.

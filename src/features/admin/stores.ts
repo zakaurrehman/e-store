@@ -1,7 +1,7 @@
 import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
-import { OrderStatus, StoreStatus } from "@/generated/prisma/enums";
-import { balancesByStore } from "@/features/wallet/queries";
+import { OrderStatus, StoreStatus, WalletEntryType } from "@/generated/prisma/enums";
+import { balancesByStore, getWalletSummary, listWalletEntries } from "@/features/wallet/queries";
 import { db } from "@/server/db";
 
 export const STORES_PAGE_SIZE = 25;
@@ -57,3 +57,51 @@ export async function listStoresForAdmin(filters: { q?: string; status?: string;
     })),
   };
 }
+
+/**
+ * One store with everything an admin needs in front of them: the owner's account, the store itself,
+ * its money, its recent orders and deposits, and the trail of what staff and the owner have done.
+ */
+export async function getStoreForAdmin(storeId: string) {
+  const store = await db.store.findFirst({
+    where: { id: storeId, deletedAt: null },
+    include: {
+      owner: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, status: true, emailVerifiedAt: true, mustResetPassword: true, lastLoginAt: true, createdAt: true, role: { select: { name: true, isStaff: true } } } },
+      logo: { select: { url: true, width: true, height: true } },
+      referral: { orderBy: { createdAt: "asc" }, take: 1, include: { code: { select: { code: true } } } },
+      deposits: { orderBy: { createdAt: "desc" }, take: 10, include: { proof: { select: { url: true, width: true, height: true, filename: true, mimeType: true } }, entries: { where: { type: WalletEntryType.DEPOSIT }, select: { amountCents: true } } } },
+      payouts: { orderBy: { createdAt: "desc" }, take: 10 },
+      orders: { orderBy: { placedAt: "desc" }, take: 10, select: { id: true, number: true, status: true, paymentStatus: true, totalCents: true, currency: true, placedAt: true, ownerEarningCents: true } },
+      _count: { select: { products: true, orders: true, messages: true } },
+    },
+  });
+  if (!store) return null;
+
+  const [summary, ledger, sales, storeAudit, ownerAudit] = await Promise.all([
+    getWalletSummary(store.id),
+    listWalletEntries(store.id, { pageSize: 8 }),
+    db.order.aggregate({ where: { storeId: store.id, status: { notIn: [OrderStatus.PENDING, OrderStatus.CANCELLED] } }, _sum: { totalCents: true }, _count: { _all: true } }),
+    db.auditLog.findMany({ where: { entityType: "Store", entityId: store.id }, orderBy: { createdAt: "desc" }, take: 15, include: { actor: { select: { firstName: true, lastName: true } } } }),
+    store.ownerId
+      ? db.auditLog.findMany({ where: { actorId: store.ownerId }, orderBy: { createdAt: "desc" }, take: 15, include: { actor: { select: { firstName: true, lastName: true } } } })
+      : Promise.resolve([]),
+  ]);
+
+  // One history for the store and its owner, newest first. An action by the owner on their own store is
+  // in both queries, so it is kept once.
+  const activity = [...new Map([...storeAudit, ...ownerAudit].map((entry) => [entry.id, entry])).values()]
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    .slice(0, 20);
+
+  return {
+    store,
+    summary,
+    ledger,
+    activity,
+    salesCents: sales._sum.totalCents ?? 0,
+    orderCount: sales._count._all,
+    invitation: store.referral[0]?.code.code ?? null,
+  };
+}
+
+export type AdminStoreDetail = NonNullable<Awaited<ReturnType<typeof getStoreForAdmin>>>;

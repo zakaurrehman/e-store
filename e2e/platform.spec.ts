@@ -252,11 +252,13 @@ test.describe.serial("dropshipping platform", () => {
     await owner.goto(`/dashboard/orders/${fundedOrderNumber}`);
     await expect(owner.getByText("Deposit required to fulfil this order")).toBeVisible();
 
-    // Staff find the transfer and confirm it; the waiting order goes to fulfilment on its own.
-    await admin.goto("/admin/payouts");
+    // Staff find the transfer in the deposit queue, with the owner beside it, and credit it.
+    await admin.goto("/admin/deposits?status=PENDING");
     const depositRow = admin.locator("tbody tr", { hasText: `TOPUP-${stamp}` });
-    await depositRow.getByRole("button", { name: "Confirm" }).click();
-    await admin.getByRole("dialog").filter({ visible: true }).getByRole("button", { name: "Confirm and credit" }).click();
+    await expect(depositRow).toContainText(ownerEmail);
+    await depositRow.getByRole("button", { name: "Review" }).click();
+    const review = admin.getByRole("dialog").filter({ visible: true });
+    await review.getByRole("button", { name: /Approve & credit/ }).click();
     await expect(toast(admin, /order\(s\) waiting for funds have been dealt with/)).toBeVisible();
 
     await owner.goto(`/dashboard/orders/${fundedOrderNumber}`);
@@ -466,6 +468,48 @@ test.describe.serial("dropshipping platform", () => {
     await admin.goto(`/admin/stores?q=${encodeURIComponent(storeName)}`);
     await expect(admin.locator("tbody tr", { hasText: storeName })).toContainText(invitationCode);
     await suspendAndReopen(browser, storeName, storeUrl);
+  });
+
+  test("admin: the store's own page gathers the owner, the money, the orders and the history", async () => {
+    await admin.goto(`/admin/stores?q=${encodeURIComponent(storeName)}`);
+    await admin.getByRole("link", { name: storeName, exact: true }).click();
+    await admin.waitForURL(/\/admin\/stores\/[a-z0-9]+/);
+
+    // The owner, reachable without hunting through another screen.
+    await expect(admin.getByText(ownerEmail).first()).toBeVisible();
+    // The money, with the ledger entry the deposit created.
+    await expect(admin.getByRole("heading", { name: "Wallet ledger" })).toBeVisible();
+    await expect(admin.getByText("Deposit received").first()).toBeVisible();
+    await expect(admin.getByText(`TOPUP-${stamp}`).first()).toBeVisible();
+    // The orders it has taken, and what the owner has done.
+    await expect(admin.getByRole("link", { name: fundedOrderNumber })).toBeVisible();
+    await expect(admin.getByRole("heading", { name: "Activity" })).toBeVisible();
+    await expect(admin.getByText(invitationCode).first()).toBeVisible();
+  });
+
+  test("admin: helping an owner back in is a reset link, never a password", async () => {
+    await admin.goto(`/admin/stores?q=${encodeURIComponent(storeName)}`);
+    await admin.getByRole("link", { name: storeName, exact: true }).click();
+    await admin.waitForURL(/\/admin\/stores\/[a-z0-9]+/);
+
+    // Nothing on the page is, or could stand in for, the owner's password.
+    await expect(admin.getByText(/stored only as a hash/)).toBeVisible();
+    await expect(admin.getByText(password)).toHaveCount(0);
+    await expect(admin.locator('input[type="password"]')).toHaveCount(0);
+
+    await admin.getByRole("button", { name: "Send password reset" }).click();
+    await admin.getByRole("dialog").filter({ visible: true }).getByRole("button", { name: "Send reset link" }).click();
+    await expect(toast(admin, new RegExp(`Reset link sent to ${ownerEmail}`))).toBeVisible();
+
+    // The owner gets a link to set their own password, and the old one no longer works.
+    const mail = await waitForMail((message) => message.to === ownerEmail && /password/i.test(message.subject));
+    expect(mail.links.some((link) => link.includes("/reset-password"))).toBe(true);
+    await owner.goto("/login");
+    await owner.locator("#field-email").fill(ownerEmail);
+    await owner.locator("#login-password").fill(password);
+    await owner.getByRole("button", { name: "Sign in" }).click();
+    await expect(owner.getByText(/reset|password/i).first()).toBeVisible();
+    await expect(owner).not.toHaveURL(/\/dashboard/);
   });
 });
 

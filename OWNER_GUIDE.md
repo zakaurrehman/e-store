@@ -61,7 +61,7 @@ An order waits as **Awaiting funds** only if your balance cannot cover the charg
 
 ## Customer service
 
-**Customer service** is your inbox for messages from your customers. Customers write from your store's **Customer service** page, from an order, or from the contact page; signed-in customers follow the conversation in their account, and everyone gets your replies by email in your store's name.
+**Customer service** is your inbox for messages from your customers. Customers write from the **Customer Service** button in the corner of every page of your store, from your store's **Customer service** page, from an order, or from the contact page; signed-in customers follow the conversation in that panel and in their account, and everyone gets your replies by email in your store's name.
 
 - A dot marks conversations with something new; the count in the menu shows how many. Filter by *New*, *In progress* or *Resolved*, or search by name, subject or order number.
 - **Reply** from the page, and tick **Mark as resolved** to close it in the same step. A customer writing back reopens it.

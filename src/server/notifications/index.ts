@@ -506,11 +506,11 @@ async function plan(event: NotificationEvent): Promise<Planned[]> {
       ];
       return [
         {
-          inApp: { audience: NotificationAudience.STAFF, userId: null, type: event.type, title: `Deposit to confirm: ${formatMoney(deposit.amountCents)}`, body: deposit.store.name, href: "/admin/payouts" },
+          inApp: { audience: NotificationAudience.STAFF, userId: null, type: event.type, title: `Deposit to confirm: ${formatMoney(deposit.amountCents)}`, body: deposit.store.name, href: "/admin/deposits" },
           emails: staff.map((member) => ({
             to: member.email,
             template: "staff.deposit-submitted",
-            rendered: templates.staffAlertEmail(platformBrand, { title: "A deposit is waiting to be confirmed", lines, href: app("/admin/payouts"), cta: "Check deposits" }),
+            rendered: templates.staffAlertEmail(platformBrand, { title: "A deposit is waiting to be confirmed", lines, href: app("/admin/deposits"), cta: "Check deposits" }),
           })),
         },
       ];

@@ -2,6 +2,7 @@
 
 import {
   BarChart3,
+  Banknote,
   Bell,
   Boxes,
   ClipboardList,
@@ -50,6 +51,7 @@ const GROUPS: NavGroup[] = [
     title: "Sales",
     items: [
       { href: "/admin/stores", label: "Stores", icon: Store, permission: "stores.view" },
+      { href: "/admin/deposits", label: "Deposits", icon: Banknote, permission: "stores.view" },
       { href: "/admin/payouts", label: "Withdrawals", icon: Wallet, permission: "stores.view" },
       { href: "/admin/referrals", label: "Invitations", icon: Ticket, permission: "stores.view" },
       { href: "/admin/orders", label: "Orders", icon: ShoppingBag, permission: "orders.view" },

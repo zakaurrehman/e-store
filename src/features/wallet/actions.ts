@@ -168,21 +168,26 @@ export async function rejectPayoutAction(payoutId: string, reason: string): Prom
   }
 }
 
-export async function confirmDepositAction(depositId: string): Promise<ActionState> {
+/**
+ * Approves a declared deposit and credits the owner's wallet in the same transaction, as one ledger
+ * entry with an audit record behind it. `amountCents` is for when what arrived differs from what the
+ * owner declared — leave it out to credit the declared amount.
+ */
+export async function confirmDepositAction(depositId: string, amountCents?: number): Promise<ActionState> {
   try {
     const admin = await assertPermission("stores.manage");
-    const deposit = await confirmDeposit(depositId, admin.id);
+    if (amountCents !== undefined && (!Number.isInteger(amountCents) || amountCents <= 0)) return failure("Enter the amount that actually arrived.");
+    const deposit = await confirmDeposit(depositId, admin.id, amountCents);
     // Money has arrived: anything that was waiting for funds can go to fulfilment now.
     const resumed = await acceptFundedOrders(deposit.storeId);
     after(() => flushNotifications(resumed));
     notifyAfter({ type: "wallet.deposit-settled", depositId: deposit.id, confirmed: true });
+    revalidatePath("/admin/deposits");
     revalidatePath("/admin/payouts");
+    revalidatePath(`/admin/stores/${deposit.storeId}`);
     revalidatePath("/admin/orders");
-    return success(
-      resumed.length > 0
-        ? `Deposit of $${(deposit.amountCents / 100).toFixed(2)} confirmed. ${resumed.length} order(s) waiting for funds have been dealt with.`
-        : `Deposit of $${(deposit.amountCents / 100).toFixed(2)} confirmed and credited.`,
-    );
+    const credited = `$${(deposit.amountCents / 100).toFixed(2)} credited to the owner's balance.`;
+    return success(resumed.length > 0 ? `${credited} ${resumed.length} order(s) waiting for funds have been dealt with.` : credited);
   } catch (error) {
     return handleActionError(error);
   }
@@ -193,8 +198,10 @@ export async function rejectDepositAction(depositId: string, reason: string): Pr
     const admin = await assertPermission("stores.manage");
     const deposit = await rejectDeposit(depositId, admin.id, String(reason ?? "").slice(0, 300));
     notifyAfter({ type: "wallet.deposit-settled", depositId: deposit.id, confirmed: false });
+    revalidatePath("/admin/deposits");
     revalidatePath("/admin/payouts");
-    return success("Deposit declined. Nothing was credited.");
+    revalidatePath(`/admin/stores/${deposit.storeId}`);
+    return success("Deposit rejected. Nothing was credited.");
   } catch (error) {
     return handleActionError(error);
   }

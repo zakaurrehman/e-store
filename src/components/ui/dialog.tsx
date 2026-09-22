@@ -4,7 +4,7 @@ import { X } from "lucide-react";
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { cn } from "@/utils/cn";
 
-type DialogVariant = "center" | "right" | "left" | "bottom";
+type DialogVariant = "center" | "right" | "left" | "bottom" | "corner";
 
 type DialogProps = {
   open: boolean;
@@ -26,6 +26,11 @@ const variantClasses: Record<DialogVariant, string> = {
   left: "my-0 ml-0 mr-auto h-dvh max-h-dvh w-[min(100vw,24rem)] animate-slide-in-left",
   bottom:
     "mx-0 mb-0 mt-auto w-full max-w-none max-h-[90dvh] rounded-t-xl animate-slide-in-up sm:m-auto sm:w-[min(calc(100vw-2rem),36rem)] sm:rounded-lg sm:animate-rise-in",
+  // A sheet on a phone; a panel in the bottom-right corner, where its launcher is, from small screens up.
+  // Once it is only a corner of the screen it stops dimming the page behind it, so it stays out of the way.
+  corner:
+    "mx-0 mb-0 mt-auto w-full max-w-none max-h-[85dvh] rounded-t-xl animate-slide-in-up sm:mb-4 sm:mr-4 sm:ml-auto sm:w-[23.5rem] sm:max-h-[min(80dvh,38rem)] sm:rounded-lg sm:animate-rise-in " +
+    "sm:[&::backdrop]:bg-transparent sm:[&::backdrop]:[backdrop-filter:none]",
 };
 
 /**
@@ -72,7 +77,8 @@ export function Dialog({ open, onClose, title, description, children, footer, va
         if (event.target === event.currentTarget) onClose();
       }}
       className={cn(
-        "flex-col overflow-hidden border-0 bg-surface p-0 text-ink-950 shadow-pop backdrop:animate-fade-in open:flex",
+        // text-left because a dialog opened from a right-aligned table cell inherits that alignment.
+        "flex-col overflow-hidden border-0 bg-surface p-0 text-left text-ink-950 shadow-pop backdrop:animate-fade-in open:flex",
         variantClasses[variant],
         className,
       )}
