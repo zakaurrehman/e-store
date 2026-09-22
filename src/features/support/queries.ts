@@ -29,7 +29,14 @@ const listSelect = {
   _count: { select: { replies: true } },
 } satisfies Prisma.ContactMessageSelect;
 
+/** The money a conversation is about, for the panel beside the thread. */
+const moneyInclude = {
+  deposit: { select: { id: true, amountCents: true, status: true, method: true, network: true, reference: true, createdAt: true } },
+  payout: { select: { id: true, amountCents: true, status: true, method: true, destination: true, createdAt: true } },
+} as const;
+
 const threadInclude = {
+  ...moneyInclude,
   order: { select: { id: true, number: true, status: true, totalCents: true, currency: true } },
   store: { select: { id: true, slug: true, name: true, ownerId: true, logo: { select: { url: true, width: true, height: true } } } },
   user: { select: { id: true, email: true, firstName: true, lastName: true, createdAt: true } },
@@ -72,8 +79,36 @@ export async function getStoreMessage(storeId: string, messageId: string) {
 
 /** The owner's own questions to Zendropship (conversations they opened on the platform site). */
 export async function listOwnerTickets(userId: string, take = 10) {
-  return db.contactMessage.findMany({ where: { userId, storeId: null }, orderBy: { lastMessageAt: "desc" }, take, select: listSelect });
+  return db.contactMessage.findMany({
+    where: { userId, storeId: null },
+    orderBy: { lastMessageAt: "desc" },
+    take,
+    select: { ...listSelect, message: true, ...moneyInclude },
+  });
 }
+
+/** How many of the owner's tickets have a reply they have not read — the badge in the dashboard menu. */
+export async function countUnreadOwnerTickets(userId: string) {
+  return db.contactMessage.count({ where: { userId, storeId: null, unreadForCustomer: true } });
+}
+
+/**
+ * One of the owner's own tickets, with the whole thread. Scoped to their account and to conversations
+ * with Zendropship, so an id from the browser can never open someone else's or a store's conversation.
+ */
+export async function getOwnerTicket(userId: string, ticketId: string) {
+  const ticket = await db.contactMessage.findFirst({
+    where: { id: ticketId, userId, storeId: null },
+    include: {
+      ...moneyInclude,
+      order: { select: { id: true, number: true, status: true, totalCents: true, currency: true } },
+      replies: { where: { isInternal: false }, orderBy: { createdAt: "asc" }, include: { author: { select: { firstName: true, lastName: true } } } },
+    },
+  });
+  return ticket;
+}
+
+export type OwnerTicket = NonNullable<Awaited<ReturnType<typeof getOwnerTicket>>>;
 
 // ─── Zendropship staff inbox ─────────────────────────────────────────────────
 

@@ -1368,6 +1368,9 @@ model ContactMessage {
   orderNumber       String?
   /// The order the conversation is about, resolved from orderNumber when it matches
   orderId           String?
+  /// The deposit or withdrawal an owner is asking about, so staff see the money beside the question
+  depositId         String?
+  payoutId          String?
   status            ContactStatus  @default(NEW)
   /// Staff member handling it (Zendropship inbox only)
   assignedToId      String?
@@ -1382,6 +1385,8 @@ model ContactMessage {
   store             Store?         @relation(fields: [storeId], references: [id], onDelete: SetNull)
   user              User?          @relation("SupportRequester", fields: [userId], references: [id], onDelete: SetNull)
   order             Order?         @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  deposit           Deposit?       @relation(fields: [depositId], references: [id], onDelete: SetNull)
+  payout            Payout?        @relation(fields: [payoutId], references: [id], onDelete: SetNull)
   assignedTo        User?          @relation("SupportAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
   replies           ContactReply[]
 
@@ -1389,6 +1394,8 @@ model ContactMessage {
   @@index([storeId, lastMessageAt])
   @@index([userId, lastMessageAt])
   @@index([assignedToId, status])
+  @@index([depositId])
+  @@index([payoutId])
 }
 
 /// One turn in a conversation: an answer from the store or Zendropship, the customer writing back,
@@ -1564,25 +1571,26 @@ enum PayoutMethod {
 
 /// A withdrawal the owner asked for. The amount leaves the balance when requested and returns if rejected.
 model Payout {
-  id            String        @id @default(cuid())
-  storeId       String
-  amountCents   Int
-  status        PayoutStatus  @default(REQUESTED)
-  method        PayoutMethod
+  id              String           @id @default(cuid())
+  storeId         String
+  amountCents     Int
+  status          PayoutStatus     @default(REQUESTED)
+  method          PayoutMethod
   /// Where the money should go: IBAN/account details or a PayPal address, as typed by the owner
-  destination   String
-  note          String?
+  destination     String
+  note            String?
   /// Staff note or bank reference recorded when the transfer was made or refused
-  reference     String?
-  requestedById String?
-  processedById String?
-  processedAt   DateTime?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  store         Store         @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  requestedBy   User?         @relation("PayoutRequester", fields: [requestedById], references: [id], onDelete: SetNull)
-  processedBy   User?         @relation("PayoutProcessor", fields: [processedById], references: [id], onDelete: SetNull)
-  entries       WalletEntry[]
+  reference       String?
+  requestedById   String?
+  processedById   String?
+  processedAt     DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  store           Store            @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  requestedBy     User?            @relation("PayoutRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  processedBy     User?            @relation("PayoutProcessor", fields: [processedById], references: [id], onDelete: SetNull)
+  entries         WalletEntry[]
+  supportMessages ContactMessage[]
 
   @@index([storeId, createdAt])
   @@index([status, createdAt])
@@ -1641,28 +1649,29 @@ enum DepositMethod {
 
 /// Money the owner says they have transferred to Zendropship. Credited only once staff confirm it arrived.
 model Deposit {
-  id            String        @id @default(cuid())
-  storeId       String
-  amountCents   Int
-  status        DepositStatus @default(PENDING)
-  method        DepositMethod @default(BANK_TRANSFER)
+  id              String           @id @default(cuid())
+  storeId         String
+  amountCents     Int
+  status          DepositStatus    @default(PENDING)
+  method          DepositMethod    @default(BANK_TRANSFER)
   /// Chain the owner used, e.g. "USDT (TRC20)"
-  network       String?
+  network         String?
   /// Screenshot or receipt the owner uploaded as proof, checked by staff before crediting
-  proofMediaId  String?
+  proofMediaId    String?
   /// The owner's transfer reference, so staff can match it against the bank statement
-  reference     String?
-  note          String?
-  createdById   String?
-  confirmedById String?
-  confirmedAt   DateTime?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  store         Store         @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  createdBy     User?         @relation("DepositCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  confirmedBy   User?         @relation("DepositConfirmer", fields: [confirmedById], references: [id], onDelete: SetNull)
-  proof         MediaAsset?   @relation("DepositProof", fields: [proofMediaId], references: [id], onDelete: SetNull)
-  entries       WalletEntry[]
+  reference       String?
+  note            String?
+  createdById     String?
+  confirmedById   String?
+  confirmedAt     DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  store           Store            @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  createdBy       User?            @relation("DepositCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  confirmedBy     User?            @relation("DepositConfirmer", fields: [confirmedById], references: [id], onDelete: SetNull)
+  proof           MediaAsset?      @relation("DepositProof", fields: [proofMediaId], references: [id], onDelete: SetNull)
+  entries         WalletEntry[]
+  supportMessages ContactMessage[]
 
   @@index([storeId, createdAt])
   @@index([status, createdAt])

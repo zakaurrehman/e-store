@@ -49,8 +49,11 @@ test.describe.serial("customer account", () => {
     await expect(toast(admin, "Review approved.")).toBeVisible();
     await adminContext.close();
 
-    await page.goto("/p/harness-leather-belt");
-    await expect(page.locator("#reviews")).toContainText(reviewTitle);
+    // The product page is cached, so the approved review appears on a re-fetch rather than instantly.
+    await expect(async () => {
+      await page.goto("/p/harness-leather-belt");
+      await expect(page.locator("#reviews")).toContainText(reviewTitle, { timeout: 5000 });
+    }).toPass({ timeout: 60000 });
   });
 
   test("logout: signing out ends access to the account area", async () => {

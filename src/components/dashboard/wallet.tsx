@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowDownToLine, ArrowUpFromLine, Check, Copy, LifeBuoy, Upload } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -52,12 +53,12 @@ function CopyValue({ value, label }: { value: string; label: string }) {
   );
 }
 
-/** Money questions that the forms can't answer go to Zendropship support. */
-function SupportLink({ children = "Questions about deposits or withdrawals? Contact Zendropship support" }: { children?: React.ReactNode }) {
+/** Money questions the forms can't answer open a thread with Zendropship, kept in the dashboard. */
+function SupportLink({ children = "Questions about deposits or withdrawals? Ask Zendropship", href = "/dashboard/support/tickets/new" }: { children?: React.ReactNode; href?: string }) {
   return (
-    <a href="/contact" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-[0.8125rem] text-ink-600 underline decoration-ink-300 underline-offset-4 hover:text-ink-950">
+    <Link href={href} className="inline-flex items-center gap-1.5 text-[0.8125rem] text-ink-600 underline decoration-ink-300 underline-offset-4 hover:text-ink-950">
       <LifeBuoy className="size-3.5" aria-hidden /> {children}
-    </a>
+    </Link>
   );
 }
 
@@ -113,7 +114,7 @@ export function WithdrawDialog({ balanceCents, minimumCents, disabled }: { balan
           <p className="rounded-sm bg-canvas px-3 py-2.5 text-[0.8125rem] leading-relaxed text-ink-600">
             The amount leaves your balance now and is sent by Zendropship. If the withdrawal is declined, it goes straight back to your balance.
           </p>
-          <SupportLink>Need help with a withdrawal? Contact Zendropship support</SupportLink>
+          <SupportLink href="/dashboard/support/tickets/new?subject=Question%20about%20a%20withdrawal">Need help with a withdrawal? Ask Zendropship</SupportLink>
           {state.status === "error" && <FormMessage state={state} />}
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setOpen(false)}>
@@ -208,7 +209,7 @@ export function DepositDialog({ minimumCents, supportEmail, details }: { minimum
           </Field>
 
           <TextField name="note" label="Note" optional maxLength={300} error={fieldError(state, "note")} />
-          <SupportLink>Not sure where to send the money? Contact Zendropship support</SupportLink>
+          <SupportLink href="/dashboard/support/tickets/new?subject=Where%20do%20I%20send%20my%20deposit%3F">Not sure where to send the money? Ask Zendropship</SupportLink>
           {state.status === "error" && <FormMessage state={state} />}
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setOpen(false)}>

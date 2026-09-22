@@ -65,7 +65,15 @@ An order waits as **Awaiting funds** only if your balance cannot cover the charg
 
 - A dot marks conversations with something new; the count in the menu shows how many. Filter by *New*, *In progress* or *Resolved*, or search by name, subject or order number.
 - **Reply** from the page, and tick **Mark as resolved** to close it in the same step. A customer writing back reopens it.
-- **Your questions to Zendropship** lists what you have asked Zendropship support — deposits, withdrawals, a parcel that went missing — with the replies.
+### Asking Zendropship
+
+Anything you cannot answer yourself — a deposit that has not been credited, a withdrawal that has not arrived, a parcel that went missing, a question about your store — goes to Zendropship in its own thread, listed under **Your questions to Zendropship**.
+
+- **Ask Zendropship** starts one. From **Balance**, *Ask Zendropship about this* beside a deposit or a withdrawal carries that payment with the question, so staff see the amount, method, status and reference beside what you wrote.
+- Opening a thread shows the whole conversation in order, yours and theirs. Write in the reply box to continue it — there is one thread per question, and it keeps its history.
+- A reply from Zendropship is marked as new and counted in the **Customer service** menu until you open it. Replies also arrive by email.
+- The header shows where it stands: *waiting for a reply*, *being looked at* or *answered*. Writing again after it is answered reopens it.
+- These threads stay open to you even if your store is suspended.
 
 ## Balance
 

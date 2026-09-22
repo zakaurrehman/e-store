@@ -8,9 +8,20 @@ import { Input } from "@/components/ui/field";
 import { EmptyState, Skeleton } from "@/components/ui/misc";
 import { requireStoreOwner } from "@/features/stores/guards";
 import { markStoreMessageReadAction } from "@/features/support/actions";
-import { getStoreMessage, listOwnerTickets, listStoreMessages, parseSupportStatus, SUPPORT_PAGE_SIZE, SUPPORT_STATUS_LABELS, SUPPORT_STATUS_TONES } from "@/features/support/queries";
+import {
+  CUSTOMER_SUPPORT_STATUS_LABELS,
+  CUSTOMER_SUPPORT_STATUS_TONES,
+  getStoreMessage,
+  listOwnerTickets,
+  listStoreMessages,
+  parseSupportStatus,
+  SUPPORT_PAGE_SIZE,
+  SUPPORT_STATUS_LABELS,
+  SUPPORT_STATUS_TONES,
+} from "@/features/support/queries";
 import { ContactStatus } from "@/generated/prisma/enums";
 import { cn } from "@/utils/cn";
+import { formatMoney } from "@/utils/money";
 
 export const metadata: Metadata = { title: "Customer service" };
 
@@ -153,28 +164,45 @@ async function Inbox({ searchParams }: PageProps<"/dashboard/support">) {
         title="Your questions to Zendropship"
         description="Anything you cannot answer yourself — a deposit, a withdrawal, a parcel that went missing."
         actions={
-          <a href="/contact" target="_blank" rel="noopener noreferrer" className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-line-strong px-3 text-[0.875rem] font-medium hover:border-ink-950">
-            <LifeBuoy className="size-4" aria-hidden /> Ask Zendropship
-          </a>
+          <span className="flex flex-wrap gap-2">
+            {tickets.length > 0 && (
+              <Link href="/dashboard/support/tickets" className="inline-flex h-9 items-center rounded-sm px-3 text-[0.875rem] font-medium text-ink-700 hover:text-ink-950">
+                See all
+              </Link>
+            )}
+            <Link href="/dashboard/support/tickets/new" className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-line-strong px-3 text-[0.875rem] font-medium hover:border-ink-950">
+              <LifeBuoy className="size-4" aria-hidden /> Ask Zendropship
+            </Link>
+          </span>
         }
       >
         {tickets.length === 0 ? (
-          <p className="py-4 text-[0.9375rem] text-ink-500">You have not written to Zendropship yet. Replies arrive by email and appear here.</p>
+          <p className="py-4 text-[0.9375rem] text-ink-500">
+            You have not written to Zendropship yet.{" "}
+            <Link href="/dashboard/support/tickets/new" className="font-medium text-ink-950 underline underline-offset-4">
+              Ask them something
+            </Link>{" "}
+            — replies arrive here and by email.
+          </p>
         ) : (
-          <ul className="divide-y divide-line">
+          <ul className="-mx-5 divide-y divide-line">
             {tickets.map((ticket) => (
-              <li key={ticket.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3 first:pt-0 last:pb-0">
-                <div className="min-w-0">
-                  <p className="truncate font-medium text-ink-950">
-                    {ticket.unreadForCustomer && <span className="mr-1.5 inline-block size-1.5 rounded-full bg-iris-600" aria-label="New reply" />}
-                    {ticket.subject}
-                  </p>
-                  <p className="text-[0.8125rem] text-ink-500">
-                    {dateTime.format(ticket.lastMessageAt)}
-                    {ticket._count.replies > 0 ? ` · ${ticket._count.replies} replies` : ""}
-                  </p>
-                </div>
-                <StatusBadge label={SUPPORT_STATUS_LABELS[ticket.status]} tone={SUPPORT_STATUS_TONES[ticket.status]} />
+              <li key={ticket.id}>
+                <Link href={`/dashboard/support/tickets/${ticket.id}`} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-5 py-3 hover:bg-canvas/60">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-ink-950">
+                      {ticket.unreadForCustomer && <span className="mr-1.5 inline-block size-1.5 rounded-full bg-iris-600" aria-label="New reply" />}
+                      {ticket.subject}
+                    </p>
+                    <p className="text-[0.8125rem] text-ink-500">
+                      {dateTime.format(ticket.lastMessageAt)}
+                      {ticket._count.replies > 0 ? ` · ${ticket._count.replies} repl${ticket._count.replies === 1 ? "y" : "ies"}` : ""}
+                      {ticket.deposit ? ` · deposit ${formatMoney(ticket.deposit.amountCents)}` : ""}
+                      {ticket.payout ? ` · withdrawal ${formatMoney(ticket.payout.amountCents)}` : ""}
+                    </p>
+                  </div>
+                  <StatusBadge label={CUSTOMER_SUPPORT_STATUS_LABELS[ticket.status]} tone={CUSTOMER_SUPPORT_STATUS_TONES[ticket.status]} />
+                </Link>
               </li>
             ))}
           </ul>
@@ -187,7 +215,7 @@ async function Inbox({ searchParams }: PageProps<"/dashboard/support">) {
 export default function SupportPage(props: PageProps<"/dashboard/support">) {
   return (
     <>
-      <PageHeader title="Customer service" description="Messages your customers send from your store's contact page. Replies go out by email in your store's name." />
+      <PageHeader title="Customer service" description="Your customers' messages, which you answer in your store's name, and your own questions to Zendropship." />
       <Suspense fallback={<Skeleton className="h-96" />}>
         <Inbox {...props} />
       </Suspense>

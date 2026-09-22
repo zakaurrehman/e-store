@@ -379,6 +379,49 @@ test.describe.serial("dropshipping platform", () => {
     await shopper.close();
   });
 
+  test("the owner asks Zendropship about a deposit and the two of them go back and forth in one thread", async () => {
+    // From the balance page, the question carries the deposit it is about.
+    await owner.goto("/dashboard/balance");
+    const deposits = owner.locator("section").filter({ has: owner.getByRole("heading", { name: "Deposits", exact: true }) }).first();
+    await deposits.getByRole("link", { name: "Ask Zendropship about this" }).first().click();
+    await owner.waitForURL(/\/dashboard\/support\/tickets\/new\?deposit=/);
+    const subject = `Deposit question ${stamp}`;
+    await owner.getByLabel("Subject").fill(subject);
+    await owner.locator("#ticket-message").fill("The deposit I sent still shows as waiting — can you check it?");
+    await owner.getByRole("button", { name: "Send to Zendropship" }).click();
+    await owner.waitForURL(/\/dashboard\/support\/tickets\/[a-z0-9]+\?sent=1/);
+    const threadUrl = owner.url().split("?")[0];
+    await expect(owner.getByText("Message sent")).toBeVisible();
+    await expect(owner.getByText("The deposit I sent still shows as waiting")).toBeVisible();
+    await expect(owner.getByText("What this is about")).toBeVisible();
+
+    // Staff answer from the support inbox, with the deposit in front of them.
+    await admin.goto(`/admin/messages?q=${encodeURIComponent(subject)}`);
+    await admin.getByRole("link", { name: new RegExp(subject) }).click();
+    await expect(admin.getByText(/About a deposit of \$/)).toBeVisible();
+    await admin.getByLabel(/Reply to Tess|Reply to Erin/).fill("Checked it — the transfer has arrived and your balance is credited.");
+    await admin.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(toast(admin, /Reply sent/)).toBeVisible();
+
+    // The owner is told there is something new, reads it, and writes back in the same thread.
+    await owner.goto("/dashboard");
+    await expect(owner.getByRole("link", { name: /Customer service/ }).locator("span").filter({ hasText: /^[1-9]/ })).toBeVisible();
+    await owner.goto("/dashboard/support");
+    await expect(owner.getByText(subject)).toBeVisible();
+    await owner.getByRole("link", { name: new RegExp(subject) }).click();
+    await owner.waitForURL(threadUrl);
+    await expect(owner.getByText("the transfer has arrived")).toBeVisible();
+    await owner.locator("#ticket-reply").fill("Thank you — all clear now.");
+    await owner.getByRole("button", { name: "Send reply" }).click();
+    await expect(toast(owner, /Message sent to Zendropship/)).toBeVisible();
+    await owner.reload();
+    await expect(owner.getByText("Thank you — all clear now.")).toBeVisible();
+
+    // Staff see the owner's reply in the same conversation.
+    await admin.reload();
+    await expect(admin.getByText("Thank you — all clear now.")).toBeVisible();
+  });
+
   test("the owner answers their own customers from the dashboard", async ({ browser }) => {
     const shopper = await browser.newContext({ baseURL: storeUrl });
     const page = await shopper.newPage();
@@ -461,8 +504,11 @@ async function suspendAndReopen(browser: Browser, storeName: string, storeUrl: s
 
   const visitor = await browser.newContext();
   const page = await visitor.newPage();
-  await page.goto(`${storeUrl}/`);
-  await expect(notFound(page)).toBeVisible();
+  // Suspension propagates through the storefront cache the same way reopening does.
+  await expect(async () => {
+    await page.goto(`${storeUrl}/`);
+    await expect(notFound(page)).toBeVisible({ timeout: 5000 });
+  }).toPass({ timeout: 60000 });
 
   await admin.reload();
   await admin.locator("tbody tr", { hasText: storeName }).getByRole("button", { name: "Reopen" }).click();

@@ -17,6 +17,9 @@ export type NewConversation = {
   subject: string;
   message: string;
   orderNumber?: string | null;
+  /** A deposit or withdrawal the question is about; checked against the writer's own store. */
+  depositId?: string | null;
+  payoutId?: string | null;
 };
 
 /**
@@ -47,6 +50,8 @@ export async function openConversation(input: NewConversation, client: DbClient 
       message: input.message.trim(),
       orderNumber,
       orderId: order?.id ?? null,
+      depositId: input.depositId ?? null,
+      payoutId: input.payoutId ?? null,
       status: ContactStatus.NEW,
       unreadForStaff: true,
       unreadForCustomer: false,

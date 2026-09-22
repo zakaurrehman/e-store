@@ -1,4 +1,5 @@
 import { Wallet } from "lucide-react";
+import Link from "next/link";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { AdminPagination, Card, dateTime, PageHeader, StatusBadge, Table, TableEmpty, Td, Th } from "@/components/admin/ui";
@@ -86,6 +87,9 @@ async function Balance({ searchParams }: PageProps<"/dashboard/balance">) {
                       {dateTime.format(payout.createdAt)} · {payout.method === "PAYPAL" ? "PayPal" : "Bank transfer"}
                     </p>
                     {payout.reference && <p className="text-[0.75rem] text-ink-500">{payout.reference}</p>}
+                    <Link href={`/dashboard/support/tickets/new?payout=${payout.id}`} className="text-[0.75rem] text-ink-600 underline decoration-ink-300 underline-offset-4 hover:text-ink-950">
+                      Ask Zendropship about this
+                    </Link>
                   </div>
                   <StatusBadge label={PAYOUT_LABELS[payout.status]} tone={PAYOUT_TONES[payout.status]} />
                 </li>
@@ -107,6 +111,9 @@ async function Balance({ searchParams }: PageProps<"/dashboard/balance">) {
                       {dateTime.format(deposit.createdAt)} · {deposit.method === "CRYPTO" ? (deposit.network ?? "Crypto") : "Bank transfer"}
                     </p>
                     {deposit.reference && <p className="text-[0.75rem] text-ink-500">{deposit.reference}</p>}
+                    <Link href={`/dashboard/support/tickets/new?deposit=${deposit.id}`} className="text-[0.75rem] text-ink-600 underline decoration-ink-300 underline-offset-4 hover:text-ink-950">
+                      Ask Zendropship about this
+                    </Link>
                   </div>
                   <StatusBadge label={DEPOSIT_LABELS[deposit.status]} tone={DEPOSIT_TONES[deposit.status]} />
                 </li>

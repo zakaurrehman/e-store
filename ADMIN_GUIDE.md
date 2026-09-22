@@ -135,6 +135,7 @@ Limits are enforced when the order is placed. Deleting a coupon stops the code w
 - **Reset access** ends their sessions and emails a password-reset link; they can't sign in until they set a new password.
 - **Support inbox** holds every conversation: messages to Zendropship (including owners' own questions) and messages in owners' stores. Filter by where it came from (*To Zendropship*, *In owners' stores*, *Assigned to me*) and by status, and search by subject, customer, order number or store. A dot marks unread conversations; opening one marks it read.
 - Open a conversation to see the customer, whether they have an account, the store and the order it is about (linked only if the order really is theirs). **Assign** it to a colleague, **reply** — the customer gets it by email and, if signed in, in their account — or tick **Internal note** to leave a note only staff can see. A customer writing back reopens the conversation.
+- When an owner asks about a deposit or a withdrawal, the payment is shown above the thread — amount, method, status and reference — so it can be checked without leaving the inbox. Replies land in the owner's dashboard under **Customer service → Your questions to Zendropship**, marked as new, and go out by email; internal notes are never shown to them.
 
 ## Content
 

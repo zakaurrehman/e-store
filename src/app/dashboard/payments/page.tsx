@@ -1,5 +1,6 @@
 import { CreditCard, Info, LifeBuoy } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Card, PageHeader } from "@/components/admin/ui";
 import { paymentProviderList } from "@/lib/env-value";
 
@@ -38,9 +39,9 @@ export default function DashboardPaymentsPage() {
         </Card>
         <Card title="Help with money questions">
           <p className="text-[0.9375rem] leading-relaxed text-ink-700">Deposits, withdrawals, a payment that looks wrong — the Zendropship team can look it up for you.</p>
-          <a href="/contact" target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-[0.9375rem] font-medium text-ink-950 underline decoration-ink-300 underline-offset-4">
-            <LifeBuoy className="size-4" aria-hidden /> Contact Zendropship support
-          </a>
+          <Link href="/dashboard/support/tickets/new?subject=Question%20about%20payments" className="mt-3 inline-flex items-center gap-1.5 text-[0.9375rem] font-medium text-ink-950 underline decoration-ink-300 underline-offset-4">
+            <LifeBuoy className="size-4" aria-hidden /> Ask Zendropship
+          </Link>
         </Card>
       </div>
     </>

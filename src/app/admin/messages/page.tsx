@@ -157,6 +157,23 @@ async function Messages({ searchParams }: PageProps<"/admin/messages">) {
                     )}
                     {!selected.order && selected.orderNumber && <> · order {selected.orderNumber} (not found in this store)</>}
                   </p>
+                  {(selected.deposit || selected.payout) && (
+                    <p className="mt-1 text-ink-600">
+                      {selected.deposit && (
+                        <>
+                          About a <Link href="/admin/payouts" className="font-medium text-ink-950 hover:underline">deposit</Link> of {formatMoney(selected.deposit.amountCents)} ·{" "}
+                          {selected.deposit.method === "CRYPTO" ? (selected.deposit.network ?? "crypto") : "bank transfer"} · {selected.deposit.status.toLowerCase()}
+                          {selected.deposit.reference ? ` · ${selected.deposit.reference}` : ""}
+                        </>
+                      )}
+                      {selected.payout && (
+                        <>
+                          About a <Link href="/admin/payouts" className="font-medium text-ink-950 hover:underline">withdrawal</Link> of {formatMoney(selected.payout.amountCents)} ·{" "}
+                          {selected.payout.method === "PAYPAL" ? "PayPal" : "bank transfer"} · {selected.payout.status.toLowerCase()}
+                        </>
+                      )}
+                    </p>
+                  )}
                 </div>
                 <AssignSelect messageId={selected.id} assignedToId={selected.assignedToId} staff={staff.map((member) => ({ id: member.id, name: `${member.firstName} ${member.lastName}` }))} />
               </div>

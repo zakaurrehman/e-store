@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { DashboardNav } from "@/components/dashboard/nav";
 import { OrderStatus } from "@/generated/prisma/enums";
 import { requireStoreOwner } from "@/features/stores/guards";
+import { countUnreadOwnerTickets } from "@/features/support/queries";
 import { storeUrl } from "@/lib/tenancy";
 import { db } from "@/server/db";
 
@@ -10,10 +11,13 @@ export const metadata: Metadata = { title: { default: "Your store", template: "%
 
 async function DashboardShell({ children }: { children: React.ReactNode }) {
   const { user, store } = await requireStoreOwner("/dashboard");
-  const [support, orders] = await Promise.all([
+  const [customers, tickets, orders] = await Promise.all([
     db.contactMessage.count({ where: { storeId: store.id, unreadForStaff: true } }),
+    countUnreadOwnerTickets(user.id),
     db.order.count({ where: { storeId: store.id, status: OrderStatus.AWAITING_FUNDS } }),
   ]);
+  // One badge for anything waiting on the owner: a customer's message or a reply from Zendropship.
+  const support = customers + tickets;
   return (
     <div className="min-h-dvh bg-canvas">
       <DashboardNav store={{ name: store.name, url: storeUrl(store.slug), status: store.status }} user={{ name: `${user.firstName} ${user.lastName}`, email: user.email }} badges={{ support, orders }} />

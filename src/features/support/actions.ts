@@ -219,3 +219,99 @@ export async function markConversationReadAction(messageId: string): Promise<voi
     // Best-effort.
   }
 }
+
+// ─── The store owner's own conversations with Zendropship ────────────────────
+
+const ticketSchema = z.object({
+  subject: z.string().trim().min(3, "Enter a subject.").max(120),
+  message: z.string().trim().min(10, "Tell us a little more (10+ characters).").max(4000),
+  orderNumber: z.string().trim().max(20).optional().transform((value) => value || null),
+  depositId: z.string().trim().max(40).optional().transform((value) => value || null),
+  payoutId: z.string().trim().max(40).optional().transform((value) => value || null),
+});
+
+/**
+ * An owner writes to Zendropship from their dashboard. Scoped to the signed-in account rather than to a
+ * working store, so an owner whose store is suspended can still ask why. A deposit or withdrawal is
+ * attached only when it really belongs to their store.
+ */
+export async function openOwnerTicketAction(_state: ActionState, formData: FormData): Promise<ActionState> {
+  const parsed = ticketSchema.safeParse({
+    subject: formData.get("subject"),
+    message: formData.get("message"),
+    orderNumber: formData.get("orderNumber") ?? undefined,
+    depositId: formData.get("depositId") ?? undefined,
+    payoutId: formData.get("payoutId") ?? undefined,
+  });
+  if (!parsed.success) return zodFailure(parsed.error);
+  let ticketId: string;
+  try {
+    const user = await assertSignedIn();
+    const limit = await rateLimit("contact", `owner:${user.id}`, { limit: 20, windowMs: 60 * 60_000 });
+    if (!limit.success) return failure(retryAfterMessage(limit.resetAt));
+    const store = await db.store.findFirst({ where: { ownerId: user.id, deletedAt: null }, select: { id: true } });
+    const money = await ownerMoneyContext(store?.id, parsed.data);
+
+    const ticket = await openConversation({
+      storeId: null,
+      userId: user.id,
+      name: `${user.firstName} ${user.lastName}`.trim(),
+      email: user.email,
+      subject: parsed.data.subject,
+      message: parsed.data.message,
+      orderNumber: parsed.data.orderNumber,
+      ...money,
+    });
+    ticketId = ticket.id;
+    sendAfter([{ type: "contact.received", messageId: ticket.id }]);
+  } catch (error) {
+    return handleActionError(error);
+  }
+  revalidatePath("/dashboard/support");
+  redirect(`/dashboard/support/tickets/${ticketId}?sent=1`);
+}
+
+/** Only the owner's own deposit or withdrawal can be attached to a ticket. */
+async function ownerMoneyContext(storeId: string | undefined, input: { depositId: string | null; payoutId: string | null }) {
+  if (!storeId) return {};
+  const [deposit, payout] = await Promise.all([
+    input.depositId ? db.deposit.findFirst({ where: { id: input.depositId, storeId }, select: { id: true } }) : null,
+    input.payoutId ? db.payout.findFirst({ where: { id: input.payoutId, storeId }, select: { id: true } }) : null,
+  ]);
+  return { depositId: deposit?.id ?? null, payoutId: payout?.id ?? null };
+}
+
+const ownerReplySchema = z.object({ ticketId: z.string().min(1).max(40), body: z.string().trim().min(2, "Write your message first.").max(4000, "Keep it under 4000 characters.") });
+
+/** The owner writes back in their own Zendropship thread. */
+export async function ownerTicketReplyAction(_state: ActionState, formData: FormData): Promise<ActionState> {
+  const parsed = ownerReplySchema.safeParse({ ticketId: formData.get("ticketId"), body: formData.get("body") });
+  if (!parsed.success) return zodFailure(parsed.error);
+  try {
+    const user = await assertSignedIn();
+    const limit = await rateLimit("contact", `owner:${user.id}`, { limit: 40, windowMs: 60 * 60_000 });
+    if (!limit.success) return failure(retryAfterMessage(limit.resetAt));
+    const ticket = await db.contactMessage.findFirst({ where: { id: parsed.data.ticketId, userId: user.id, storeId: null }, select: { id: true } });
+    if (!ticket) throw new NotFoundError("That conversation no longer exists.");
+
+    const { reply } = await addReply(ticket.id, parsed.data.body, { kind: "customer", userId: user.id });
+    sendAfter([{ type: "support.customer-replied", messageId: ticket.id, replyId: reply.id }]);
+    revalidatePath(`/dashboard/support/tickets/${ticket.id}`);
+    revalidatePath("/dashboard/support");
+    return success("Message sent to Zendropship.");
+  } catch (error) {
+    return handleActionError(error);
+  }
+}
+
+/** Opening a ticket clears its "new reply" mark. */
+export async function markOwnerTicketReadAction(ticketId: string): Promise<void> {
+  try {
+    const user = await getCurrentUser();
+    if (!user) return;
+    const ticket = await db.contactMessage.findFirst({ where: { id: String(ticketId).slice(0, 40), userId: user.id, storeId: null }, select: { id: true } });
+    if (ticket) await markConversationRead(ticket.id, "customer");
+  } catch {
+    // Best-effort.
+  }
+}
