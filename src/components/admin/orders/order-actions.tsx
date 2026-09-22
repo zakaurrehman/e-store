@@ -7,6 +7,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/field";
 import { acceptOrderAction, addOrderNoteAction, cancelOrderAction, markOrderPaidAction, refundOrderAction, resendOrderConfirmationAction, saveTrackingAction, setOrderStatusAction } from "@/features/admin/orders/actions";
 import type { OrderStatus } from "@/generated/prisma/enums";
+import { nextFulfilmentStep } from "@/features/orders/progress";
 import { CANCELLABLE_STATUSES, NEXT_STATUSES, ORDER_STATUS_LABELS } from "@/features/orders/status";
 import { formatMoney } from "@/utils/money";
 
@@ -14,11 +15,9 @@ type Props = {
   order: { id: string; number: string; status: OrderStatus; paymentStatus: string; paymentProvider: string; currency: string; totalCents: number; refundableCents: number };
   tracking: { carrier: string | null; trackingNumber: string | null; trackingUrl: string | null } | null;
   can: { update: boolean; refund: boolean; cancel: boolean };
-  /** True while the order still has to be taken for fulfilment (which charges the owner's balance). */
-  needsAcceptance?: boolean;
 };
 
-export function OrderActions({ order, tracking, can, needsAcceptance }: Props) {
+export function OrderActions({ order, tracking, can }: Props) {
   const [statusOpen, setStatusOpen] = useState(false);
   const [trackingOpen, setTrackingOpen] = useState(false);
   const [refundOpen, setRefundOpen] = useState(false);
@@ -26,28 +25,25 @@ export function OrderActions({ order, tracking, can, needsAcceptance }: Props) {
   const [nextStatus, setNextStatus] = useState<OrderStatus | "">("");
   const [statusNote, setStatusNote] = useState("");
   const [cancelReason, setCancelReason] = useState("");
-  // Accepting is handled by its own button, so it never appears in the plain status list.
-  const nextOptions = NEXT_STATUSES[order.status].filter((status) => status !== "ACCEPTED");
+  // The usual next step gets its own button; the dialog is for the valid jumps that skip a stage.
+  const next = nextFulfilmentStep(order.status);
+  const otherOptions = NEXT_STATUSES[order.status].filter((status) => status !== "ACCEPTED" && status !== next?.status);
   const cancellable = CANCELLABLE_STATUSES.includes(order.status);
 
   return (
     <div className="flex flex-wrap gap-2">
-      {can.update && needsAcceptance && (
+      {can.update && next && (
         <ActionButton
-          action={() => acceptOrderAction(order.id)}
+          action={() => (next.status === "ACCEPTED" ? acceptOrderAction(order.id) : setOrderStatusAction(order.id, next.status))}
           variant="primary"
-          confirm={{
-            title: `Accept order ${order.number} for fulfilment?`,
-            description: "The wholesale cost is charged to the store owner's balance. If their balance cannot cover it, the order waits for a deposit instead.",
-            confirmLabel: "Accept for fulfilment",
-          }}
+          confirm={next.confirm ? { title: `${next.label} — order ${order.number}?`, description: next.confirm, confirmLabel: next.label } : undefined}
         >
-          Accept for fulfilment
+          {next.label}
         </ActionButton>
       )}
-      {can.update && nextOptions.length > 0 && (
-        <Button size="sm" onClick={() => setStatusOpen(true)}>
-          Update status
+      {can.update && otherOptions.length > 0 && (
+        <Button size="sm" variant="secondary" onClick={() => setStatusOpen(true)}>
+          Skip ahead
         </Button>
       )}
       {can.update && order.status !== "CANCELLED" && (
@@ -100,7 +96,7 @@ export function OrderActions({ order, tracking, can, needsAcceptance }: Props) {
         <Field label="New status" htmlFor="next-status">
           <Select id="next-status" value={nextStatus} onChange={(event) => setNextStatus(event.target.value as OrderStatus)}>
             <option value="">Choose…</option>
-            {nextOptions.map((status) => (
+            {otherOptions.map((status) => (
               <option key={status} value={status}>
                 {ORDER_STATUS_LABELS[status]}
               </option>

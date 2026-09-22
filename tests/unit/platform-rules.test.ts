@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { placeOrderSchema, validatedAddressSchema } from "@/features/checkout/schemas";
+import { fulfilmentHint, fulfilmentProgress, isFulfilmentComplete, nextFulfilmentStep } from "@/features/orders/progress";
 import { CANCELLABLE_STATUSES, CUSTOMER_STATUS_LABELS, NEXT_STATUSES, stepIndex } from "@/features/orders/status";
 import { generateReferralCode, isReferralCodeShape, normaliseReferralCode, referralCodeState } from "@/features/referrals/codes";
 import { formatPhone, isValidPhone, normalisePhone } from "@/lib/phone";
@@ -77,5 +78,54 @@ describe("order statuses", () => {
   it("does not tell customers that a store is short of money", () => {
     expect(CUSTOMER_STATUS_LABELS.AWAITING_FUNDS).toBe("Confirmed");
     expect(stepIndex("AWAITING_FUNDS")).toBe(stepIndex("CONFIRMED"));
+  });
+});
+
+describe("the fulfilment queue", () => {
+  const at = (iso: string) => new Date(iso);
+  const events = [
+    { type: "CREATED", message: "Order placed", data: null, createdAt: at("2026-09-20T10:00:00Z") },
+    { type: "STATUS_CHANGED", message: "Order confirmed", data: { status: "CONFIRMED" }, createdAt: at("2026-09-20T10:01:00Z") },
+    { type: "STATUS_CHANGED", message: "Accepted by fulfilment", data: { status: "ACCEPTED" }, createdAt: at("2026-09-20T10:02:00Z") },
+    { type: "STATUS_CHANGED", message: "Status changed to Processing", data: { status: "PROCESSING" }, createdAt: at("2026-09-20T11:00:00Z"), actor: { firstName: "Noor", lastName: "Staff" } },
+  ];
+
+  it("offers one obvious next step per stage, and none once the order is finished or cancelled", () => {
+    expect(nextFulfilmentStep("CONFIRMED")?.status).toBe("ACCEPTED");
+    expect(nextFulfilmentStep("AWAITING_FUNDS")?.status).toBe("ACCEPTED");
+    expect(nextFulfilmentStep("ACCEPTED")?.status).toBe("PROCESSING");
+    expect(nextFulfilmentStep("PROCESSING")?.status).toBe("PACKED");
+    expect(nextFulfilmentStep("PACKED")?.status).toBe("SHIPPED");
+    expect(nextFulfilmentStep("SHIPPED")?.status).toBe("OUT_FOR_DELIVERY");
+    expect(nextFulfilmentStep("OUT_FOR_DELIVERY")?.status).toBe("DELIVERED");
+    expect(nextFulfilmentStep("DELIVERED")).toBeNull();
+    expect(nextFulfilmentStep("CANCELLED")).toBeNull();
+    expect(nextFulfilmentStep("PENDING")).toBeNull(); // the customer's payment comes first
+    // Every suggested step is one the rules actually allow.
+    for (const status of Object.keys(NEXT_STATUSES) as Array<keyof typeof NEXT_STATUSES>) {
+      const next = nextFulfilmentStep(status);
+      if (next) expect(NEXT_STATUSES[status]).toContain(next.status);
+    }
+  });
+
+  it("builds the timeline from the order's own events, with who moved it", () => {
+    const stages = fulfilmentProgress({ status: "PROCESSING", placedAt: at("2026-09-20T10:00:00Z"), deliveredAt: null, events });
+    const done = stages.filter((stage) => stage.done);
+    expect(done.map((stage) => stage.status)).toEqual(["PENDING", "CONFIRMED", "ACCEPTED", "PROCESSING"]);
+    expect(done.every((stage) => stage.at !== null)).toBe(true);
+    expect(stages.find((stage) => stage.status === "PROCESSING")?.by).toBe("Noor Staff");
+    expect(stages.find((stage) => stage.status === "ACCEPTED")?.by).toBeNull();
+    expect(stages.find((stage) => stage.status === "PROCESSING")?.current).toBe(true);
+    expect(stages.find((stage) => stage.status === "PACKED")?.at).toBeNull();
+    expect(isFulfilmentComplete("PROCESSING")).toBe(false);
+    expect(isFulfilmentComplete("DELIVERED")).toBe(true);
+  });
+
+  it("shows nothing as reached once an order is cancelled", () => {
+    const stages = fulfilmentProgress({ status: "CANCELLED", placedAt: at("2026-09-20T10:00:00Z"), deliveredAt: null, events });
+    expect(stages.some((stage) => stage.done)).toBe(false);
+    expect(fulfilmentHint("CANCELLED")).toMatch(/Cancelled/);
+    expect(fulfilmentHint("DELIVERED")).toMatch(/complete/);
+    expect(fulfilmentHint("ACCEPTED")).toBe("Next: Processing");
   });
 });

@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+import { FulfilmentTracker } from "@/components/admin/orders/fulfilment-tracker";
 import { OrderActions, OrderNoteForm } from "@/components/admin/orders/order-actions";
 import { Card, dateTime, DescriptionList, PageHeader, StatusBadge, Table, Td, Th } from "@/components/admin/ui";
 import { OrderFinanceTable } from "@/components/commerce/order-finance";
@@ -10,6 +11,7 @@ import { StoreMark } from "@/components/store/header/store-brand";
 import { Alert, Skeleton } from "@/components/ui/misc";
 import { getAdminOrder } from "@/features/admin/orders/queries";
 import { storedOrderFinance } from "@/features/finance/order-finance";
+import { fulfilmentProgress, isFulfilmentComplete } from "@/features/orders/progress";
 import { ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, paymentTone, statusTone } from "@/features/orders/status";
 import { WALLET_ENTRY_LABELS } from "@/features/wallet/queries";
 import { fulfilmentShortfallCents } from "@/features/wallet/service";
@@ -32,7 +34,11 @@ async function OrderDetail({ params }: PageProps<"/admin/orders/[id]">) {
   const refundable = paid ? paid.capturedCents - paid.refundedCents : 0;
   const shipment = order.shipments[0] ?? null;
   const finance = storedOrderFinance(order);
-  const shortfall = order.status === "AWAITING_FUNDS" ? await fulfilmentShortfallCents(order.id) : 0;
+  // What accepting this order would still need from the owner's balance — 0 when its own payment covers it.
+  const needsFunding = order.status === "AWAITING_FUNDS" || order.status === "CONFIRMED";
+  const shortfall = needsFunding ? await fulfilmentShortfallCents(order.id) : 0;
+  const stages = fulfilmentProgress({ status: order.status, placedAt: order.placedAt, deliveredAt: order.deliveredAt, events: order.events });
+  const cancellation = order.status === "CANCELLED" ? order.events.find((event) => (event.data as { status?: string } | null)?.status === "CANCELLED") : null;
 
   return (
     <>
@@ -53,17 +59,30 @@ async function OrderDetail({ params }: PageProps<"/admin/orders/[id]">) {
           accepted automatically as soon as a deposit is confirmed.
         </Alert>
       )}
+      {order.status === "CONFIRMED" && shortfall === 0 && (
+        <Alert tone="success" title="Ready for fulfilment" className="mb-6">
+          This order&rsquo;s own payment covers the {formatMoney(finance.fulfilmentCostCents, order.currency)} fulfilment cost, so no deposit is needed. Accept it to charge the cost once and start fulfilment.
+        </Alert>
+      )}
+      {isFulfilmentComplete(order.status) && (
+        <Alert tone="success" title="Fulfilment complete" className="mb-6">
+          Delivered {order.deliveredAt ? dateTime.format(order.deliveredAt) : ""}. There is nothing further to do on this order.
+        </Alert>
+      )}
       <div className="mb-6">
         <OrderActions
           order={{ id: order.id, number: order.number, status: order.status, paymentStatus: order.paymentStatus, paymentProvider: order.paymentProvider, currency: order.currency, totalCents: order.totalCents, refundableCents: refundable }}
           tracking={shipment ? { carrier: shipment.carrier, trackingNumber: shipment.trackingNumber, trackingUrl: shipment.trackingUrl } : null}
           can={{ update: can(user, "orders.update"), refund: can(user, "orders.refund"), cancel: can(user, "orders.cancel") }}
-          needsAcceptance={order.status === "CONFIRMED" || order.status === "AWAITING_FUNDS"}
         />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-12">
         <div className="space-y-6 xl:col-span-8">
+          <Card title="Fulfilment" description="Every stage, when it happened and who moved it.">
+            <FulfilmentTracker stages={stages} cancelled={cancellation ? { at: cancellation.createdAt, by: cancellation.actor ? `${cancellation.actor.firstName} ${cancellation.actor.lastName}` : null, reason: cancellation.message } : null} />
+          </Card>
+
           <Card title="Items" padded={false}>
             <Table>
               <thead>

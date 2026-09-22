@@ -51,7 +51,7 @@ When a customer checks out in your store:
 - your customer gets order, shipping and delivery emails in your store's name;
 - you get an email with the order number and total.
 
-**Orders** shows each order's status, the tracking number once shipped, and what you earn. An order moves through: *Awaiting payment → Confirmed → Accepted → Processing → Packed → Shipped → Out for delivery → Delivered*, and its **Timeline** records every step with its time.
+**Orders** shows each order's status, the tracking number once shipped, and what you earn. An order moves through: *Awaiting payment → Confirmed → Accepted → Processing → Packed → Shipped → Out for delivery → Delivered*. Each order page shows those stages with the time each one happened, and a **Timeline** of everything that has been done to it. You always see the same history Zendropship does, as soon as you refresh. A cancelled order stops there and goes no further.
 
 ### Awaiting funds
 

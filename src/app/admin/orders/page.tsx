@@ -1,13 +1,17 @@
+import type { OrderStatus } from "@/generated/prisma/enums";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
+import { ActionButton } from "@/components/admin/forms";
 import { AdminPagination, buildQuery, Card, dateTime, FilterLink, PageHeader, StatusBadge, Table, TableEmpty, Td, Th } from "@/components/admin/ui";
 import { Input, Select } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/misc";
-import { listOrders } from "@/features/admin/orders/queries";
-import { ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, paymentTone, statusTone } from "@/features/orders/status";
-import { requirePagePermission } from "@/server/auth/guards";
+import { acceptOrderAction, setOrderStatusAction } from "@/features/admin/orders/actions";
+import { listOrders, OPEN_FILTER } from "@/features/admin/orders/queries";
+import { fulfilmentHint, nextFulfilmentStep } from "@/features/orders/progress";
+import { ORDER_STATUS_LABELS, OPEN_STATUSES, PAYMENT_STATUS_LABELS, paymentTone, statusTone } from "@/features/orders/status";
+import { can, requirePagePermission } from "@/server/auth/guards";
 import { formatMoney } from "@/utils/money";
 
 export const metadata: Metadata = { title: "Orders" };
@@ -15,16 +19,22 @@ export const metadata: Metadata = { title: "Orders" };
 const STATUS_FILTERS = ["", "PENDING", "CONFIRMED", "AWAITING_FUNDS", "ACCEPTED", "PROCESSING", "PACKED", "SHIPPED", "OUT_FOR_DELIVERY", "DELIVERED", "CANCELLED"] as const;
 
 async function OrdersTable({ searchParams }: PageProps<"/admin/orders">) {
-  await requirePagePermission("orders.view", "/admin/orders");
+  const user = await requirePagePermission("orders.view", "/admin/orders");
+  const canUpdate = can(user, "orders.update");
   const query = await searchParams;
   const str = (key: string) => (typeof query[key] === "string" ? (query[key] as string) : undefined);
   const data = await listOrders({ q: str("q"), status: str("status"), payment: str("payment"), from: str("from"), to: str("to"), store: str("store"), page: Number(str("page") ?? 1) || 1 });
   const base = query as Record<string, string | string[] | undefined>;
+  const openCount = OPEN_STATUSES.reduce((sum, status) => sum + (data.statusCounts[status] ?? 0), 0);
 
   return (
     <>
       <PageHeader title="Orders" description={`${data.total.toLocaleString("en-US")} orders`} />
       <div className="mb-4 flex flex-wrap gap-2">
+        <FilterLink href={`/admin/orders${buildQuery(base, { status: OPEN_FILTER, page: null })}`} active={str("status") === OPEN_FILTER}>
+          To fulfil
+          {openCount > 0 ? <span className="tabular ml-1.5 opacity-60">{openCount}</span> : null}
+        </FilterLink>
         {STATUS_FILTERS.map((status) => (
           <FilterLink key={status || "all"} href={`/admin/orders${buildQuery(base, { status: status || null, page: null })}`} active={(str("status") ?? "") === status}>
             {status ? ORDER_STATUS_LABELS[status] : "All"}
@@ -69,19 +79,21 @@ async function OrdersTable({ searchParams }: PageProps<"/admin/orders">) {
               <Th>Status</Th>
               <Th>Payment</Th>
               <Th className="text-right">Total</Th>
+              {canUpdate && <Th className="hidden text-right md:table-cell">Next step</Th>}
             </tr>
           </thead>
           <tbody>
-            {data.orders.length === 0 && <TableEmpty colSpan={7}>No orders match these filters.</TableEmpty>}
+            {data.orders.length === 0 && <TableEmpty colSpan={canUpdate ? 8 : 7}>No orders match these filters.</TableEmpty>}
             {data.orders.map((order) => (
               <tr key={order.id} className="hover:bg-canvas/60">
                 <Td>
-                  <Link href={`/admin/orders/${order.id}`} className="tabular font-medium text-ink-950 hover:underline">
+                  <Link href={`/admin/orders/${order.id}`} className="tabular whitespace-nowrap font-medium text-ink-950 hover:underline">
                     {order.number}
                   </Link>
                   <span className="block text-[0.75rem] text-ink-500">
                     {order._count.items} item{order._count.items === 1 ? "" : "s"}
                   </span>
+                  {canUpdate && <span className="mt-1.5 block md:hidden">{nextStepButton(order)}</span>}
                 </Td>
                 <Td>
                   <span className="block">{order.user ? `${order.user.firstName} ${order.user.lastName}` : "Guest"}</span>
@@ -96,12 +108,14 @@ async function OrdersTable({ searchParams }: PageProps<"/admin/orders">) {
                 <Td className="whitespace-nowrap text-ink-600">{dateTime.format(order.placedAt)}</Td>
                 <Td>
                   <StatusBadge label={ORDER_STATUS_LABELS[order.status]} tone={statusTone(order.status)} />
+                  <span className="mt-0.5 block text-[0.75rem] text-ink-500">{fulfilmentHint(order.status)}</span>
                 </Td>
                 <Td>
                   <StatusBadge label={PAYMENT_STATUS_LABELS[order.paymentStatus]} tone={paymentTone(order.paymentStatus)} />
                   <span className="ml-1.5 text-[0.75rem] text-ink-500">{order.paymentProvider}</span>
                 </Td>
                 <Td className="tabular text-right font-medium">{formatMoney(order.totalCents, order.currency)}</Td>
+                {canUpdate && <Td className="hidden whitespace-nowrap text-right md:table-cell">{nextStepButton(order)}</Td>}
               </tr>
             ))}
           </tbody>
@@ -109,6 +123,26 @@ async function OrdersTable({ searchParams }: PageProps<"/admin/orders">) {
         <AdminPagination basePath="/admin/orders" query={base} page={data.page} pageCount={data.pageCount} total={data.total} pageSize={25} />
       </Card>
     </>
+  );
+}
+
+/**
+ * One click for the step staff take next. Accepting goes through the funding check (which charges the
+ * owner's balance once); everything after it is a plain status move. Cancelled and delivered orders have none.
+ */
+function nextStepButton(order: { id: string; number: string; status: OrderStatus }) {
+  const next = nextFulfilmentStep(order.status);
+  if (!next) return <span className="text-[0.8125rem] text-ink-400">{order.status === "DELIVERED" ? "Complete" : "—"}</span>;
+  const action = next.status === "ACCEPTED" ? acceptOrderAction.bind(null, order.id) : setOrderStatusAction.bind(null, order.id, next.status, undefined);
+  return (
+    <ActionButton
+      action={action}
+      size="xs"
+      variant={next.status === "ACCEPTED" ? "primary" : "secondary"}
+      confirm={next.confirm ? { title: `${next.label} — order ${order.number}?`, description: next.confirm, confirmLabel: next.label } : undefined}
+    >
+      {next.short}
+    </ActionButton>
   );
 }
 

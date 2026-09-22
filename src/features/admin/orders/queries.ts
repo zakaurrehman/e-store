@@ -1,9 +1,13 @@
 import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
 import { OrderStatus, PaymentStatus } from "@/generated/prisma/enums";
+import { OPEN_STATUSES } from "@/features/orders/status";
 import { db } from "@/server/db";
 
 export const ADMIN_PAGE_SIZE = 25;
+
+/** Pseudo-status for the list filter: every order fulfilment still has work to do on. */
+export const OPEN_FILTER = "OPEN";
 
 export type OrderListFilters = { q?: string; status?: string; payment?: string; page?: number; from?: string; to?: string; store?: string };
 
@@ -19,7 +23,9 @@ export async function listOrders(filters: OrderListFilters) {
       { shipments: { some: { trackingNumber: { contains: q, mode: "insensitive" } } } },
     ];
   }
-  if (filters.status && filters.status in OrderStatus) where.status = filters.status as OrderStatus;
+  // "OPEN" is the fulfilment queue rather than a single status: everything still to be dealt with.
+  if (filters.status === OPEN_FILTER) where.status = { in: OPEN_STATUSES };
+  else if (filters.status && filters.status in OrderStatus) where.status = filters.status as OrderStatus;
   if (filters.store) where.store = { slug: filters.store };
   if (filters.payment && filters.payment in PaymentStatus) where.paymentStatus = filters.payment as PaymentStatus;
   if (filters.from || filters.to) {

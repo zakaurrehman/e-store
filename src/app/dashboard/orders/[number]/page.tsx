@@ -7,7 +7,8 @@ import { Card, PageHeader, StatusBadge, Table, Td, Th, dateTime } from "@/compon
 import { OrderFinanceTable } from "@/components/commerce/order-finance";
 import { Alert, Skeleton } from "@/components/ui/misc";
 import { storedOrderFinance } from "@/features/finance/order-finance";
-import { FULFILMENT_STEPS, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, paymentTone, stepIndex, statusTone } from "@/features/orders/status";
+import { fulfilmentProgress, isFulfilmentComplete } from "@/features/orders/progress";
+import { ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, paymentTone, statusTone } from "@/features/orders/status";
 import { getStoreOrder } from "@/features/stores/dashboard";
 import { fulfilmentShortfallCents } from "@/features/wallet/service";
 import { requireStoreOwner } from "@/features/stores/guards";
@@ -23,7 +24,7 @@ async function OrderDetail({ params }: PageProps<"/dashboard/orders/[number]">) 
   if (!order) notFound();
   const address = isAddressSnapshot(order.shippingAddress) ? order.shippingAddress : null;
   const finance = storedOrderFinance(order);
-  const current = order.status === "CANCELLED" ? -1 : stepIndex(order.status);
+  const stages = fulfilmentProgress({ status: order.status, placedAt: order.placedAt, deliveredAt: order.deliveredAt, events: order.events });
   const shipment = order.shipments[0];
   const shortfall = order.status === "AWAITING_FUNDS" ? await fulfilmentShortfallCents(order.id) : 0;
 
@@ -55,17 +56,18 @@ async function OrderDetail({ params }: PageProps<"/dashboard/orders/[number]">) 
       )}
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
-          <Card title="Fulfilment" description="Handled by Zendropship. You don't need to do anything to ship this order.">
+          <Card title="Fulfilment" description={isFulfilmentComplete(order.status) ? "Delivered — this order is complete." : "Handled by Zendropship. You don't need to do anything to ship this order."}>
             {order.status === "CANCELLED" ? (
               <p className="text-[0.9375rem] text-danger">This order was cancelled.</p>
             ) : (
               <ol className="grid gap-3 sm:grid-cols-4 xl:grid-cols-8">
-                {FULFILMENT_STEPS.map((step, index) => (
-                  <li key={step.status} className="flex items-center gap-2 sm:flex-col sm:items-start">
-                    <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold", index <= current ? "bg-success text-white" : "bg-canvas text-ink-400")}>
-                      {index <= current ? <Check className="size-4" aria-hidden /> : index + 1}
+                {stages.map((stage, index) => (
+                  <li key={stage.status} className="flex items-center gap-2 sm:flex-col sm:items-start">
+                    <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold", stage.done ? "bg-success text-white" : "bg-canvas text-ink-400")}>
+                      {stage.done ? <Check className="size-4" aria-hidden /> : index + 1}
                     </span>
-                    <span className={cn("text-[0.875rem]", index <= current ? "font-medium text-ink-950" : "text-ink-500")}>{step.label}</span>
+                    <span className={cn("text-[0.875rem]", stage.done ? "font-medium text-ink-950" : "text-ink-500")}>{stage.label}</span>
+                    {stage.at && <span className="text-[0.75rem] text-ink-500">{dateTime.format(stage.at)}</span>}
                   </li>
                 ))}
               </ol>

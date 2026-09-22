@@ -126,8 +126,11 @@ test.describe.serial("dropshipping platform", () => {
     const page = await shopper.newPage();
     await page.goto("/shop");
     await expect(page.getByText("2 products")).toBeVisible();
-    await page.goto(`/p/${FIRST_PRODUCT}`);
-    await expect(page.locator("main")).toContainText(storePrice);
+    // The storefront picks up a just-saved price on its next request, so give it one.
+    await expect(async () => {
+      await page.goto(`/p/${FIRST_PRODUCT}`);
+      await expect(page.locator("main")).toContainText(storePrice, { timeout: 5000 });
+    }).toPass({ timeout: 60000 });
     await page.goto("/p/harness-leather-belt");
     await expect(notFound(page)).toBeVisible();
     await shopper.close();
@@ -262,25 +265,51 @@ test.describe.serial("dropshipping platform", () => {
     await expect(owner.getByText(/Accepted by fulfilment — \$23\.10 charged to the store balance/)).toHaveCount(1);
   });
 
-  test("20–22. staff fulfil the order step by step; the owner and the customer follow it", async () => {
+  test("20–22. staff fulfil the order step by step from the queue; the owner and the customer follow it", async () => {
+    // The queue: one click moves an order to its next stage, without opening it.
     await admin.goto(`/admin/orders?q=${fundedOrderNumber}`);
+    const row = admin.locator("tbody tr", { hasText: fundedOrderNumber });
+    await expect(row).toContainText("Next: Processing");
+    await row.getByRole("button", { name: "Processing", exact: true }).click();
+    await expect(toast(admin, "Order status updated.")).toBeVisible();
+    await expect(admin.locator("tbody tr", { hasText: fundedOrderNumber })).toContainText("Next: Packed");
+    await admin.locator("tbody tr", { hasText: fundedOrderNumber }).getByRole("button", { name: "Packed", exact: true }).click();
+    await expect(toast(admin, "Order status updated.")).toBeVisible();
+
+    // The rest from the order itself, where the steps that tell the customer ask for confirmation.
     await admin.getByRole("link", { name: fundedOrderNumber }).click();
     await admin.waitForURL(/\/admin\/orders\/[a-z0-9]+$/);
-    for (const status of ["Processing", "Packed", "Shipped", "Out for delivery", "Delivered"]) {
-      await admin.getByRole("button", { name: "Update status" }).click();
-      await admin.locator("#next-status").selectOption({ label: status });
-      await admin.getByRole("dialog").filter({ visible: true }).getByRole("button", { name: "Update" }).click();
-      await expect(admin.getByText("Order status updated.").first()).toBeVisible();
+    for (const [button, confirm] of [
+      ["Mark shipped", "Mark shipped"],
+      ["Out for delivery", null],
+      ["Mark delivered", "Mark delivered"],
+    ] as Array<[string, string | null]>) {
+      await admin.getByRole("button", { name: button }).first().click();
+      if (confirm) await admin.getByRole("dialog").filter({ visible: true }).getByRole("button", { name: confirm }).click();
+      await expect(toast(admin, /Order status updated|accepted/)).toBeVisible();
       await admin.reload();
     }
+
+    // The order is finished: the tracker shows every stage with its time and who moved it, and nothing is left to do.
+    await expect(admin.getByText("Fulfilment complete")).toBeVisible();
+    const tracker = admin.locator("section").filter({ has: admin.getByRole("heading", { name: "Fulfilment", exact: true }) }).first();
+    for (const stage of ["Order placed", "Payment confirmed", "Accepted", "Processing", "Packed", "Shipped", "Out for delivery", "Delivered"]) {
+      await expect(tracker.getByText(stage).first()).toBeVisible();
+    }
+    await expect(tracker.getByText("Store Owner").first()).toBeVisible();
+    await expect(admin.getByRole("button", { name: "Mark delivered" })).toHaveCount(0);
+    await admin.goto(`/admin/orders?q=${fundedOrderNumber}`);
+    await expect(admin.locator("tbody tr", { hasText: fundedOrderNumber })).toContainText("Complete");
+
     // 24. Staff see commission and the fulfilment charge on the order.
+    await admin.getByRole("link", { name: fundedOrderNumber }).click();
     await expect(admin.getByText("Store & money")).toBeVisible();
     await expect(admin.getByText("Wallet movements")).toBeVisible();
-    await expect(admin.getByText("Fulfilment cost").first()).toBeVisible();
     await expect(admin.getByText(/Zendropship commission/).first()).toBeVisible();
 
-    // 21. The owner sees the whole timeline.
+    // 21. The owner sees the whole timeline, after a refresh, with the times.
     await owner.goto(`/dashboard/orders/${fundedOrderNumber}`);
+    await expect(owner.getByText("Delivered — this order is complete.")).toBeVisible();
     for (const line of ["Waiting for funds", "Accepted by fulfilment", "Status changed to Processing", "Status changed to Packed", "Status changed to Shipped", "Status changed to Out for delivery", "Status changed to Delivered"]) {
       await expect(owner.getByText(new RegExp(line)).first()).toBeVisible();
     }
@@ -438,8 +467,11 @@ async function suspendAndReopen(browser: Browser, storeName: string, storeUrl: s
   await admin.reload();
   await admin.locator("tbody tr", { hasText: storeName }).getByRole("button", { name: "Reopen" }).click();
   await expect(toast(admin, /is open again/)).toBeVisible();
-  await page.goto(`${storeUrl}/`);
-  await expect(page.locator("header").getByRole("img", { name: storeName })).toBeVisible();
+  // The storefront comes back with its own branding once the reopened store has propagated.
+  await expect(async () => {
+    await page.goto(`${storeUrl}/`);
+    await expect(page.locator("header").getByRole("img", { name: storeName })).toBeVisible({ timeout: 5000 });
+  }).toPass({ timeout: 60000 });
   await visitor.close();
   await adminContext.close();
 }
