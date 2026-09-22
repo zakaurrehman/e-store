@@ -16,6 +16,7 @@ import { NotFoundError } from "@/server/errors";
 import { dispatchNotification, sendDeliveries } from "@/server/notifications";
 import { getRequestMeta } from "@/server/request";
 import { rateLimit, retryAfterMessage } from "@/server/security/rate-limit";
+import { widgetThreads } from "./queries";
 import { addReply, assignConversation, markConversationRead, openConversation, setConversationStatus } from "./service";
 
 /** Emails are queued inside the request and sent once the response has gone out. */
@@ -97,11 +98,10 @@ const newConversationSchema = z.object({
   website: z.string().max(0).optional(),
 });
 
-/**
- * A customer (or a visitor) opens a conversation with the store they are on — or with Zendropship on the
- * platform site. Signed-in customers can then follow the thread in their account; guests get email replies.
- */
-export async function startConversationAction(_state: ActionState, formData: FormData): Promise<ActionState> {
+type Opened = { ok: true; conversationId: string; signedIn: boolean } | { ok: false; state: ActionState };
+
+/** Validates a contact form, holds the rate limit and opens the conversation. Shared by the pages and the widget. */
+async function openFromForm(formData: FormData): Promise<Opened> {
   const parsed = newConversationSchema.safeParse({
     name: formData.get("name"),
     email: formData.get("email"),
@@ -111,18 +111,29 @@ export async function startConversationAction(_state: ActionState, formData: For
     website: formData.get("website") ?? undefined,
   });
   if (!parsed.success) {
-    if (parsed.error.issues.some((issue) => issue.path[0] === "website")) return success("Thanks — we've received your message.");
-    return zodFailure(parsed.error);
+    // A filled honeypot is a bot: thank it and write nothing.
+    if (parsed.error.issues.some((issue) => issue.path[0] === "website")) return { ok: false, state: success("Thanks — we've received your message.") };
+    return { ok: false, state: zodFailure(parsed.error) };
   }
   const meta = await getRequestMeta();
   const limit = await rateLimit("contact", meta.ipAddress);
-  if (!limit.success) return failure(retryAfterMessage(limit.resetAt));
+  if (!limit.success) return { ok: false, state: failure(retryAfterMessage(limit.resetAt)) };
 
   const [user, store] = await Promise.all([getCurrentUser(), getCurrentStore()]);
   const { website: _website, ...data } = parsed.data;
   const conversation = await openConversation({ ...data, storeId: store?.id ?? null, userId: user?.id ?? null });
   sendAfter([{ type: "contact.received", messageId: conversation.id }]);
-  if (user) redirect(`/support/${conversation.id}?sent=1`);
+  return { ok: true, conversationId: conversation.id, signedIn: Boolean(user) };
+}
+
+/**
+ * A customer (or a visitor) opens a conversation with the store they are on — or with Zendropship on the
+ * platform site. Signed-in customers can then follow the thread in their account; guests get email replies.
+ */
+export async function startConversationAction(_state: ActionState, formData: FormData): Promise<ActionState> {
+  const opened = await openFromForm(formData);
+  if (!opened.ok) return opened.state;
+  if (opened.signedIn) redirect(`/support/${opened.conversationId}?sent=1`);
   return success("Thanks — we've received your message and will reply within one business day.");
 }
 
@@ -314,4 +325,66 @@ export async function markOwnerTicketReadAction(ticketId: string): Promise<void>
   } catch {
     // Best-effort.
   }
+}
+
+// ─── The floating customer-service panel ─────────────────────────────────────
+
+export type WidgetTurn = { id: string; mine: boolean; body: string; at: string };
+export type WidgetThread = { id: string; subject: string; status: ContactStatus; unread: boolean; at: string; turns: WidgetTurn[] };
+export type WidgetSession = { signedIn: boolean; name: string; email: string; threads: WidgetThread[] };
+
+const SIGNED_OUT: WidgetSession = { signedIn: false, name: "", email: "", threads: [] };
+
+/**
+ * What the panel shows when it opens: who the visitor is, and the conversations they can carry on here.
+ * Everything is read from their session — the panel never says which conversation it wants.
+ */
+export async function supportWidgetSessionAction(): Promise<WidgetSession> {
+  const user = await getCurrentUser();
+  if (!user) return SIGNED_OUT;
+  const store = await getCurrentStore();
+  const threads = await widgetThreads(user.id, store?.id ?? null);
+  return {
+    signedIn: true,
+    name: `${user.firstName} ${user.lastName}`.trim(),
+    email: user.email,
+    threads: threads.map((thread) => ({
+      id: thread.id,
+      subject: thread.subject,
+      status: thread.status,
+      unread: thread.unreadForCustomer,
+      at: thread.lastMessageAt.toISOString(),
+      turns: [
+        { id: `${thread.id}-first`, mine: true, body: thread.message, at: thread.createdAt.toISOString() },
+        ...thread.replies.map((reply) => ({ id: reply.id, mine: reply.isFromCustomer, body: reply.body, at: reply.createdAt.toISOString() })),
+      ],
+    })),
+  };
+}
+
+/** A chat box has no subject line, so the first line of the message becomes one for the inbox. */
+function subjectFromMessage(message: string) {
+  const firstLine = message.trim().split("\n")[0]?.trim() ?? "";
+  const subject = firstLine.length > 72 ? `${firstLine.slice(0, 69).trimEnd()}…` : firstLine;
+  return subject.length >= 3 ? subject : "Customer service request";
+}
+
+/**
+ * Opens a conversation from the panel. A signed-in visitor writes under their own name and carries on in
+ * the thread; a guest gives their name and email and is answered there.
+ */
+export async function startWidgetConversationAction(_state: ActionState<{ conversationId: string }>, formData: FormData): Promise<ActionState<{ conversationId: string }>> {
+  const message = String(formData.get("message") ?? "");
+  if (!String(formData.get("subject") ?? "").trim()) formData.set("subject", subjectFromMessage(message));
+  // A signed-in visitor writes as themselves, whatever the form says.
+  const user = await getCurrentUser();
+  if (user) {
+    formData.set("name", `${user.firstName} ${user.lastName}`.trim());
+    formData.set("email", user.email);
+  }
+  const opened = await openFromForm(formData);
+  if (!opened.ok) return opened.state;
+  return success(opened.signedIn ? "Message sent." : "Thanks — we have your message and will reply to your email within one business day.", {
+    conversationId: opened.conversationId,
+  });
 }

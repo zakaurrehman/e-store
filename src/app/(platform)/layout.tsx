@@ -1,5 +1,7 @@
+import { Suspense } from "react";
 import { PlatformFooter } from "@/components/platform/platform-footer";
 import { PlatformHeader } from "@/components/platform/platform-header";
+import { SupportWidget } from "@/components/support/support-widget";
 
 /** The platform site on the base domain: marketing, the catalogue, sign-up and sign-in for store owners. */
 export default function PlatformLayout({ children }: LayoutProps<"/">) {
@@ -13,6 +15,10 @@ export default function PlatformLayout({ children }: LayoutProps<"/">) {
         {children}
       </main>
       <PlatformFooter />
+      {/* Reads the visitor's session, so it streams in behind the static shell. */}
+      <Suspense fallback={null}>
+        <SupportWidget />
+      </Suspense>
     </>
   );
 }

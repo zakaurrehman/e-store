@@ -9,6 +9,7 @@ import { MobileTabBar } from "@/components/store/mobile-tab-bar";
 import { SearchDialog } from "@/components/store/search/search-dialog";
 import { WishlistBootstrap } from "@/components/store/wishlist/wishlist-bootstrap";
 import { WishlistProvider } from "@/components/store/wishlist/wishlist-provider";
+import { SupportWidget } from "@/components/support/support-widget";
 import { storeFromParams } from "@/features/stores/route";
 
 /**
@@ -48,6 +49,10 @@ async function StoreFooter({ params }: { params: Promise<{ store: string }> }) {
   return <SiteFooter store={await storeFromParams(params)} />;
 }
 
+async function StoreSupportWidget({ params }: { params: Promise<{ store: string }> }) {
+  return <SupportWidget store={await storeFromParams(params)} />;
+}
+
 export default function StoreLayout({ children, params }: LayoutProps<"/s/[store]">) {
   const storeId = storeFromParams(params).then((store) => store.id);
   return (
@@ -74,6 +79,9 @@ export default function StoreLayout({ children, params }: LayoutProps<"/s/[store
         </Suspense>
         <Suspense fallback={null}>
           <SearchDialog />
+        </Suspense>
+        <Suspense fallback={null}>
+          <StoreSupportWidget params={params} />
         </Suspense>
         <Suspense fallback={null}>
           <CartDrawer />

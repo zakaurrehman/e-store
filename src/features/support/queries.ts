@@ -184,3 +184,25 @@ export async function getCustomerConversation(userId: string, storeId: string | 
 export async function countUnreadForCustomer(userId: string, storeId: string | null) {
   return db.contactMessage.count({ where: { userId, storeId, unreadForCustomer: true } });
 }
+
+/**
+ * The visitor's own conversations for the floating customer-service panel: the last few, each with its
+ * turns, so the panel can carry one on without a page of its own. Internal notes are never included.
+ */
+export async function widgetThreads(userId: string, storeId: string | null, take = 6) {
+  return db.contactMessage.findMany({
+    where: { userId, storeId },
+    orderBy: { lastMessageAt: "desc" },
+    take,
+    select: {
+      id: true,
+      subject: true,
+      message: true,
+      status: true,
+      unreadForCustomer: true,
+      lastMessageAt: true,
+      createdAt: true,
+      replies: { where: { isInternal: false }, orderBy: { createdAt: "asc" }, select: { id: true, body: true, isFromCustomer: true, createdAt: true } },
+    },
+  });
+}
