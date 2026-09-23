@@ -16,7 +16,7 @@ import { NotFoundError } from "@/server/errors";
 import { dispatchNotification, sendDeliveries } from "@/server/notifications";
 import { getRequestMeta } from "@/server/request";
 import { rateLimit, retryAfterMessage } from "@/server/security/rate-limit";
-import { widgetThreads } from "./queries";
+import { supportPulseStamp, widgetThreads } from "./queries";
 import { addReply, assignConversation, markConversationRead, openConversation, setConversationStatus } from "./service";
 
 /** Emails are queued inside the request and sent once the response has gone out. */
@@ -331,9 +331,10 @@ export async function markOwnerTicketReadAction(ticketId: string): Promise<void>
 
 export type WidgetTurn = { id: string; mine: boolean; body: string; at: string };
 export type WidgetThread = { id: string; subject: string; status: ContactStatus; unread: boolean; at: string; turns: WidgetTurn[] };
-export type WidgetSession = { signedIn: boolean; name: string; email: string; threads: WidgetThread[] };
+/** `stamp` is the heartbeat as it stood when these threads were read — the panel's starting point. */
+export type WidgetSession = { signedIn: boolean; name: string; email: string; threads: WidgetThread[]; stamp: string };
 
-const SIGNED_OUT: WidgetSession = { signedIn: false, name: "", email: "", threads: [] };
+const SIGNED_OUT: WidgetSession = { signedIn: false, name: "", email: "", threads: [], stamp: "" };
 
 /**
  * What the panel shows when it opens: who the visitor is, and the conversations they can carry on here.
@@ -343,9 +344,10 @@ export async function supportWidgetSessionAction(): Promise<WidgetSession> {
   const user = await getCurrentUser();
   if (!user) return SIGNED_OUT;
   const store = await getCurrentStore();
-  const threads = await widgetThreads(user.id, store?.id ?? null);
+  const [threads, stamp] = await Promise.all([widgetThreads(user.id, store?.id ?? null), supportPulseStamp(user)]);
   return {
     signedIn: true,
+    stamp,
     name: `${user.firstName} ${user.lastName}`.trim(),
     email: user.email,
     threads: threads.map((thread) => ({
@@ -387,4 +389,14 @@ export async function startWidgetConversationAction(_state: ActionState<{ conver
   return success(opened.signedIn ? "Message sent." : "Thanks — we have your message and will reply to your email within one business day.", {
     conversationId: opened.conversationId,
   });
+}
+
+// ─── Keeping open conversations current ──────────────────────────────────────
+
+/**
+ * The heartbeat the open screens poll. It answers with the same string the page was rendered with until
+ * something the viewer can see changes — see supportPulseStamp.
+ */
+export async function supportPulseAction(): Promise<{ stamp: string }> {
+  return { stamp: await supportPulseStamp(await getCurrentUser()) };
 }

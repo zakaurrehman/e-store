@@ -3,11 +3,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { Breadcrumbs } from "@/components/store/breadcrumbs";
+import { SupportPulse } from "@/components/support/support-pulse";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { EmptyState, Skeleton } from "@/components/ui/misc";
 import { storeFromParams } from "@/features/stores/route";
-import { listCustomerConversations, CUSTOMER_SUPPORT_STATUS_LABELS, CUSTOMER_SUPPORT_STATUS_TONES } from "@/features/support/queries";
+import { listCustomerConversations, CUSTOMER_SUPPORT_STATUS_LABELS, CUSTOMER_SUPPORT_STATUS_TONES, supportPulseStamp } from "@/features/support/queries";
 import { requireUser } from "@/server/auth/guards";
 
 export const metadata: Metadata = { title: "Customer service", robots: { index: false, follow: false } };
@@ -18,8 +19,10 @@ async function Inbox({ params }: PageProps<"/s/[store]/support">) {
   const [store, user] = await Promise.all([storeFromParams(params), requireUser("/support")]);
   const conversations = await listCustomerConversations(user.id, store.id);
 
+  const pulse = await supportPulseStamp(user);
   return (
     <>
+      <SupportPulse stamp={pulse} />
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-4xl font-semibold tracking-[-0.03em] md:text-5xl">Customer service</h1>

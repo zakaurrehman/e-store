@@ -5,10 +5,11 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { Card, dateTime, PageHeader, StatusBadge } from "@/components/admin/ui";
 import { TicketReplyForm } from "@/components/dashboard/ticket-thread";
+import { SupportPulse } from "@/components/support/support-pulse";
 import { Alert, Skeleton } from "@/components/ui/misc";
 import { requireStoreOwner } from "@/features/stores/guards";
 import { markOwnerTicketReadAction } from "@/features/support/actions";
-import { CUSTOMER_SUPPORT_STATUS_LABELS, CUSTOMER_SUPPORT_STATUS_TONES, getOwnerTicket, type OwnerTicket } from "@/features/support/queries";
+import { CUSTOMER_SUPPORT_STATUS_LABELS, CUSTOMER_SUPPORT_STATUS_TONES, getOwnerTicket, type OwnerTicket, supportPulseStamp } from "@/features/support/queries";
 import { cn } from "@/utils/cn";
 import { formatMoney } from "@/utils/money";
 
@@ -83,8 +84,10 @@ async function Thread({ params, searchParams }: PageProps<"/dashboard/support/ti
     })),
   ];
 
+  const pulse = await supportPulseStamp(user);
   return (
     <>
+      <SupportPulse stamp={pulse} />
       <PageHeader
         breadcrumb={[
           { label: "Customer service", href: "/dashboard/support" },

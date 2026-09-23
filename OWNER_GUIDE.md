@@ -71,7 +71,7 @@ Anything you cannot answer yourself — a deposit that has not been credited, a 
 
 - **Ask Zendropship** starts one, and so does the **Customer Service** button in the corner of every dashboard page — the same threads either way. From **Balance**, *Ask Zendropship about this* beside a deposit or a withdrawal carries that payment with the question, so staff see the amount, method, status and reference beside what you wrote.
 - Opening a thread shows the whole conversation in order, yours and theirs. Write in the reply box to continue it — there is one thread per question, and it keeps its history.
-- A reply from Zendropship is marked as new and counted in the **Customer service** menu until you open it. Replies also arrive by email.
+- A reply from Zendropship is marked as new and counted in the **Customer service** menu until you open it. If you have the conversation open, it appears there as it is sent — no need to reload. Replies also arrive by email.
 - The header shows where it stands: *waiting for a reply*, *being looked at* or *answered*. Writing again after it is answered reopens it.
 - These threads stay open to you even if your store is suspended.
 

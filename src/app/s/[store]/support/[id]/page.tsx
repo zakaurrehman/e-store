@@ -4,12 +4,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { Breadcrumbs } from "@/components/store/breadcrumbs";
+import { SupportPulse } from "@/components/support/support-pulse";
 import { CustomerReplyForm } from "@/components/store/support/support-forms";
 import { Badge } from "@/components/ui/badge";
 import { Alert, Skeleton } from "@/components/ui/misc";
 import { storeFromParams } from "@/features/stores/route";
 import { markCustomerConversationReadAction } from "@/features/support/actions";
-import { getCustomerConversation, CUSTOMER_SUPPORT_STATUS_LABELS, CUSTOMER_SUPPORT_STATUS_TONES } from "@/features/support/queries";
+import { getCustomerConversation, CUSTOMER_SUPPORT_STATUS_LABELS, CUSTOMER_SUPPORT_STATUS_TONES, supportPulseStamp } from "@/features/support/queries";
 import { requireUser } from "@/server/auth/guards";
 import { cn } from "@/utils/cn";
 
@@ -35,8 +36,10 @@ async function Thread({ params, searchParams }: PageProps<"/s/[store]/support/[i
     })),
   ];
 
+  const pulse = await supportPulseStamp(user);
   return (
     <>
+      <SupportPulse stamp={pulse} />
       <Link href="/support" className="inline-flex items-center gap-1.5 text-[0.875rem] text-ink-600 hover:text-ink-950">
         <ArrowLeft className="size-4" aria-hidden /> All messages
       </Link>

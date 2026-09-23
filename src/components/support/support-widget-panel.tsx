@@ -12,6 +12,7 @@ import {
   customerReplyAction,
   markCustomerConversationReadAction,
   startWidgetConversationAction,
+  supportPulseAction,
   supportWidgetSessionAction,
   type WidgetSession,
   type WidgetThread,
@@ -184,6 +185,30 @@ export function SupportWidgetPanel({ config, initialUnread = 0 }: { config: Supp
   useEffect(() => {
     if (open && !session) load();
   }, [open, session, load]);
+
+  // While it is open, a reply from the other side appears on its own rather than on the next open. The
+  // starting point is the stamp read with the threads, so nothing written in between is taken as seen.
+  const baseline = session?.stamp ?? null;
+  useEffect(() => {
+    if (!open || baseline === null || !session?.signedIn) return;
+    let cancelled = false;
+    const check = async () => {
+      if (document.visibilityState !== "visible") return;
+      try {
+        const next = (await supportPulseAction()).stamp;
+        if (!cancelled && next !== baseline) load();
+      } catch {
+        // The next heartbeat will do.
+      }
+    };
+    const timer = setInterval(check, 5000);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [open, baseline, session?.signedIn, load]);
 
   const thread = threadId ? session?.threads.find((row) => row.id === threadId) : undefined;
   const unread = session ? session.threads.filter((row) => row.unread).length : initialUnread;

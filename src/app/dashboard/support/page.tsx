@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { AdminPagination, buildQuery, Card, dateTime, FilterLink, PageHeader, StatusBadge } from "@/components/admin/ui";
 import { ReplyForm, StatusButton } from "@/components/dashboard/support-thread";
 import { Input } from "@/components/ui/field";
+import { SupportPulse } from "@/components/support/support-pulse";
 import { EmptyState, Skeleton } from "@/components/ui/misc";
 import { requireStoreOwner } from "@/features/stores/guards";
 import { markStoreMessageReadAction } from "@/features/support/actions";
@@ -18,6 +19,7 @@ import {
   SUPPORT_PAGE_SIZE,
   SUPPORT_STATUS_LABELS,
   SUPPORT_STATUS_TONES,
+  supportPulseStamp,
 } from "@/features/support/queries";
 import { ContactStatus } from "@/generated/prisma/enums";
 import { cn } from "@/utils/cn";
@@ -40,8 +42,10 @@ async function Inbox({ searchParams }: PageProps<"/dashboard/support">) {
   if (selected?.unreadForStaff) await markStoreMessageReadAction(selected.id);
   const base = query as Record<string, string | string[] | undefined>;
 
+  const pulse = await supportPulseStamp(user);
   return (
     <>
+      <SupportPulse stamp={pulse} />
       <div className="mb-4 flex flex-wrap gap-2">
         <FilterLink href={`/dashboard/support${buildQuery(base, { status: null, page: null, id: null })}`} active={!status}>
           All

@@ -6,8 +6,9 @@ import { AssignSelect, ConversationStatusButton, StaffReplyForm } from "@/compon
 import { AdminPagination, buildQuery, Card, dateTime, FilterLink, PageHeader, StatusBadge } from "@/components/admin/ui";
 import { Input } from "@/components/ui/field";
 import { Skeleton } from "@/components/ui/misc";
+import { SupportPulse } from "@/components/support/support-pulse";
 import { ContactStatus } from "@/generated/prisma/enums";
-import { getSupportConversation, listSupportConversations, parseSupportStatus, staffMembers, SUPPORT_PAGE_SIZE, SUPPORT_STATUS_LABELS, SUPPORT_STATUS_TONES } from "@/features/support/queries";
+import { getSupportConversation, listSupportConversations, parseSupportStatus, staffMembers, SUPPORT_PAGE_SIZE, SUPPORT_STATUS_LABELS, SUPPORT_STATUS_TONES, supportPulseStamp } from "@/features/support/queries";
 import { markConversationReadAction } from "@/features/support/actions";
 import { can, requirePagePermission } from "@/server/auth/guards";
 import { cn } from "@/utils/cn";
@@ -55,8 +56,10 @@ async function Messages({ searchParams }: PageProps<"/admin/messages">) {
       ]
     : [];
 
+  const pulse = await supportPulseStamp(user);
   return (
     <>
+      <SupportPulse stamp={pulse} />
       <PageHeader
         title="Support inbox"
         description="Every conversation with customers and store owners. Replies are emailed and appear in the customer's account."

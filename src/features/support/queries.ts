@@ -206,3 +206,40 @@ export async function widgetThreads(userId: string, storeId: string | null, take
     },
   });
 }
+
+/**
+ * One string standing for everything the viewer is allowed to see in support: how many conversations and
+ * turns there are, and how much is unread. The open screens compare it against the one they rendered with,
+ * so a page can tell "something changed" from "nothing has" without shipping any conversation content.
+ *
+ * It counts turns rather than reading the newest date: a row with a skewed or hand-edited timestamp would
+ * otherwise sit at the top for ever and hide everything written after it. Each scope comes from the
+ * session, never from what the client asks for.
+ */
+export async function supportPulseStamp(user: { id: string; role: { isStaff: boolean }; permissions: string[] } | null): Promise<string> {
+  if (!user) return "";
+
+  const scopes: Prisma.ContactMessageWhereInput[] = [{ userId: user.id }];
+  let unreadScopes: Prisma.ContactMessageWhereInput[] = [{ userId: user.id, unreadForCustomer: true }];
+
+  // A store owner also sees what their customers write.
+  const store = await db.store.findFirst({ where: { ownerId: user.id, deletedAt: null }, select: { id: true } });
+  if (store) {
+    scopes.push({ storeId: store.id });
+    unreadScopes.push({ storeId: store.id, unreadForStaff: true });
+  }
+
+  // Staff see the whole inbox.
+  if (user.role.isStaff && user.permissions.includes("messages.view")) {
+    scopes.length = 0;
+    unreadScopes = [{ unreadForStaff: true }];
+  }
+
+  const scope: Prisma.ContactMessageWhereInput = scopes.length ? { OR: scopes } : {};
+  const [conversations, replies, unread] = await Promise.all([
+    db.contactMessage.count({ where: scope }),
+    db.contactReply.count({ where: { message: scope, isInternal: false } }),
+    db.contactMessage.count({ where: { OR: unreadScopes } }),
+  ]);
+  return `${conversations}:${replies}:${unread}`;
+}
