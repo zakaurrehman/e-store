@@ -77,7 +77,7 @@ export function nextFulfilmentStep(status: OrderStatus): NextStep | null {
         label: "Accept for fulfilment",
         short: "Accept",
         confirm:
-          "The wholesale cost is charged to the store owner's balance once, and the customer's payment for this order is counted first — so a normally priced order needs no deposit. If the balance still cannot cover it, the order waits for funds instead.",
+          "The wholesale cost is set aside once: from the customer's payment when they have already paid, otherwise from the store's available balance. The owner's earnings stay held until the order is delivered.",
       };
     case "ACCEPTED":
       return { status: "PROCESSING", label: "Start processing", short: "Processing" };
@@ -88,7 +88,7 @@ export function nextFulfilmentStep(status: OrderStatus): NextStep | null {
     case "SHIPPED":
       return { status: "OUT_FOR_DELIVERY", label: "Out for delivery", short: "Out for delivery" };
     case "OUT_FOR_DELIVERY":
-      return { status: "DELIVERED", label: "Mark delivered", short: "Delivered", confirm: "This completes fulfilment: the customer is emailed, and cash-on-delivery money becomes the owner's to withdraw. It cannot be undone." };
+      return { status: "DELIVERED", label: "Mark delivered", short: "Delivered", confirm: "This completes fulfilment: the customer is emailed, and the order's earnings become the owner's to withdraw. It cannot be undone." };
     default:
       return null;
   }

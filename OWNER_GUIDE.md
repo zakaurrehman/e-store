@@ -53,11 +53,20 @@ When a customer checks out in your store:
 
 **Orders** shows each order's status, the tracking number once shipped, and what you earn. An order moves through: *Awaiting payment → Confirmed → Accepted → Processing → Packed → Shipped → Out for delivery → Delivered*. Each order page shows those stages with the time each one happened, and a **Timeline** of everything that has been done to it. You always see the same history Zendropship does, as soon as you refresh. A cancelled order stops there and goes no further.
 
+### When the money moves
+
+When fulfilment accepts an order, its wholesale cost is **set aside once** — pressing a button twice, refreshing or retrying never takes it again:
+
+- **The customer has already paid** (card or another online payment): the cost comes out of that payment. **A normally priced paid order pays for itself**; you never deposit anything for it.
+- **Cash on delivery**: nobody has collected the cash yet, so the cost comes out of your **available balance** straight away, and cannot be withdrawn or spent on another order meanwhile.
+
+What the order earns you — the sale, less the wholesale cost and Zendropship's commission — is **held until the order is delivered**. You can see it on the order and under *Held until delivery* on your balance, but it is not yours to withdraw yet. When the order is marked **Delivered**, it becomes available, together with anything that was set aside from your balance for it.
+
+For example: you have $5,000 available and a cash-on-delivery order costs $300 wholesale. On acceptance, $300 is set aside and you have $4,700 available. When it is delivered, the $300 comes back with your profit on top.
+
 ### Awaiting funds
 
-When fulfilment takes an order, the wholesale cost is charged to your balance. The customer's payment for that order is added to your balance first, so **a normally priced order always pays for itself** and you never deposit anything for it.
-
-An order waits as **Awaiting funds** only if your balance cannot cover the charge — usually because the item is priced below what it costs. The order page tells you exactly how much is missing, and you get an email. Deposit that amount (see below); once Zendropship confirms it, the order goes to fulfilment automatically. Your customer is never told about this — they see their order as confirmed.
+An order waits as **Awaiting funds** only when your available balance genuinely cannot cover the part of the cost it has to pay — a cash-on-delivery order when your balance is lower than its cost, or an item priced below what it costs. The order page tells you exactly how much is missing, and you get an email. Deposit that amount (see below); once Zendropship confirms it, the order goes to fulfilment automatically. Your customer is never told about this — they see their order as confirmed.
 
 ## Customer service
 
@@ -79,22 +88,34 @@ Anything you cannot answer yourself — a deposit that has not been credited, a 
 
 **Balance** is what Zendropship owes you, kept as a ledger: every movement is listed, and nothing changes it except real events.
 
-- **Available to withdraw** is money that has actually been collected.
-- **On its way** is cash-on-delivery money for parcels not yet delivered — it becomes available on delivery.
-- **Earnings** shows what you earned today, this week and this month, after wholesale and commission.
-- **Transactions** lists every sale, fulfilment cost, commission, refund, deposit and withdrawal, with your balance after each. Refunds and cancellations are added as new lines that reverse the originals — nothing is ever edited.
+- **Available balance** is yours now: confirmed deposits and delivered orders, less anything set aside for orders being fulfilled and any withdrawal in progress. It is what you can withdraw.
+- **Held until delivery** is what orders not yet delivered will bring you. It becomes available when each order is delivered, and disappears if the order is cancelled.
+- **Earnings** shows what delivered orders left you today, this week and this month, after wholesale and commission.
+- **Transactions** lists every sale, fulfilment cost, commission, refund, deposit and withdrawal, with your balance after each; lines still waiting for delivery are tagged *Held until delivery*. Refunds and cancellations are added as new lines that reverse the originals — nothing is ever edited.
 
 ### Withdrawing
 
-**Withdraw** asks Zendropship to send you money, from $20 upwards. Choose bank transfer or PayPal and give the details. The amount leaves your available balance immediately so it cannot be requested twice; you can follow it as *Requested → Approved → Being sent → Paid*. If it is declined, the amount goes straight back to your balance. Withdrawing never depends on a deposit or on contacting support.
+**Withdraw** asks Zendropship to send you money, from $20 upwards, in **USDT on the TRON (TRC20) network** — the only withdrawal method. Paste your TRC20 wallet address (it starts with **T** and is 34 characters long). The address is checked when you send the request, and one wrong character is caught, but make sure it is a TRC20 address: a crypto transfer cannot be reversed.
+
+The amount leaves your available balance immediately so it cannot be requested twice; you can follow it as *Requested → Approved → Being sent → Paid*. When Zendropship sends it, the transfer's transaction id appears beside the withdrawal, linked to Tronscan so you can see it arrive. If it is declined, the amount goes straight back to your balance. Withdrawing never depends on a deposit or on contacting support.
 
 ### Depositing
 
-**Deposit** records money you have transferred *to* Zendropship — needed only to cover an order that is awaiting funds.
+**Deposit** records money you have transferred *to* Zendropship — needed only to cover an order that is awaiting funds, or to keep a balance for cash-on-delivery orders.
 
-1. Send the money first, using the bank or wallet details shown. For crypto, check the address **and** the network — transfers on the wrong network cannot be recovered.
-2. Record it: the amount, the bank reference or transaction id, and a screenshot of the transfer.
-3. Zendropship checks the transfer and confirms it. **Only then** is your balance credited, and any orders waiting for funds go to fulfilment. A deposit that can't be found is declined, with the reason.
+**Binance · USDT (TRC20)** is offered first when Zendropship has set it up:
+
+1. In Binance, go to **Withdraw → USDT**, paste the address shown in the deposit form (use the copy button) and choose the network **TRON (TRC20)**. Only USDT on TRC20 — anything else sent there cannot be recovered.
+2. Once it is sent, open that withdrawal in Binance and copy its **TxID** (64 letters and numbers).
+3. In **Deposit**, choose *Binance · USDT (TRC20)*, enter the amount and paste the TxID. A screenshot is only needed if you have no TxID.
+
+**Bank transfer** (and any other crypto network Zendropship lists) works the same way: send first, then record the amount, the reference and a screenshot of the transfer.
+
+Zendropship checks the transfer and confirms it. **Only then** is your balance credited, and any orders waiting for funds go to fulfilment. A deposit that can't be found is declined, with the reason.
+
+## Profile
+
+**Profile** in the menu keeps the essentials on one screen, sized for a phone: your store's name and address, your email, your available balance (and what is held until delivery), **Deposit** and **Withdraw**, **Customer service** with the count of anything new, your full balance history, and **Sign out**.
 
 ## Getting paid by card
 

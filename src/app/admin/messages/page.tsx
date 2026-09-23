@@ -13,6 +13,7 @@ import { markConversationReadAction } from "@/features/support/actions";
 import { can, requirePagePermission } from "@/server/auth/guards";
 import { cn } from "@/utils/cn";
 import { formatMoney } from "@/utils/money";
+import { depositMethodLabel, payoutMethodLabel } from "@/lib/money-methods";
 
 export const metadata: Metadata = { title: "Support inbox" };
 
@@ -165,14 +166,14 @@ async function Messages({ searchParams }: PageProps<"/admin/messages">) {
                       {selected.deposit && (
                         <>
                           About a <Link href="/admin/deposits" className="font-medium text-ink-950 hover:underline">deposit</Link> of {formatMoney(selected.deposit.amountCents)} ·{" "}
-                          {selected.deposit.method === "CRYPTO" ? (selected.deposit.network ?? "crypto") : "bank transfer"} · {selected.deposit.status.toLowerCase()}
+                          {depositMethodLabel(selected.deposit)} · {selected.deposit.status.toLowerCase()}
                           {selected.deposit.reference ? ` · ${selected.deposit.reference}` : ""}
                         </>
                       )}
                       {selected.payout && (
                         <>
                           About a <Link href="/admin/payouts" className="font-medium text-ink-950 hover:underline">withdrawal</Link> of {formatMoney(selected.payout.amountCents)} ·{" "}
-                          {selected.payout.method === "PAYPAL" ? "PayPal" : "bank transfer"} · {selected.payout.status.toLowerCase()}
+                          {payoutMethodLabel(selected.payout.method)} · {selected.payout.status.toLowerCase()}
                         </>
                       )}
                     </p>

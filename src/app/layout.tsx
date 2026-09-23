@@ -30,6 +30,9 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
+  // The on-screen keyboard shrinks the page instead of covering it, so a panel pinned to the bottom (the
+  // customer service chat, a bottom sheet) moves above the keyboard rather than sitting behind it.
+  interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

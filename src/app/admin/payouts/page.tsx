@@ -2,10 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { ActionButton } from "@/components/admin/forms";
+import { MarkPaid } from "@/components/admin/payouts/mark-paid";
 import { Card, dateTime, PageHeader, StatTile, StatusBadge, Table, TableEmpty, Td, Th } from "@/components/admin/ui";
+import { CopyValue } from "@/components/ui/copy-value";
 import { Skeleton } from "@/components/ui/misc";
-import { markPayoutPaidAction, rejectPayoutAction, setPayoutStatusAction } from "@/features/wallet/actions";
+import { rejectPayoutAction, setPayoutStatusAction } from "@/features/wallet/actions";
 import { DepositStatus, PayoutStatus } from "@/generated/prisma/enums";
+import { payoutMethodLabel, tronscanTransactionUrl } from "@/lib/money-methods";
+import { looksLikeTrc20TxId } from "@/lib/tron";
 import { can, requirePagePermission } from "@/server/auth/guards";
 import { db } from "@/server/db";
 import { formatMoney } from "@/utils/money";
@@ -59,15 +63,32 @@ async function Payouts() {
                 </Td>
                 <Td className="tabular text-right font-medium">{formatMoney(payout.amountCents)}</Td>
                 <Td className="max-w-[13rem]">
-                  <p className="text-[0.8125rem] text-ink-800">{payout.method === "PAYPAL" ? "PayPal" : "Bank transfer"}</p>
-                  <p className="line-clamp-2 break-words text-[0.8125rem] text-ink-600" title={payout.destination}>
-                    {payout.destination}
-                  </p>
+                  <p className="text-[0.8125rem] text-ink-800">{payoutMethodLabel(payout.method)}</p>
+                  {payout.method === "USDT_TRC20" ? (
+                    <CopyValue value={payout.destination} label="TRC20 address" className="mt-0.5" />
+                  ) : (
+                    <p className="line-clamp-2 break-words text-[0.8125rem] text-ink-600" title={payout.destination}>
+                      {payout.destination}
+                    </p>
+                  )}
                   {payout.note && <p className="mt-1 line-clamp-1 text-[0.75rem] text-ink-500">{payout.note}</p>}
                 </Td>
                 <Td>
                   <StatusBadge label={PAYOUT_LABELS[payout.status]} tone={PAYOUT_TONES[payout.status]} />
-                  {payout.reference && <p className="mt-1 text-[0.75rem] text-ink-500">{payout.reference}</p>}
+                  {payout.reference &&
+                    (payout.method === "USDT_TRC20" && looksLikeTrc20TxId(payout.reference) ? (
+                      <a
+                        href={tronscanTransactionUrl(payout.reference)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-1 block max-w-[10rem] truncate font-mono text-[0.75rem] text-ink-600 underline underline-offset-2 hover:text-ink-950"
+                        title="Open this transaction on Tronscan"
+                      >
+                        {payout.reference}
+                      </a>
+                    ) : (
+                      <p className="mt-1 text-[0.75rem] text-ink-500">{payout.reference}</p>
+                    ))}
                 </Td>
                 {canManage && (
                   <Td className="whitespace-nowrap text-right">
@@ -83,13 +104,7 @@ async function Payouts() {
                             Sending
                           </ActionButton>
                         )}
-                        <ActionButton
-                          action={markPayoutPaidAction.bind(null, payout.id, undefined)}
-                          size="xs"
-                          confirm={{ title: `Mark ${formatMoney(payout.amountCents)} as paid?`, description: "Only do this once the money has actually been sent.", confirmLabel: "Mark as paid" }}
-                        >
-                          Mark paid
-                        </ActionButton>
+                        <MarkPaid payoutId={payout.id} amountCents={payout.amountCents} method={payout.method} destination={payout.destination} />
                         <ActionButton
                           action={rejectPayoutAction.bind(null, payout.id, "Declined by Zendropship")}
                           size="xs"

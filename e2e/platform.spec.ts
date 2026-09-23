@@ -1,13 +1,14 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import sharp from "sharp";
-import { ADMIN_STATE, orderNumberOn, pathOf, PLATFORM_URL, SHIPPING, storeUrlFor, STORE_URL, toast, unique, waitForMail } from "./helpers";
+import { ADMIN_STATE, balanceFigure, chooseDepositMethod, orderNumberOn, pathOf, PLATFORM_URL, SHIPPING, storeUrlFor, STORE_URL, toast, TRC20_ADDRESS, trc20TxId, unique, waitForMail } from "./helpers";
 import { clearRateLimits } from "./rate-limits";
 
 /**
  * The whole business, end to end (see the brief's section 24): staff invite an owner, the owner opens and
- * brands a store, stocks and prices it, customers buy, the money is split and recorded, an order that
- * cannot pay for itself waits for a deposit, staff confirm the deposit and fulfil the order step by step,
- * and customer service runs between the customer, the store and Zendropship.
+ * brands a store, stocks and prices it, customers buy, the money is split and held until delivery, an
+ * order the balance cannot cover waits for a deposit, staff confirm the deposit and fulfil the order step
+ * by step, the owner withdraws in USDT (TRC20), and customer service runs between the customer, the store
+ * and Zendropship.
  */
 test.describe.serial("dropshipping platform", () => {
   const stamp = unique();
@@ -27,6 +28,11 @@ test.describe.serial("dropshipping platform", () => {
   let fundedOrderNumber = "";
   let fundedOrderUrl = "";
   let storePrice = "";
+  /** What the paid order leaves the owner (goods − wholesale − commission), in cents. */
+  let cardEarning = 0;
+  /** What the owner should have available once the cash-on-delivery order is delivered: the deposit back plus its profit. */
+  let availableAfterCod = 0;
+  const depositTxId = trc20TxId(`deposit-${stamp}`);
 
   test.beforeAll(async ({ browser }) => {
     await clearRateLimits();
@@ -177,47 +183,113 @@ test.describe.serial("dropshipping platform", () => {
     const earning = await amountBeside(owner, "You earn");
     expect(commission).toBe(Math.round(goods * 0.1));
     expect(earning).toBe(goods - cost - commission);
+    cardEarning = earning;
     await expect(owner.getByText("Customer paid").first()).toBeVisible();
+    // The customer has paid, so the order pays its own wholesale cost — the owner's balance is not touched.
+    await expect(owner.getByText(new RegExp(`Accepted by fulfilment — ${dollars(cost)} wholesale cost set aside from the customer's payment`))).toHaveCount(1);
   });
 
-  test("withdrawals: held out of the balance, approved, then paid by staff", async () => {
+  test("a paid order's earnings are held until delivery: shown, but not spendable and not withdrawable", async () => {
     await owner.goto("/dashboard/balance");
     await expect(owner.getByText(`Sale · order ${orderNumber}`)).toBeVisible();
     await expect(owner.getByText(/Zendropship commission \(10%\) · order/).first()).toBeVisible();
     await expect(owner.getByText(`Fulfilment cost · order ${orderNumber}`)).toBeVisible();
+    expect(await balanceFigure(owner, "Available to withdraw")).toBe(0);
+    expect(await balanceFigure(owner, "Held until delivery")).toBe(cardEarning);
+    await expect(owner.getByRole("button", { name: "Withdraw" }).first()).toBeDisabled();
+    // Earnings count delivered orders only.
+    await expect(owner.getByText(/What delivered orders left you/)).toBeVisible();
+  });
 
+  test("staff take the paid order to Delivered; only then does its profit become the owner's — once", async () => {
+    await admin.goto(`/admin/orders?q=${orderNumber}`);
+    await admin.getByRole("link", { name: orderNumber }).click();
+    await admin.waitForURL(/\/admin\/orders\/[a-z0-9]+$/);
+    for (const [button, confirm] of [
+      ["Start processing", null],
+      ["Mark packed", null],
+      ["Mark shipped", "Mark shipped"],
+      ["Out for delivery", null],
+      ["Mark delivered", "Mark delivered"],
+    ] as Array<[string, string | null]>) {
+      await admin.getByRole("button", { name: button, exact: true }).first().click();
+      if (confirm) await admin.getByRole("dialog").filter({ visible: true }).getByRole("button", { name: confirm }).click();
+      await expect(toast(admin, /Order status updated/)).toBeVisible();
+      await admin.reload();
+      // Until the last step, nothing the order made is the owner's.
+      if (button !== "Mark delivered") {
+        await owner.goto("/dashboard/balance");
+        expect(await balanceFigure(owner, "Available to withdraw")).toBe(0);
+      }
+    }
+    await expect(admin.getByText("Fulfilment complete")).toBeVisible();
+
+    // Delivered: the held money clears into the available balance, and nothing is left held.
+    await owner.goto("/dashboard/balance");
+    expect(await balanceFigure(owner, "Available to withdraw")).toBe(cardEarning);
+    expect(await balanceFigure(owner, "Held until delivery")).toBe(0);
+    // Each movement is in the ledger exactly once — delivering posts nothing new, it only releases.
+    await expect(owner.getByRole("cell", { name: `Sale · order ${orderNumber}` })).toHaveCount(1);
+    await expect(owner.getByRole("cell", { name: `Fulfilment cost · order ${orderNumber}` })).toHaveCount(1);
+    await expect(owner.getByRole("cell", { name: `Zendropship commission (10%) · order ${orderNumber}` })).toHaveCount(1);
+    // A refresh, or another look at the order, credits nothing again.
+    await admin.reload();
+    await expect(admin.getByRole("button", { name: "Mark delivered" })).toHaveCount(0);
+    await owner.reload();
+    expect(await balanceFigure(owner, "Available to withdraw")).toBe(cardEarning);
+  });
+
+  test("withdrawals: USDT (TRC20) only, the address checked, approved and paid by staff with a transaction id", async () => {
+    await owner.goto("/dashboard/balance");
     await owner.getByRole("button", { name: "Withdraw" }).first().click();
-    const dialog = owner.getByRole("dialog");
-    await dialog.getByLabel("Amount (USD)").fill("20");
-    await dialog.getByText("PayPal", { exact: true }).click();
-    await dialog.getByLabel("PayPal email address").fill(ownerEmail);
+    const dialog = owner.getByRole("dialog").filter({ visible: true });
+    await expect(dialog.getByText("USDT (TRC20) · TRON network")).toBeVisible();
+    await expect(dialog.getByText("PayPal")).toHaveCount(0);
+
+    // Everything available, so the next order genuinely has nothing to draw on.
+    await dialog.getByLabel("Amount (USD)").fill((cardEarning / 100).toFixed(2));
+    // One wrong character is caught by the address's own checksum, before anything is sent.
+    const typo = `${TRC20_ADDRESS.slice(0, -1)}u`;
+    await dialog.getByLabel("Your TRC20 wallet address").fill(typo);
     await dialog.getByRole("button", { name: "Request withdrawal" }).click();
-    await expect(toast(owner, /Withdrawal of \$20.00 requested/)).toBeVisible();
+    await expect(dialog.getByText(/not a valid TRC20 address/i).first()).toBeVisible();
+    await dialog.getByLabel("Your TRC20 wallet address").fill(TRC20_ADDRESS);
+    await dialog.getByRole("button", { name: "Request withdrawal" }).click();
+    await expect(toast(owner, new RegExp(`Withdrawal of ${dollars(cardEarning)} requested`))).toBeVisible();
+    await owner.reload();
+    expect(await balanceFigure(owner, "Available to withdraw")).toBe(0);
 
     await admin.goto("/admin/payouts");
     const row = admin.locator("tbody tr", { hasText: storeName }).first();
-    await expect(row).toContainText("$20.00");
+    await expect(row).toContainText(dollars(cardEarning).replace(/\\/g, ""));
+    await expect(row).toContainText(TRC20_ADDRESS);
     await row.getByRole("button", { name: "Approve" }).click();
     await expect(toast(admin, /Withdrawal approved/)).toBeVisible();
     await row.getByRole("button", { name: "Mark paid" }).click();
-    await admin.getByRole("dialog").filter({ visible: true }).getByRole("button", { name: "Mark as paid" }).click();
+    const paid = admin.getByRole("dialog").filter({ visible: true });
+    await expect(paid.getByText(TRC20_ADDRESS)).toBeVisible();
+    const payoutTxId = trc20TxId(`payout-${stamp}`);
+    await paid.getByLabel(/Transaction id \(TxID\)/).fill(payoutTxId);
+    await paid.getByRole("button", { name: "Mark as paid" }).click();
     await expect(toast(admin, /marked as paid/)).toBeVisible();
+    await admin.reload();
+    await expect(admin.getByRole("link", { name: new RegExp(payoutTxId.slice(0, 12)) }).first()).toHaveAttribute("href", new RegExp(`tronscan.org/#/transaction/${payoutTxId}`));
 
+    // The owner sees it paid, with the transfer to look up on the chain.
     await owner.reload();
-    await expect(owner.getByText("Paid").first()).toBeVisible();
+    const withdrawals = owner.locator("section").filter({ has: owner.getByRole("heading", { name: "Withdrawals", exact: true }) }).first();
+    await expect(withdrawals.getByText("Paid", { exact: true }).first()).toBeVisible();
+    await expect(withdrawals.getByRole("link", { name: payoutTxId })).toHaveAttribute("href", new RegExp(`tronscan.org/#/transaction/${payoutTxId}`));
   });
 
-  test("11–19. an order that cannot pay for itself waits for funds; a confirmed deposit releases it, charged once", async ({ browser }) => {
-    // The owner prices the candle below what it costs: the order will lose money, so the balance must cover it.
-    await owner.goto("/dashboard/products");
-    await owner.locator("tbody tr", { hasText: "Amber" }).getByRole("button", { name: /Edit$/ }).click();
-    const priceDialog = owner.getByRole("dialog");
-    await priceDialog.getByText("Fixed price", { exact: true }).click();
-    await priceDialog.getByLabel("Selling price (USD)").fill("1.00");
-    await priceDialog.getByRole("button", { name: "Save price" }).click();
-    await expect(toast(owner, "Price saved.")).toBeVisible();
+  test("11–19. a cash-on-delivery order waits for funds; a USDT (TRC20) deposit confirmed by staff releases it, charged once", async ({ browser }) => {
+    // Staff publish the Binance TRC20 address owners deposit to.
+    await admin.goto("/admin/settings?section=deposits");
+    await admin.locator("#deposits-trc20Address").fill(TRC20_ADDRESS);
+    await admin.getByRole("button", { name: "Save settings" }).click();
+    await expect(toast(admin, /saved/i)).toBeVisible();
 
-    // A guest customer buys it with cash on delivery — and lands on a real confirmation page, not a 404.
+    // A guest customer buys with cash on delivery — and lands on a real confirmation page, not a 404.
     const shopper = await browser.newContext({ baseURL: storeUrl });
     const page = await shopper.newPage();
     await page.goto(`/p/${FIRST_PRODUCT}`);
@@ -233,40 +305,57 @@ test.describe.serial("dropshipping platform", () => {
     await expect(page.getByText("Awaiting funds")).toHaveCount(0);
     await shopper.close();
 
-    // The owner is told a deposit is needed, and how much.
+    // No cash has been collected and the owner has nothing available, so the whole cost is genuinely short.
     await owner.goto(`/dashboard/orders/${fundedOrderNumber}`);
     await expect(owner.getByText("Deposit required to fulfil this order")).toBeVisible();
-    const shortfallText = await owner.getByText(/your balance is \$[\d,.]+ short/).innerText();
-    const shortfall = Number(/\$([\d,.]+) short/.exec(shortfallText)![1].replace(/,/g, ""));
-    expect(shortfall).toBeGreaterThan(0);
-    const deposit = Math.max(5, Math.ceil(shortfall * 100) / 100).toFixed(2);
+    const cost = await amountBeside(owner, "Fulfilment cost");
+    const shortfallText = await owner.getByText(/your available balance is \$[\d,.]+ short/).innerText();
+    const shortfall = Math.round(Number(/\$([\d,.]+) short/.exec(shortfallText)![1].replace(/,/g, "")) * 100);
+    expect(shortfall).toBe(cost);
+    const codEarning = await amountBeside(owner, "You earn");
     await waitForMail((mail) => mail.to === ownerEmail && mail.subject.includes("waiting for funds"));
 
+    // The owner deposits through Binance: the address to send to, and the transaction id as proof.
+    const deposit = Math.max(500, shortfall);
     await owner.goto("/dashboard/balance");
     await owner.getByRole("button", { name: "Deposit" }).first().click();
-    const depositDialog = owner.getByRole("dialog");
-    await depositDialog.locator("#field-amount").fill(deposit);
+    const depositDialog = owner.getByRole("dialog").filter({ visible: true });
+    await chooseDepositMethod(depositDialog, /Binance · USDT \(TRC20\)/);
+    await expect(depositDialog.getByText(TRC20_ADDRESS)).toBeVisible();
+    await expect(depositDialog.getByText("TRON (TRC20)")).toBeVisible();
+    await depositDialog.locator("#field-amount").fill((deposit / 100).toFixed(2));
+    // A bank-style reference is not a transaction id.
     await depositDialog.locator("#field-reference").fill(`TOPUP-${stamp}`);
     await depositDialog.getByRole("button", { name: "Record deposit" }).click();
-    await expect(toast(owner, new RegExp(`Deposit of \\$${deposit.replace(".", "\\.")} recorded`))).toBeVisible();
+    await expect(depositDialog.getByText(/not a TRC20 transaction id/i).first()).toBeVisible();
+    await depositDialog.locator("#field-reference").fill(depositTxId);
+    await depositDialog.getByRole("button", { name: "Record deposit" }).click();
+    await expect(toast(owner, new RegExp(`Deposit of ${dollars(deposit)} recorded`))).toBeVisible();
 
     // Declaring a deposit changes nothing: the order is still waiting.
     await owner.goto(`/dashboard/orders/${fundedOrderNumber}`);
     await expect(owner.getByText("Deposit required to fulfil this order")).toBeVisible();
 
-    // Staff find the transfer in the deposit queue, with the owner beside it, and credit it.
+    // Staff find the transfer in the deposit queue, check it on Tronscan, and credit it.
     await admin.goto("/admin/deposits?status=PENDING");
-    const depositRow = admin.locator("tbody tr", { hasText: `TOPUP-${stamp}` });
+    const depositRow = admin.locator("tbody tr", { hasText: depositTxId });
     await expect(depositRow).toContainText(ownerEmail);
+    await expect(depositRow).toContainText("USDT (TRC20)");
     await depositRow.getByRole("button", { name: "Review" }).click();
     const review = admin.getByRole("dialog").filter({ visible: true });
+    await expect(review.getByRole("link", { name: /Tronscan/ })).toHaveAttribute("href", new RegExp(depositTxId));
     await review.getByRole("button", { name: /Approve & credit/ }).click();
     await expect(toast(admin, /order\(s\) waiting for funds have been dealt with/)).toBeVisible();
 
+    // Exactly one charge — the order's wholesale cost, set aside from the balance the deposit filled.
     await owner.goto(`/dashboard/orders/${fundedOrderNumber}`);
     await expect(owner.getByText("Deposit required to fulfil this order")).toHaveCount(0);
-    // Exactly one charge: the candle's $23.10 wholesale cost.
-    await expect(owner.getByText(/Accepted by fulfilment — \$23\.10 charged to the store balance/)).toHaveCount(1);
+    await expect(owner.getByText(new RegExp(`Accepted by fulfilment — ${dollars(cost)} wholesale cost set aside from the store balance`))).toHaveCount(1);
+    await owner.goto("/dashboard/balance");
+    expect(await balanceFigure(owner, "Available to withdraw")).toBe(deposit - cost);
+    // What the order will bring in is shown as held, not added to what can be spent.
+    expect(await balanceFigure(owner, "Held until delivery")).toBe(codEarning + cost);
+    availableAfterCod = deposit + codEarning;
   });
 
   test("20–22. staff fulfil the order step by step from the queue; the owner and the customer follow it", async () => {
@@ -317,6 +406,11 @@ test.describe.serial("dropshipping platform", () => {
     for (const line of ["Waiting for funds", "Accepted by fulfilment", "Status changed to Processing", "Status changed to Packed", "Status changed to Shipped", "Status changed to Out for delivery", "Status changed to Delivered"]) {
       await expect(owner.getByText(new RegExp(line)).first()).toBeVisible();
     }
+
+    // Delivered: the owner has their deposit back plus the order's profit, and nothing is left held.
+    await owner.goto("/dashboard/balance");
+    expect(await balanceFigure(owner, "Available to withdraw")).toBe(availableAfterCod);
+    expect(await balanceFigure(owner, "Held until delivery")).toBe(0);
 
     // 22. The customer's own tracking page shows it delivered.
     const customer = await owner.context().browser()!.newContext();
@@ -482,7 +576,7 @@ test.describe.serial("dropshipping platform", () => {
     // The money, with the ledger entry the deposit created.
     await expect(admin.getByRole("heading", { name: "Wallet ledger" })).toBeVisible();
     await expect(admin.getByText("Deposit received").first()).toBeVisible();
-    await expect(admin.getByText(`TOPUP-${stamp}`).first()).toBeVisible();
+    await expect(admin.getByText(depositTxId).first()).toBeVisible();
     // The orders it has taken, and what the owner has done.
     await expect(admin.getByRole("link", { name: fundedOrderNumber })).toBeVisible();
     await expect(admin.getByRole("heading", { name: "Activity" })).toBeVisible();
@@ -566,4 +660,10 @@ async function suspendAndReopen(browser: Browser, storeName: string, storeUrl: s
   }).toPass({ timeout: 60000 });
   await visitor.close();
   await adminContext.close();
+}
+
+/** An amount in cents as the pages print it ($1,234.50), escaped for use inside a RegExp. */
+function dollars(cents: number) {
+  const text = (cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `\\$${text.replace(/\./g, "\\.")}`;
 }

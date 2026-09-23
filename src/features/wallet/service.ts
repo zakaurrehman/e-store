@@ -1,9 +1,12 @@
 import { Prisma } from "@/generated/prisma/client";
-import { DepositStatus, OrderStatus, PaymentStatus, PayoutStatus, WalletEntryStatus, WalletEntryType, type DepositMethod, type PayoutMethod } from "@/generated/prisma/enums";
+import { DepositMethod, DepositStatus, OrderStatus, PaymentStatus, PayoutMethod, PayoutStatus, WalletEntryStatus, WalletEntryType } from "@/generated/prisma/enums";
 import { orderFinanceSelect, refundShareCents, storedOrderFinance } from "@/features/finance/service";
+import { looksLikeTrc20TxId } from "@/lib/tron";
+import { isTrc20Address } from "./tron";
 import { writeAudit } from "@/server/audit";
 import { db, type DbClient } from "@/server/db";
 import { DomainError, NotFoundError } from "@/server/errors";
+import { depositMethodLabel } from "@/lib/money-methods";
 
 export class WalletError extends DomainError {}
 
@@ -120,7 +123,11 @@ export function moneyCollected(order: Pick<OrderForLedger, "paymentStatus" | "pa
   return order.paymentProvider === "cod" && order.status === OrderStatus.DELIVERED;
 }
 
-const entryStatus = (order: OrderForLedger) => (moneyCollected(order) ? WalletEntryStatus.CLEARED : WalletEntryStatus.PENDING);
+/**
+ * An order's money is held until the parcel is delivered — whatever the payment method — and only then
+ * becomes the owner's to withdraw. Before that it shows as held, never as earnings.
+ */
+const entryStatus = (order: Pick<OrderForLedger, "status">) => (order.status === OrderStatus.DELIVERED ? WalletEntryStatus.CLEARED : WalletEntryStatus.PENDING);
 
 /** Money in transit becomes money in the balance. Amounts never change — only the status. */
 async function clearOrderEntries(client: DbClient, orderId: string) {
@@ -132,8 +139,8 @@ async function clearOrderEntries(client: DbClient, orderId: string) {
 
 /**
  * Records what the customer bought: the sale as a credit and Zendropship's commission as a debit, using the
- * rates stored on the order. Entries start as pending for cash on delivery and clear when the parcel arrives.
- * Safe to call as often as you like — each posting happens once.
+ * rates stored on the order. Both are held until the parcel is delivered, whatever the payment method, and
+ * clear together then. Safe to call as often as you like — each posting happens once.
  */
 export async function recogniseOrderRevenue(orderId: string, client: DbClient = db) {
   const run = async (tx: DbClient) => {
@@ -164,65 +171,94 @@ export async function recogniseOrderRevenue(orderId: string, client: DbClient = 
   return client === db ? db.$transaction((tx) => run(tx)) : run(client);
 }
 
-export type FulfilmentFunding = { ok: true; chargedCents: number; alreadyCharged: boolean } | { ok: false; shortfallCents: number; requiredCents: number };
+/** `fromBalanceCents` is the part of the cost taken from the owner's available balance; the rest came out of the customer's payment. */
+export type FulfilmentFunding = { ok: true; chargedCents: number; fromBalanceCents: number; alreadyCharged: boolean } | { ok: false; shortfallCents: number; requiredCents: number };
 
 /**
- * Charges the wholesale cost to the owner's balance so fulfilment can take the order. The customer's own
- * payment is already in that balance, so a normally priced order funds itself; anything it cannot cover is
- * reported back as a shortfall and the order waits for a deposit.
+ * How an order's wholesale cost is paid for when fulfilment takes it. Only money Zendropship actually holds
+ * can pay: the customer's own payment once it has been collected (a paid card order), and after that the
+ * owner's available balance. A cash-on-delivery order brings nothing until the courier collects, so its
+ * cost comes out of the available balance — set aside at once, so it cannot also be withdrawn.
  *
- * Must run inside a transaction. The store's wallet is locked first, and the charge carries an idempotency
- * key, so a refresh, a retry or two admins clicking at once can never charge twice.
+ * `fromOrder` is paid out of the order's own held money and settles with it on delivery; `fromBalance` is
+ * taken from the available balance now. Pending money from other orders never counts: it is not the
+ * owner's yet, and would vanish if those orders were cancelled.
+ */
+function fundingPlan(order: OrderForLedger, available: number) {
+  const finance = storedOrderFinance(order);
+  const ownMoney = moneyCollected(order) ? Math.max(0, finance.revenueCents - finance.commissionCents) : 0;
+  const fromOrder = Math.min(finance.fulfilmentCostCents, ownMoney);
+  const fromBalance = finance.fulfilmentCostCents - fromOrder;
+  return { cost: finance.fulfilmentCostCents, fromOrder, fromBalance, shortfall: Math.max(0, fromBalance - Math.max(0, available)) };
+}
+
+/**
+ * Charges the wholesale cost so fulfilment can take the order — exactly once. The part the order's own
+ * payment covers is held with the order; any rest is taken from the owner's available balance there and
+ * then. If that balance cannot cover the rest, nothing is written and the shortfall is reported back so
+ * the order can wait for funds.
+ *
+ * Must run inside a transaction. The store's wallet is locked first, and each posting carries an
+ * idempotency key, so a refresh, a retry or two admins clicking at once can never charge twice.
  */
 export async function chargeOrderFulfilment(tx: DbClient, orderId: string): Promise<FulfilmentFunding> {
   const order = await loadOrder(tx, orderId);
   if (!order) throw new NotFoundError("Order not found.");
-  if (!order.store.ownerId) return { ok: true, chargedCents: 0, alreadyCharged: false }; // platform store: no balance to charge
+  if (!order.store.ownerId) return { ok: true, chargedCents: 0, fromBalanceCents: 0, alreadyCharged: false }; // platform store: no balance to charge
   await lockStoreWallet(tx, order.storeId);
 
-  const existing = await tx.walletEntry.findFirst({ where: { orderId: order.id, type: WalletEntryType.ORDER_FULFILMENT } });
-  if (existing) return { ok: true, chargedCents: -existing.amountCents, alreadyCharged: true };
+  const existing = await tx.walletEntry.findMany({ where: { orderId: order.id, type: WalletEntryType.ORDER_FULFILMENT }, select: { amountCents: true, idempotencyKey: true } });
+  if (existing.length > 0) {
+    const sum = (entries: typeof existing) => entries.reduce((total, entry) => total - entry.amountCents, 0);
+    return { ok: true, chargedCents: sum(existing), fromBalanceCents: sum(existing.filter((entry) => entry.idempotencyKey?.endsWith(":balance"))), alreadyCharged: true };
+  }
 
   await recogniseOrderRevenue(order.id, tx);
-  const finance = storedOrderFinance(order);
-  const balance = await getBalanceCents(order.storeId, tx);
-  if (balance < finance.fulfilmentCostCents) {
-    return { ok: false, requiredCents: finance.fulfilmentCostCents, shortfallCents: finance.fulfilmentCostCents - balance };
-  }
-  if (finance.fulfilmentCostCents > 0) {
+  const plan = fundingPlan(order, await getAvailableCents(order.storeId, tx));
+  if (plan.shortfall > 0) return { ok: false, requiredCents: plan.fromBalance, shortfallCents: plan.shortfall };
+
+  const common = { storeId: order.storeId, currency: order.currency, orderId: order.id, type: WalletEntryType.ORDER_FULFILMENT };
+  if (plan.fromOrder > 0) {
     await addEntry(tx, {
-      storeId: order.storeId,
-      currency: order.currency,
-      orderId: order.id,
+      ...common,
       status: entryStatus(order),
-      type: WalletEntryType.ORDER_FULFILMENT,
-      amountCents: -finance.fulfilmentCostCents,
+      amountCents: -plan.fromOrder,
       description: `Fulfilment cost · order ${order.number}`,
       idempotencyKey: `order:${order.id}:fulfilment`,
     });
   }
-  return { ok: true, chargedCents: finance.fulfilmentCostCents, alreadyCharged: false };
+  if (plan.fromBalance > 0) {
+    await addEntry(tx, {
+      ...common,
+      // Taken from money the owner already has, so it leaves the available balance now.
+      status: WalletEntryStatus.CLEARED,
+      amountCents: -plan.fromBalance,
+      description: `Fulfilment cost set aside from your balance · order ${order.number}`,
+      idempotencyKey: `order:${order.id}:fulfilment:balance`,
+    });
+  }
+  return { ok: true, chargedCents: plan.cost, fromBalanceCents: plan.fromBalance, alreadyCharged: false };
 }
 
-/** What an order still needs before fulfilment can take it (0 when it funds itself). */
+/** What an order still needs in the available balance before fulfilment can take it (0 when it is covered). */
 export async function fulfilmentShortfallCents(orderId: string, client: DbClient = db) {
   const order = await loadOrder(client, orderId);
   if (!order || !order.store.ownerId) return 0;
   const charged = await client.walletEntry.findFirst({ where: { orderId, type: WalletEntryType.ORDER_FULFILMENT }, select: { id: true } });
   if (charged) return 0;
-  const finance = storedOrderFinance(order);
-  const posted = await client.walletEntry.count({ where: { orderId, type: WalletEntryType.ORDER_SALE } });
-  const balance = await getBalanceCents(order.storeId, client);
-  // The sale is credited as part of accepting the order, so count it when it has not been posted yet.
-  const projected = balance + (posted ? 0 : finance.revenueCents - finance.commissionCents);
-  return Math.max(0, finance.fulfilmentCostCents - projected);
+  return fundingPlan(order, await getAvailableCents(order.storeId, client)).shortfall;
 }
 
-/** Cash on delivery: the courier has handed the money over, so the order's entries count towards the balance. */
-export async function clearCollectedOrder(orderId: string, client: DbClient = db) {
+/**
+ * The parcel has arrived: the order's held money becomes the owner's. Its sale, commission and the part of
+ * the cost it paid for itself all clear together, so what lands in the available balance is the profit.
+ * Posts nothing new and changes no amount — running it twice does nothing the second time.
+ */
+export async function settleDeliveredOrder(orderId: string, client: DbClient = db) {
   const run = async (tx: DbClient) => {
     const order = await loadOrder(tx, orderId);
-    if (!order || !order.store.ownerId || !moneyCollected(order)) return null;
+    if (!order || !order.store.ownerId || order.status !== OrderStatus.DELIVERED) return null;
+    await lockStoreWallet(tx, order.storeId);
     await recogniseOrderRevenue(orderId, tx);
     await clearOrderEntries(tx, orderId);
     return true;
@@ -244,43 +280,42 @@ export async function reverseOrderLedger(orderId: string, options: { refundedCen
     const entries = await tx.walletEntry.findMany({ where: { orderId, type: { in: [...ORDER_ENTRY_TYPES] } } });
     if (entries.length === 0) return null;
 
-    const finance = storedOrderFinance(order);
     const refunded = Math.min(order.totalCents, options.refundedCents ?? order.totalCents);
-    const sumOf = (type: WalletEntryType) => entries.filter((entry) => entry.type === type).reduce((sum, entry) => sum + entry.amountCents, 0);
-    const statusOf = (type: WalletEntryType) => entries.find((entry) => entry.type === type)?.status ?? WalletEntryStatus.CLEARED;
+    const sumOf = (type: WalletEntryType, status: WalletEntryStatus) =>
+      entries.filter((entry) => entry.type === type && entry.status === status).reduce((sum, entry) => sum + entry.amountCents, 0);
 
-    const plan: Array<{ type: WalletEntryType; posted: number; reversed: number; share: number; label: string }> = [
-      { type: WalletEntryType.ORDER_SALE, posted: sumOf(WalletEntryType.ORDER_SALE), reversed: sumOf(WalletEntryType.ORDER_REFUND), share: finance.revenueCents, label: `Refund · order ${order.number}` },
-      { type: WalletEntryType.ORDER_FULFILMENT, posted: sumOf(WalletEntryType.ORDER_FULFILMENT), reversed: sumOf(WalletEntryType.FULFILMENT_REVERSAL), share: finance.fulfilmentCostCents, label: `Fulfilment cost returned · order ${order.number}` },
-      { type: WalletEntryType.ORDER_COMMISSION, posted: sumOf(WalletEntryType.ORDER_COMMISSION), reversed: sumOf(WalletEntryType.COMMISSION_REVERSAL), share: finance.commissionCents, label: `Commission returned · order ${order.number}` },
+    const plan: Array<{ type: WalletEntryType; reversal: WalletEntryType; label: string }> = [
+      { type: WalletEntryType.ORDER_SALE, reversal: WalletEntryType.ORDER_REFUND, label: `Refund · order ${order.number}` },
+      { type: WalletEntryType.ORDER_FULFILMENT, reversal: WalletEntryType.FULFILMENT_REVERSAL, label: `Fulfilment cost returned · order ${order.number}` },
+      { type: WalletEntryType.ORDER_COMMISSION, reversal: WalletEntryType.COMMISSION_REVERSAL, label: `Commission returned · order ${order.number}` },
       // Orders from before sales and costs were recorded separately carry a single net earning.
-      { type: WalletEntryType.ORDER_EARNING, posted: sumOf(WalletEntryType.ORDER_EARNING), reversed: sumOf(WalletEntryType.ORDER_REVERSAL), share: sumOf(WalletEntryType.ORDER_EARNING), label: `Order ${order.number} ${options.reason}` },
+      { type: WalletEntryType.ORDER_EARNING, reversal: WalletEntryType.ORDER_REVERSAL, label: `Order ${order.number} ${options.reason}` },
     ];
-    const reversalType: Partial<Record<WalletEntryType, WalletEntryType>> = {
-      [WalletEntryType.ORDER_SALE]: WalletEntryType.ORDER_REFUND,
-      [WalletEntryType.ORDER_FULFILMENT]: WalletEntryType.FULFILMENT_REVERSAL,
-      [WalletEntryType.ORDER_COMMISSION]: WalletEntryType.COMMISSION_REVERSAL,
-      [WalletEntryType.ORDER_EARNING]: WalletEntryType.ORDER_REVERSAL,
-    };
 
+    // Held money is given back as held money, and money already taken from the balance goes back to the
+    // balance: each part is reversed with the status of what it reverses. A cash-on-delivery order cancelled
+    // after its cost was set aside therefore returns that cost to the available balance at once.
     let posted = 0;
     for (const item of plan) {
-      if (item.posted === 0) continue;
-      const target = refundShareCents(Math.abs(item.posted), refunded, order.totalCents);
-      const delta = target - Math.abs(item.reversed);
-      if (delta <= 0) continue;
-      await addEntry(tx, {
-        storeId: order.storeId,
-        currency: order.currency,
-        orderId: order.id,
-        status: statusOf(item.type),
-        type: reversalType[item.type]!,
-        // The reversal always points the other way to the entry it gives back.
-        amountCents: item.posted > 0 ? -delta : delta,
-        description: `${item.label} (${options.reason})`,
-        createdById: options.actorId ?? null,
-      });
-      posted += 1;
+      for (const status of [WalletEntryStatus.PENDING, WalletEntryStatus.CLEARED]) {
+        const original = sumOf(item.type, status);
+        if (original === 0) continue;
+        const target = refundShareCents(Math.abs(original), refunded, order.totalCents);
+        const delta = target - Math.abs(sumOf(item.reversal, status));
+        if (delta <= 0) continue;
+        await addEntry(tx, {
+          storeId: order.storeId,
+          currency: order.currency,
+          orderId: order.id,
+          status,
+          type: item.reversal,
+          // The reversal always points the other way to the entry it gives back.
+          amountCents: original > 0 ? -delta : delta,
+          description: `${item.label} (${options.reason})`,
+          createdById: options.actorId ?? null,
+        });
+        posted += 1;
+      }
     }
     return posted;
   };
@@ -304,6 +339,16 @@ export async function requestPayout(input: PayoutRequest) {
     throw new WalletError("PAYOUT_TOO_SMALL", `The smallest withdrawal is $${(MIN_PAYOUT_CENTS / 100).toFixed(2)}.`, { fieldErrors: { amount: [`Enter at least $${(MIN_PAYOUT_CENTS / 100).toFixed(2)}.`] } });
   }
   if (input.amountCents > MAX_PAYOUT_CENTS) throw new WalletError("PAYOUT_TOO_LARGE", "That amount is too large — contact support for help.", { fieldErrors: { amount: ["Enter a smaller amount."] } });
+  // Withdrawals are paid in USDT on TRC20 only, and a crypto transfer cannot be recalled, so the address
+  // must be a real TRON address — checksum included — before anything leaves the balance.
+  if (input.method !== PayoutMethod.USDT_TRC20) {
+    throw new WalletError("PAYOUT_METHOD", "Withdrawals are paid in USDT on the TRC20 network only.", { fieldErrors: { method: ["Withdrawals are paid in USDT (TRC20) only."] } });
+  }
+  if (!isTrc20Address(input.destination)) {
+    throw new WalletError("PAYOUT_ADDRESS", "That is not a valid TRC20 address. Copy it again from your wallet — it starts with T and is 34 characters long.", {
+      fieldErrors: { destination: ["Not a valid TRC20 address."] },
+    });
+  }
 
   return db.$transaction(async (tx) => {
     await lockStoreWallet(tx, input.storeId);
@@ -398,23 +443,30 @@ export async function recordDeposit(input: {
     throw new WalletError("DEPOSIT_TOO_SMALL", `The smallest deposit is $${(MIN_DEPOSIT_CENTS / 100).toFixed(2)}.`, { fieldErrors: { amount: [`Enter at least $${(MIN_DEPOSIT_CENTS / 100).toFixed(2)}.`] } });
   }
   if (input.amountCents > MAX_DEPOSIT_CENTS) throw new WalletError("DEPOSIT_TOO_LARGE", "That amount is too large — contact support for help.", { fieldErrors: { amount: ["Enter a smaller amount."] } });
+  const crypto = input.method === DepositMethod.CRYPTO || input.method === DepositMethod.USDT_TRC20;
   // Crypto cannot be matched against a bank statement, so it needs something to check: a transaction id or a screenshot.
-  if (input.method === "CRYPTO" && !input.reference?.trim() && !input.proofMediaId) {
+  if (crypto && !input.reference?.trim() && !input.proofMediaId) {
     throw new WalletError("PROOF_REQUIRED", "Add the transaction id or a screenshot so we can check the transfer.", { fieldErrors: { reference: ["Add the transaction id, or upload a screenshot."] } });
+  }
+  // A TRC20 transaction id is 64 hexadecimal characters; anything else cannot be looked up on the chain.
+  if (input.method === DepositMethod.USDT_TRC20 && input.reference?.trim() && !looksLikeTrc20TxId(input.reference)) {
+    throw new WalletError("TXID_INVALID", "That is not a TRC20 transaction id — it is 64 letters and numbers, shown in Binance under the withdrawal's details.", {
+      fieldErrors: { reference: ["Not a TRC20 transaction id (64 characters)."] },
+    });
   }
   const deposit = await db.deposit.create({
     data: {
       storeId: input.storeId,
       amountCents: input.amountCents,
       method: input.method,
-      network: input.network?.trim() || null,
+      network: input.method === DepositMethod.USDT_TRC20 ? "USDT (TRC20)" : input.network?.trim() || null,
       reference: input.reference?.trim() || null,
       note: input.note?.trim() || null,
       proofMediaId: input.proofMediaId ?? null,
       createdById: input.createdById,
     },
   });
-  await writeAudit({ actorId: input.createdById, action: "wallet.deposit.record", entityType: "Deposit", entityId: deposit.id, summary: `${input.method === "CRYPTO" ? "Crypto" : "Bank"} deposit of ${(input.amountCents / 100).toFixed(2)} declared` });
+  await writeAudit({ actorId: input.createdById, action: "wallet.deposit.record", entityType: "Deposit", entityId: deposit.id, summary: `${depositMethodLabel({ method: input.method, network: input.network })} deposit of ${(input.amountCents / 100).toFixed(2)} declared` });
   return deposit;
 }
 

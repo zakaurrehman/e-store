@@ -55,6 +55,13 @@ export const settingsSchema = {
   }),
   deposits: z.object({
     bankDetails: z.string().trim().max(600).default(""),
+    /** Zendropship's Binance USDT (TRC20) deposit address. Empty hides the option. */
+    trc20Address: z
+      .string()
+      .trim()
+      .max(64)
+      .refine((value) => value === "" || /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(value), "Enter a TRC20 address: it starts with T and is 34 characters long.")
+      .default(""),
     cryptoNetwork: z.string().trim().max(60).default(""),
     cryptoAddress: z.string().trim().max(200).default(""),
     instructions: z.string().trim().max(600).default("Send the transfer first, then record it here with proof. Your balance is credited once we confirm it arrived."),

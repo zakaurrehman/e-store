@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { addItem, createGuestCart } from "@/features/cart/service";
 import { fulfilmentProgress, isFulfilmentComplete, nextFulfilmentStep } from "@/features/orders/progress";
-import { acceptOrderForFulfilment, cancelOrder, placeOrder, updateOrderStatus } from "@/features/orders/service";
+import { acceptFundedOrders, acceptOrderForFulfilment, cancelOrder, placeOrder, processWebhook, updateOrderStatus } from "@/features/orders/service";
 import { openStoreForNewOwner } from "@/features/stores/onboarding";
 import { getStoreOrder, listStoreOrders } from "@/features/stores/dashboard";
 import { addProductsToStore } from "@/features/stores/service";
-import { getAvailableCents, getBalanceCents } from "@/features/wallet/service";
+import { confirmDeposit, fulfilmentShortfallCents, getAvailableCents, getBalanceCents, recordDeposit } from "@/features/wallet/service";
 import { OrderStatus, WalletEntryType } from "@/generated/prisma/enums";
 import { db } from "@/server/db";
 import { isDomainError } from "@/server/errors";
-import { createProduct, invitation, orderContext, orderInput } from "./helpers";
+import { createProduct, invitation, orderContext, orderInput, sandboxGateway } from "./helpers";
 
 let sequence = 0;
 
@@ -41,6 +41,28 @@ async function codOrder(store: { id: string }, variantId: string) {
   return db.order.findUniqueOrThrow({ where: { id: outcome.result.orderId } });
 }
 
+/** An order the customer has paid by card, through the sandbox gateway's signed webhook. */
+async function paidOrder(store: { id: string }, variantId: string) {
+  const { cart } = await createGuestCart(store.id);
+  await addItem(cart.id, variantId, 1);
+  const outcome = await placeOrder(await orderInput({ paymentProvider: "sandbox" }), orderContext(cart.id));
+  const payment = await db.payment.findFirstOrThrow({ where: { orderId: outcome.result.orderId } });
+  await processWebhook(
+    "sandbox",
+    await sandboxGateway().buildWebhookRequest({ id: `evt_${payment.id}`, type: "succeeded", providerReference: payment.providerReference!, amountCents: payment.amountCents, currency: "USD" }),
+  );
+  return db.order.findUniqueOrThrow({ where: { id: outcome.result.orderId } });
+}
+
+/**
+ * A cash-on-delivery order's cost comes out of the owner's available balance, since nobody has collected
+ * the customer's cash yet: the owner deposits and staff confirm it.
+ */
+async function fund(store: { id: string }, userId: string, amountCents: number) {
+  const deposit = await recordDeposit({ storeId: store.id, amountCents, method: "BANK_TRANSFER", reference: `FUND-${amountCents}`, createdById: userId });
+  await confirmDeposit(deposit.id, (await staff()).id);
+}
+
 /** An order as it looks on a database that was live before fulfilment acceptance existed: confirmed, nothing posted. */
 async function asLegacyConfirmedOrder(orderId: string) {
   await db.walletEntry.deleteMany({ where: { orderId } });
@@ -66,7 +88,8 @@ const progressOf = async (orderId: string) => {
 
 describe("fulfilment workflow", () => {
   it("walks an order from accepted to delivered, recording who moved it and when", async () => {
-    const { store, variant } = await storeWithProduct();
+    const { user, store, variant } = await storeWithProduct();
+    await fund(store, user.id, 3000);
     const order = await codOrder(store, variant.id);
     const admin = await staff();
 
@@ -90,13 +113,14 @@ describe("fulfilment workflow", () => {
     const times = stages.map((stage) => stage.at!.getTime());
     expect([...times].sort((a, b) => a - b)).toEqual(times);
 
-    // Delivered is the end of the road, and cash on delivery money is now the owner's.
+    // Delivered is the end of the road: the $30 set aside comes back with the sale, less commission.
     expect(await errorCode(updateOrderStatus(order.id, OrderStatus.PROCESSING, admin.id))).toBe("INVALID_TRANSITION");
-    expect(await getAvailableCents(store.id)).toBe(2000 - 500);
+    expect(await getAvailableCents(store.id)).toBe(3000 + (5000 - 3000 - 500));
   });
 
   it("refuses to skip stages, and keeps the order where it was", async () => {
-    const { store, variant } = await storeWithProduct();
+    const { user, store, variant } = await storeWithProduct();
+    await fund(store, user.id, 3000);
     const order = await codOrder(store, variant.id);
     const admin = await staff();
 
@@ -131,12 +155,11 @@ describe("fulfilment workflow", () => {
     expect(stages.every((stage) => !stage.done)).toBe(true);
   });
 
-  it("accepts a confirmed order whose own payment covers the cost, without asking for a deposit", async () => {
-    // Exactly the orders that were already confirmed when this release went out.
+  it("accepts an order the customer has paid for without asking the owner for a deposit", async () => {
     const { store, variant } = await storeWithProduct(16800, 9240);
-    const placed = await codOrder(store, variant.id);
+    const placed = await paidOrder(store, variant.id);
     await asLegacyConfirmedOrder(placed.id);
-    expect(await getBalanceCents(store.id)).toBe(0);
+    expect(await getAvailableCents(store.id)).toBe(0);
 
     const admin = await staff();
     await acceptOrderForFulfilment(placed.id, admin.id);
@@ -144,7 +167,8 @@ describe("fulfilment workflow", () => {
     const accepted = await db.order.findUniqueOrThrow({ where: { id: placed.id } });
     expect(accepted.status).toBe(OrderStatus.ACCEPTED);
     expect(accepted.acceptedAt).not.toBeNull();
-    // The sale paid for the fulfilment cost; the owner was never asked for money.
+    // Zendropship already holds the customer's money: that pays the wholesale cost, and the owner's empty
+    // wallet is never asked for anything.
     const entries = await db.walletEntry.findMany({ where: { orderId: placed.id } });
     expect(entries.map((entry) => entry.type).sort()).toEqual([WalletEntryType.ORDER_COMMISSION, WalletEntryType.ORDER_FULFILMENT, WalletEntryType.ORDER_SALE].sort());
     expect(await db.deposit.count({ where: { storeId: store.id } })).toBe(0);
@@ -155,9 +179,30 @@ describe("fulfilment workflow", () => {
     expect(await db.walletEntry.count({ where: { orderId: placed.id, type: WalletEntryType.ORDER_FULFILMENT } })).toBe(1);
   });
 
+  it("takes an already-confirmed cash-on-delivery order's cost from the balance, and waits only if it is not there", async () => {
+    // Orders that were confirmed before this release: nothing posted, and the courier has collected nothing.
+    const { user, store, variant } = await storeWithProduct(16800, 9240);
+    const placed = await codOrder(store, variant.id);
+    await asLegacyConfirmedOrder(placed.id);
+
+    const admin = await staff();
+    await acceptOrderForFulfilment(placed.id, admin.id);
+    expect((await db.order.findUniqueOrThrow({ where: { id: placed.id } })).status).toBe(OrderStatus.AWAITING_FUNDS);
+    expect(await fulfilmentShortfallCents(placed.id)).toBe(9240);
+
+    // With the cost in the balance, it goes through: set aside once, earnings held until delivery.
+    await fund(store, user.id, 10000);
+    await acceptFundedOrders(store.id);
+    expect((await db.order.findUniqueOrThrow({ where: { id: placed.id } })).status).toBe(OrderStatus.ACCEPTED);
+    expect(await getAvailableCents(store.id)).toBe(10000 - 9240);
+    await acceptOrderForFulfilment(placed.id, admin.id);
+    expect(await db.walletEntry.count({ where: { orderId: placed.id, type: WalletEntryType.ORDER_FULFILMENT } })).toBe(1);
+  });
+
   it("shows each store only its own orders", async () => {
     const mine = await storeWithProduct();
     const theirs = await storeWithProduct();
+    await fund(mine.store, mine.user.id, 3000);
     const order = await codOrder(mine.store, mine.variant.id);
     const admin = await staff();
     await updateOrderStatus(order.id, OrderStatus.PROCESSING, admin.id);

@@ -44,7 +44,7 @@ async function OrderDetail({ params }: PageProps<"/dashboard/orders/[number]">) 
       {order.status === "AWAITING_FUNDS" && (
         <Alert tone="warning" title="Deposit required to fulfil this order" className="mb-6">
           <p>
-            The fulfilment cost is {formatMoney(finance.fulfilmentCostCents, order.currency)} and your balance is {formatMoney(shortfall, order.currency)} short. Deposit the difference and the order goes to
+            The fulfilment cost is {formatMoney(finance.fulfilmentCostCents, order.currency)} and your available balance is {formatMoney(shortfall, order.currency)} short. Deposit the difference and the order goes to
             fulfilment as soon as Zendropship confirms it.
           </p>
           <p className="mt-2">

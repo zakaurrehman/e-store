@@ -1,5 +1,5 @@
 import "server-only";
-import { DepositStatus, WalletEntryStatus, WalletEntryType } from "@/generated/prisma/enums";
+import { DepositStatus, OrderStatus, WalletEntryStatus, WalletEntryType } from "@/generated/prisma/enums";
 import { db } from "@/server/db";
 import { getAvailableCents, getBalanceCents, ORDER_ENTRY_TYPES, OPEN_PAYOUT_STATUSES } from "./service";
 
@@ -38,8 +38,17 @@ export const WALLET_ENTRY_LABELS: Record<WalletEntryType, string> = {
  */
 export async function getWalletSummary(storeId: string) {
   const { today, week, month } = periodStarts();
-  const sumOfTypes = async (types: WalletEntryType[], since?: Date) =>
-    (await db.walletEntry.aggregate({ where: { storeId, type: { in: types }, ...(since ? { createdAt: { gte: since } } : {}) }, _sum: { amountCents: true } }))._sum.amountCents ?? 0;
+  const sumOfTypes = async (types: WalletEntryType[]) =>
+    (await db.walletEntry.aggregate({ where: { storeId, type: { in: types } }, _sum: { amountCents: true } }))._sum.amountCents ?? 0;
+  // Earnings are what delivered orders made, counted on the day they were delivered: an order's cost may
+  // be set aside when it is accepted, but it has earned nothing until the parcel arrives.
+  const earnedSince = async (since?: Date) =>
+    (
+      await db.walletEntry.aggregate({
+        where: { storeId, type: { in: earningTypes }, order: { status: OrderStatus.DELIVERED, ...(since ? { deliveredAt: { gte: since } } : {}) } },
+        _sum: { amountCents: true },
+      })
+    )._sum.amountCents ?? 0;
 
   const [balanceCents, availableCents, pendingPayouts, pendingDeposits, deposited, fulfilment, commission, lifetime, earnedToday, earnedThisWeek, earnedThisMonth] = await Promise.all([
     getBalanceCents(storeId),
@@ -49,18 +58,18 @@ export async function getWalletSummary(storeId: string) {
     sumOfTypes([WalletEntryType.DEPOSIT]),
     sumOfTypes([WalletEntryType.ORDER_FULFILMENT, WalletEntryType.FULFILMENT_REVERSAL]),
     sumOfTypes([WalletEntryType.ORDER_COMMISSION, WalletEntryType.COMMISSION_REVERSAL]),
-    sumOfTypes(earningTypes),
-    sumOfTypes(earningTypes, today),
-    sumOfTypes(earningTypes, week),
-    sumOfTypes(earningTypes, month),
+    earnedSince(),
+    earnedSince(today),
+    earnedSince(week),
+    earnedSince(month),
   ]);
 
   return {
-    /** Everything the ledger says is owed, money still in transit included. */
+    /** Everything the ledger says is owed, held order money included. */
     balanceCents,
-    /** What can be withdrawn now: entries whose money has been collected. */
+    /** What can be withdrawn or spent on fulfilment now: deposits, delivered orders, less what is set aside. */
     availableCents,
-    /** Credited but not collected yet — cash on delivery that has not arrived. */
+    /** Held until delivery: what undelivered orders will release to the owner once they arrive. */
     pendingCents: balanceCents - availableCents,
     /** Requested withdrawals that have not been paid yet (already out of the balance). */
     pendingPayoutCents: pendingPayouts._sum.amountCents ?? 0,

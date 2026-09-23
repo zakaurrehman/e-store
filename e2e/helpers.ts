@@ -1,6 +1,7 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 export const ADMIN_STATE = "e2e/.auth/admin.json";
 
@@ -76,3 +77,27 @@ export const pathOf = (link: string) => {
 
 /** Toasts render as role="status" (errors as role="alert"). */
 export const toast = (page: Page, text: string | RegExp) => page.getByRole("status").filter({ hasText: text }).first();
+
+/** A TRON (TRC20) address with a valid checksum — Tether's USDT contract, public and well known. */
+export const TRC20_ADDRESS = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
+
+/** A made-up but well-formed TRC20 transaction id (64 hex characters), different for every seed. */
+export const trc20TxId = (seed: string) => createHash("sha256").update(seed).digest("hex");
+
+/** Picks how a deposit was sent. The dialog only offers a choice when staff have set up more than one method. */
+export async function chooseDepositMethod(dialog: Locator, name: string | RegExp) {
+  const radio = dialog.getByRole("radio", { name });
+  if ((await radio.count()) > 0) await radio.check();
+}
+
+/** A dollar figure from the owner's balance card, in cents, by the label beside it. */
+export async function balanceFigure(page: Page, label: "Available to withdraw" | "Held until delivery") {
+  const rowFor = (text: string) => page.locator("dl > div").filter({ has: page.locator("dt", { hasText: text }) }).first();
+  // The available figure is always there, so waiting for it means the card has loaded; the held row is
+  // left out when nothing is held, which then reads as zero.
+  await expect(rowFor("Available to withdraw")).toBeVisible();
+  const row = rowFor(label);
+  if ((await row.count()) === 0) return 0;
+  const text = (await row.locator("dd").innerText()).trim();
+  return Math.round(Number(text.replace(/[^0-9.-]/g, "")) * 100);
+}

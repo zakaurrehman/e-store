@@ -12,6 +12,8 @@ import { MIN_DEPOSIT_CENTS, MIN_PAYOUT_CENTS } from "@/features/wallet/service";
 import { DepositStatus, PayoutStatus, WalletEntryStatus } from "@/generated/prisma/enums";
 import { cn } from "@/utils/cn";
 import { formatMoney } from "@/utils/money";
+import { depositMethodLabel, payoutMethodLabel, tronscanTransactionUrl } from "@/lib/money-methods";
+import { looksLikeTrc20TxId } from "@/lib/tron";
 
 export const metadata: Metadata = { title: "Balance" };
 
@@ -19,6 +21,25 @@ const PAYOUT_TONES: Record<PayoutStatus, "warning" | "success" | "danger"> = { R
 const PAYOUT_LABELS: Record<PayoutStatus, string> = { REQUESTED: "Requested", APPROVED: "Approved", PROCESSING: "Being sent", PAID: "Paid", REJECTED: "Declined" };
 const DEPOSIT_TONES: Record<DepositStatus, "warning" | "success" | "danger"> = { PENDING: "warning", CONFIRMED: "success", REJECTED: "danger" };
 const DEPOSIT_LABELS: Record<DepositStatus, string> = { PENDING: "Waiting for confirmation", CONFIRMED: "Credited", REJECTED: "Declined" };
+
+/** A transfer's reference. A TRC20 transaction id links to Tronscan, where the owner can see it on the chain. */
+function TransferReference({ method, reference }: { method: string; reference: string | null }) {
+  if (!reference) return null;
+  if (method === "USDT_TRC20" && looksLikeTrc20TxId(reference)) {
+    return (
+      <a
+        href={tronscanTransactionUrl(reference)}
+        target="_blank"
+        rel="noopener noreferrer"
+        title="View this transaction on Tronscan"
+        className="block max-w-full truncate font-mono text-[0.75rem] text-iris-700 hover:underline"
+      >
+        {reference}
+      </a>
+    );
+  }
+  return <p className="text-[0.75rem] text-ink-500">{reference}</p>;
+}
 
 async function Balance({ searchParams }: PageProps<"/dashboard/balance">) {
   const [{ store }, query] = await Promise.all([requireStoreOwner("/dashboard/balance"), searchParams]);
@@ -46,7 +67,7 @@ async function Balance({ searchParams }: PageProps<"/dashboard/balance">) {
                 <EmptyState
                   icon={<Wallet className="size-6" strokeWidth={1.5} />}
                   title="No transactions yet"
-                  description="Your first sale adds its margin here as soon as the customer's payment is collected."
+                  description="Your first sale shows here as soon as it is placed. What it earns you becomes yours to spend or withdraw once the order is delivered."
                   className="py-6"
                 />
               </TableEmpty>
@@ -57,7 +78,7 @@ async function Balance({ searchParams }: PageProps<"/dashboard/balance">) {
                 <Td>
                   <p className="font-medium text-ink-950">
                     {WALLET_ENTRY_LABELS[entry.type]}
-                    {entry.status === WalletEntryStatus.PENDING && <span className="ml-2 rounded-full bg-warning/10 px-2 py-0.5 text-[0.6875rem] font-semibold text-warning">On its way</span>}
+                    {entry.status === WalletEntryStatus.PENDING && <span className="ml-2 rounded-full bg-warning/10 px-2 py-0.5 text-[0.6875rem] font-semibold text-warning">Held until delivery</span>}
                   </p>
                   <p className="text-[0.8125rem] text-ink-500">{entry.description}</p>
                 </Td>
@@ -84,9 +105,9 @@ async function Balance({ searchParams }: PageProps<"/dashboard/balance">) {
                   <div className="min-w-0">
                     <p className="tabular font-medium text-ink-950">{formatMoney(payout.amountCents)}</p>
                     <p className="text-[0.8125rem] text-ink-500">
-                      {dateTime.format(payout.createdAt)} · {payout.method === "PAYPAL" ? "PayPal" : "Bank transfer"}
+                      {dateTime.format(payout.createdAt)} · {payoutMethodLabel(payout.method)}
                     </p>
-                    {payout.reference && <p className="text-[0.75rem] text-ink-500">{payout.reference}</p>}
+                    <TransferReference method={payout.method} reference={payout.reference} />
                     <Link href={`/dashboard/support/tickets/new?payout=${payout.id}`} className="text-[0.75rem] text-ink-600 underline decoration-ink-300 underline-offset-4 hover:text-ink-950">
                       Ask Zendropship about this
                     </Link>
@@ -108,9 +129,9 @@ async function Balance({ searchParams }: PageProps<"/dashboard/balance">) {
                   <div className="min-w-0">
                     <p className="tabular font-medium text-ink-950">{formatMoney(deposit.amountCents)}</p>
                     <p className="text-[0.8125rem] text-ink-500">
-                      {dateTime.format(deposit.createdAt)} · {deposit.method === "CRYPTO" ? (deposit.network ?? "Crypto") : "Bank transfer"}
+                      {dateTime.format(deposit.createdAt)} · {depositMethodLabel(deposit)}
                     </p>
-                    {deposit.reference && <p className="text-[0.75rem] text-ink-500">{deposit.reference}</p>}
+                    <TransferReference method={deposit.method} reference={deposit.reference} />
                     <Link href={`/dashboard/support/tickets/new?deposit=${deposit.id}`} className="text-[0.75rem] text-ink-600 underline decoration-ink-300 underline-offset-4 hover:text-ink-950">
                       Ask Zendropship about this
                     </Link>

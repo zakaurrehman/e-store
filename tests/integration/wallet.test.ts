@@ -72,6 +72,23 @@ async function paidOrder(store: { id: string }, variantId: string, quantity = 1)
   return db.order.findUniqueOrThrow({ where: { id: order.id } });
 }
 
+/** A real TRON address (the USDT contract) — withdrawals only go to addresses whose checksum is right. */
+const TRC20_ADDRESS = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
+
+/** Staff take an accepted order all the way to the customer's door. */
+async function deliver(orderId: string) {
+  const admin = await staff();
+  for (const status of [OrderStatus.PROCESSING, OrderStatus.PACKED, OrderStatus.SHIPPED, OrderStatus.OUT_FOR_DELIVERY, OrderStatus.DELIVERED]) {
+    await updateOrderStatus(orderId, status, admin.id);
+  }
+}
+
+/** The owner deposits and staff confirm it: money in the available balance. */
+async function fund(store: { id: string }, userId: string, amountCents: number) {
+  const deposit = await recordDeposit({ storeId: store.id, amountCents, method: "BANK_TRANSFER", reference: `FUND-${amountCents}`, createdById: userId });
+  await confirmDeposit(deposit.id, (await staff()).id);
+}
+
 const entriesOf = (orderId: string) => db.walletEntry.findMany({ where: { orderId }, orderBy: { createdAt: "asc" } });
 const sumOf = (entries: Array<{ amountCents: number }>) => entries.reduce((sum, entry) => sum + entry.amountCents, 0);
 
@@ -98,25 +115,35 @@ describe("order finance and the store wallet", () => {
     expect(order.status).toBe(OrderStatus.ACCEPTED);
     expect(order.acceptedAt).not.toBeNull();
 
+    // The customer has paid, so the order pays its own wholesale cost; everything it did is held.
     const entries = await entriesOf(order.id);
     expect(entries.map((entry) => [entry.type, entry.amountCents, entry.status])).toEqual(
       expect.arrayContaining([
-        [WalletEntryType.ORDER_SALE, 10000, WalletEntryStatus.CLEARED],
-        [WalletEntryType.ORDER_COMMISSION, -1000, WalletEntryStatus.CLEARED],
-        [WalletEntryType.ORDER_FULFILMENT, -6000, WalletEntryStatus.CLEARED],
+        [WalletEntryType.ORDER_SALE, 10000, WalletEntryStatus.PENDING],
+        [WalletEntryType.ORDER_COMMISSION, -1000, WalletEntryStatus.PENDING],
+        [WalletEntryType.ORDER_FULFILMENT, -6000, WalletEntryStatus.PENDING],
       ]),
     );
     expect(entries).toHaveLength(3);
     expect(await getBalanceCents(store.id)).toBe(3000);
-    expect(await getAvailableCents(store.id)).toBe(3000);
+    // Nothing is the owner's to withdraw until the parcel arrives.
+    expect(await getAvailableCents(store.id)).toBe(0);
+    expect((await getWalletSummary(store.id)).earnedTodayCents).toBe(0);
 
     // A replayed webhook, a retried acceptance and a second charge attempt change nothing.
     await processWebhook("sandbox", await webhookFor(order.id, `evt_replay_${order.id}`));
     await acceptOrderForFulfilment(order.id);
     const again = await db.$transaction((tx) => chargeOrderFulfilment(tx, order.id));
-    expect(again).toMatchObject({ ok: true, alreadyCharged: true, chargedCents: 6000 });
+    expect(again).toMatchObject({ ok: true, alreadyCharged: true, chargedCents: 6000, fromBalanceCents: 0 });
     expect(await entriesOf(order.id)).toHaveLength(3);
     expect(await getBalanceCents(store.id)).toBe(3000);
+
+    // Delivered: the $30 profit becomes the owner's, and nothing new is posted to get there.
+    await deliver(order.id);
+    expect(await getAvailableCents(store.id)).toBe(3000);
+    expect((await entriesOf(order.id)).every((entry) => entry.status === WalletEntryStatus.CLEARED)).toBe(true);
+    expect(await entriesOf(order.id)).toHaveLength(3);
+    expect((await getWalletSummary(store.id)).earnedTodayCents).toBe(3000);
   });
 
   it("stores the commission rate on the order, so a later change never rewrites orders already placed", async () => {
@@ -150,25 +177,51 @@ describe("order finance and the store wallet", () => {
     }
   });
 
-  it("funds a cash-on-delivery order from its own sale, and only makes the money withdrawable once delivered", async () => {
-    const { store, variant } = await storeWithProduct();
+  it("takes a cash-on-delivery order's cost from the available balance at once, and pays out only on delivery", async () => {
+    const { user, store, variant } = await storeWithProduct();
+
+    // Nobody has collected any money for this order yet, so an empty wallet genuinely cannot pay its $30 cost.
+    const waiting = await placeIn(store, variant.id, 1, "cod");
+    expect(waiting.status).toBe(OrderStatus.AWAITING_FUNDS);
+    expect(await fulfilmentShortfallCents(waiting.id)).toBe(3000);
+    expect(await db.walletEntry.count({ where: { orderId: waiting.id, type: WalletEntryType.ORDER_FULFILMENT } })).toBe(0);
+
+    // The owner has $50: the $30 cost is set aside when fulfilment takes the order — once.
+    await fund(store, user.id, 5000);
+    await Promise.all([acceptFundedOrders(store.id), acceptOrderForFulfilment(waiting.id), acceptOrderForFulfilment(waiting.id)]);
+    expect((await db.order.findUniqueOrThrow({ where: { id: waiting.id } })).status).toBe(OrderStatus.ACCEPTED);
+    const fulfilment = await db.walletEntry.findMany({ where: { orderId: waiting.id, type: WalletEntryType.ORDER_FULFILMENT } });
+    expect(fulfilment.map((entry) => [entry.amountCents, entry.status])).toEqual([[-3000, WalletEntryStatus.CLEARED]]);
+    expect(await getAvailableCents(store.id)).toBe(2000);
+    const acceptedLine = await db.orderEvent.findFirst({ where: { orderId: waiting.id, message: { startsWith: "Accepted by fulfilment" } } });
+    expect(acceptedLine?.message).toBe("Accepted by fulfilment — $30.00 wholesale cost set aside from the store balance");
+    // The sale and commission are held: shown, not spendable, and not earnings yet.
+    expect((await getWalletSummary(store.id)).pendingCents).toBe(4500);
+    expect((await getWalletSummary(store.id)).earnedThisMonthCents).toBe(0);
+    expect(await errorCode(requestPayout({ storeId: store.id, amountCents: 2100, method: "USDT_TRC20", destination: TRC20_ADDRESS, requestedById: user.id }))).toBe("INSUFFICIENT_BALANCE");
+
+    // Delivered: the courier's cash comes in, and the owner has the deposit back plus the $15 profit.
+    await deliver(waiting.id);
+    expect(await getAvailableCents(store.id)).toBe(6500);
+    expect((await getWalletSummary(store.id)).pendingCents).toBe(0);
+    expect((await getWalletSummary(store.id)).earnedThisMonthCents).toBe(1500);
+    expect((await entriesOf(waiting.id)).every((entry) => entry.status === WalletEntryStatus.CLEARED)).toBe(true);
+    // Delivering clears entries; it posts nothing, so doing it again cannot pay twice.
+    expect(await entriesOf(waiting.id)).toHaveLength(3);
+  });
+
+  it("gives set-aside money straight back when an accepted cash-on-delivery order is cancelled", async () => {
+    const { user, store, variant } = await storeWithProduct();
+    await fund(store, user.id, 5000);
     const order = await placeIn(store, variant.id, 1, "cod");
     expect(order.status).toBe(OrderStatus.ACCEPTED);
+    expect(await getAvailableCents(store.id)).toBe(2000);
 
-    const entries = await entriesOf(order.id);
-    expect(entries.every((entry) => entry.status === WalletEntryStatus.PENDING)).toBe(true);
-    expect(await getBalanceCents(store.id)).toBe(1500);
-    expect(await getAvailableCents(store.id)).toBe(0);
-    expect((await getWalletSummary(store.id)).pendingCents).toBe(1500);
-
-    const admin = await staff();
-    for (const status of [OrderStatus.PROCESSING, OrderStatus.PACKED, OrderStatus.SHIPPED, OrderStatus.OUT_FOR_DELIVERY, OrderStatus.DELIVERED]) {
-      await updateOrderStatus(order.id, status, admin.id);
-    }
-    expect(await getAvailableCents(store.id)).toBe(1500);
-    expect((await entriesOf(order.id)).every((entry) => entry.status === WalletEntryStatus.CLEARED)).toBe(true);
-    // Still one of each: delivery clears the entries, it does not post new ones.
-    expect(await entriesOf(order.id)).toHaveLength(3);
+    await cancelOrder(order.id, "Customer refused the parcel", (await staff()).id);
+    // The $30 comes back to what can be spent, and the held sale is gone.
+    expect(await getAvailableCents(store.id)).toBe(5000);
+    expect(await getBalanceCents(store.id)).toBe(5000);
+    expect(sumOf(await entriesOf(order.id))).toBe(0);
   });
 
   it("holds an order that cannot fund itself until a confirmed deposit covers it, then charges it exactly once", async () => {
@@ -196,11 +249,20 @@ describe("order finance and the store wallet", () => {
 
     const accepted = await db.order.findUniqueOrThrow({ where: { id: order.id } });
     expect(accepted.status).toBe(OrderStatus.ACCEPTED);
-    expect(await db.walletEntry.count({ where: { orderId: order.id, type: WalletEntryType.ORDER_FULFILMENT } })).toBe(1);
+    // One $30 charge, paid for in two parts: $18 from the customer's own payment (held with the order) and
+    // the $12 the order could not cover, taken from the owner's balance at once.
+    const charge = await db.walletEntry.findMany({ where: { orderId: order.id, type: WalletEntryType.ORDER_FULFILMENT }, orderBy: { amountCents: "asc" } });
+    expect(charge.map((entry) => [entry.amountCents, entry.status])).toEqual([
+      [-1800, WalletEntryStatus.PENDING],
+      [-1200, WalletEntryStatus.CLEARED],
+    ]);
     expect(await getBalanceCents(store.id)).toBe(0);
+    expect(await getAvailableCents(store.id)).toBe(0);
 
     const timeline = await db.orderEvent.findMany({ where: { orderId: order.id, type: "STATUS_CHANGED" }, orderBy: { createdAt: "asc" } });
     expect(timeline.map((event) => (event.data as { status?: string } | null)?.status)).toEqual(["CONFIRMED", "AWAITING_FUNDS", "ACCEPTED"]);
+    // The history says where the money came from.
+    expect(timeline.at(-1)?.message).toBe("Accepted by fulfilment — $30.00 wholesale cost set aside: $18.00 from the customer's payment, $12.00 from the store balance");
   });
 
   it("walks an accepted order through every fulfilment step, and refuses steps out of order", async () => {
@@ -252,17 +314,19 @@ describe("order finance and the store wallet", () => {
 
   it("holds a withdrawal against the available balance, returns it when declined and keeps it when paid", async () => {
     const { user, store, variant } = await storeWithProduct(20000, 10000);
-    await paidOrder(store, variant.id); // $200 sale − $100 wholesale − $20 commission = $80
+    const delivered = await paidOrder(store, variant.id); // $200 sale − $100 wholesale − $20 commission = $80
+    await deliver(delivered.id);
 
-    // Cash on delivery still on its way cannot be withdrawn.
-    await placeIn(store, variant.id, 1, "cod");
+    // An order that has not been delivered yet holds its $80: shown in the balance, not withdrawable.
+    await paidOrder(store, variant.id);
     expect(await getBalanceCents(store.id)).toBe(16000);
     expect(await getAvailableCents(store.id)).toBe(8000);
 
-    expect(await errorCode(requestPayout({ storeId: store.id, amountCents: 9000, method: "PAYPAL", destination: "owner@example.com", requestedById: user.id }))).toBe("INSUFFICIENT_BALANCE");
-    expect(await errorCode(requestPayout({ storeId: store.id, amountCents: MIN_PAYOUT_CENTS - 1, method: "PAYPAL", destination: "owner@example.com", requestedById: user.id }))).toBe("PAYOUT_TOO_SMALL");
+    const trc20 = { method: "USDT_TRC20" as const, destination: TRC20_ADDRESS, requestedById: user.id, storeId: store.id };
+    expect(await errorCode(requestPayout({ ...trc20, amountCents: 9000 }))).toBe("INSUFFICIENT_BALANCE");
+    expect(await errorCode(requestPayout({ ...trc20, amountCents: MIN_PAYOUT_CENTS - 1 }))).toBe("PAYOUT_TOO_SMALL");
 
-    const payout = await requestPayout({ storeId: store.id, amountCents: 6000, method: "PAYPAL", destination: "owner@example.com", requestedById: user.id });
+    const payout = await requestPayout({ ...trc20, amountCents: 6000 });
     expect(await getAvailableCents(store.id)).toBe(2000);
     expect((await getWalletSummary(store.id)).pendingPayoutCents).toBe(6000);
 
@@ -272,19 +336,36 @@ describe("order finance and the store wallet", () => {
     expect((await db.payout.findUniqueOrThrow({ where: { id: payout.id } })).status).toBe(PayoutStatus.REJECTED);
     expect(await errorCode(rejectPayout(payout.id, admin.id, "twice"))).toBe("PAYOUT_SETTLED");
 
-    const second = await requestPayout({ storeId: store.id, amountCents: 8000, method: "BANK_TRANSFER", destination: "IBAN GB00 0000", requestedById: user.id });
+    const second = await requestPayout({ ...trc20, amountCents: 8000 });
+    expect(second.method).toBe("USDT_TRC20");
+    expect(second.destination).toBe(TRC20_ADDRESS);
     await setPayoutStatus(second.id, PayoutStatus.APPROVED, admin.id);
     await setPayoutStatus(second.id, PayoutStatus.PROCESSING, admin.id);
-    await markPayoutPaid(second.id, admin.id, "BACS 12345");
+    await markPayoutPaid(second.id, admin.id, "a".repeat(64));
     expect(await getAvailableCents(store.id)).toBe(0);
     expect(await errorCode(markPayoutPaid(second.id, admin.id))).toBe("PAYOUT_SETTLED");
   });
 
+  it("pays withdrawals in USDT on TRC20 only, and only to a real TRON address", async () => {
+    const { user, store } = await storeWithProduct();
+    await fund(store, user.id, 5000);
+    const request = { storeId: store.id, amountCents: 2000, requestedById: user.id };
+    expect(await errorCode(requestPayout({ ...request, method: "PAYPAL", destination: "owner@example.com" }))).toBe("PAYOUT_METHOD");
+    expect(await errorCode(requestPayout({ ...request, method: "BANK_TRANSFER", destination: "IBAN GB00 0000" }))).toBe("PAYOUT_METHOD");
+    // One character off: it looks like an address, but its checksum gives it away before any money moves.
+    const typo = TRC20_ADDRESS.slice(0, 10) + (TRC20_ADDRESS[10] === "8" ? "9" : "8") + TRC20_ADDRESS.slice(11);
+    expect(await errorCode(requestPayout({ ...request, method: "USDT_TRC20", destination: typo }))).toBe("PAYOUT_ADDRESS");
+    expect(await errorCode(requestPayout({ ...request, method: "USDT_TRC20", destination: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e" }))).toBe("PAYOUT_ADDRESS");
+    expect(await getAvailableCents(store.id)).toBe(5000);
+    expect(await db.payout.count({ where: { storeId: store.id } })).toBe(0);
+  });
+
   it("never lets two withdrawals spend the same money", async () => {
     const { user, store, variant } = await storeWithProduct(20000, 10000);
-    await paidOrder(store, variant.id); // $80 available
+    const order = await paidOrder(store, variant.id);
+    await deliver(order.id); // $80 available
     const attempts = await Promise.allSettled(
-      Array.from({ length: 4 }, () => requestPayout({ storeId: store.id, amountCents: 6000, method: "PAYPAL", destination: "owner@example.com", requestedById: user.id })),
+      Array.from({ length: 4 }, () => requestPayout({ storeId: store.id, amountCents: 6000, method: "USDT_TRC20", destination: TRC20_ADDRESS, requestedById: user.id })),
     );
     expect(attempts.filter((attempt) => attempt.status === "fulfilled")).toHaveLength(1);
     expect(await getAvailableCents(store.id)).toBe(2000);
@@ -321,10 +402,32 @@ describe("order finance and the store wallet", () => {
     expect(await getBalanceCents(store.id)).toBe(0);
   });
 
+  it("takes Binance TRC20 deposits with a real transaction id or a screenshot, and credits them only on approval", async () => {
+    const { user, store } = await storeWithProduct();
+    const base = { storeId: store.id, amountCents: 5000, method: "USDT_TRC20" as const, createdById: user.id };
+    expect(await errorCode(recordDeposit(base))).toBe("PROOF_REQUIRED");
+    expect(await errorCode(recordDeposit({ ...base, reference: "0xabc123" }))).toBe("TXID_INVALID");
+
+    const txid = "7c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d";
+    const deposit = await recordDeposit({ ...base, reference: txid });
+    expect(deposit.method).toBe("USDT_TRC20");
+    expect(deposit.network).toBe("USDT (TRC20)");
+    expect(await getBalanceCents(store.id)).toBe(0);
+
+    await confirmDeposit(deposit.id, (await staff()).id);
+    expect(await getAvailableCents(store.id)).toBe(5000);
+    expect(await db.walletEntry.count({ where: { depositId: deposit.id } })).toBe(1);
+  });
+
   it("summarises earnings for today, this week and this month, and the ledger carries a running balance", async () => {
     const { store, variant } = await storeWithProduct();
-    await paidOrder(store, variant.id);
-    await paidOrder(store, variant.id);
+    const first = await paidOrder(store, variant.id);
+    const second = await paidOrder(store, variant.id);
+
+    // Paid but not delivered: held, and not earnings yet.
+    expect((await getWalletSummary(store.id)).earnedTodayCents).toBe(0);
+    await deliver(first.id);
+    await deliver(second.id);
 
     const summary = await getWalletSummary(store.id);
     expect(summary.balanceCents).toBe(3000);

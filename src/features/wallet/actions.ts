@@ -6,6 +6,7 @@ import { z } from "zod";
 import { ingestImage } from "@/features/media/service";
 import { DepositMethod, PayoutMethod, PayoutStatus } from "@/generated/prisma/enums";
 import { acceptFundedOrders, flushNotifications } from "@/features/orders/service";
+import { TRC20_ADDRESS_PATTERN } from "@/lib/tron";
 import { assertStoreOwner } from "@/features/stores/guards";
 import { failure, handleActionError, success, zodFailure, type ActionState } from "@/server/actions";
 import { assertPermission } from "@/server/auth/guards";
@@ -36,16 +37,17 @@ const amountSchema = z
   .pipe(z.number({ error: "Enter a valid amount." }).positive("Enter an amount above zero.").max(1_000_000, "Enter a smaller amount."))
   .transform((value) => Math.round(value * 100));
 
+// Withdrawals are paid in USDT on TRC20 only; the service checks the address's checksum before anything moves.
 const payoutSchema = z.object({
   amount: amountSchema,
-  method: z.enum(["BANK_TRANSFER", "PAYPAL"]),
-  destination: z.string().trim().min(5, "Enter where the money should be sent.").max(200, "Keep this under 200 characters."),
+  method: z.literal("USDT_TRC20", { error: "Withdrawals are paid in USDT (TRC20) only." }),
+  destination: z.string().trim().regex(TRC20_ADDRESS_PATTERN, "Enter your TRC20 address: it starts with T and is 34 characters long."),
   note: z.string().trim().max(300).optional().transform((value) => value || null),
 });
 
 const depositSchema = z.object({
   amount: amountSchema,
-  method: z.enum(["BANK_TRANSFER", "CRYPTO"]),
+  method: z.enum(["BANK_TRANSFER", "CRYPTO", "USDT_TRC20"]),
   network: z.string().trim().max(60).optional().transform((value) => value || null),
   reference: z.string().trim().max(120).optional().transform((value) => value || null),
   note: z.string().trim().max(300).optional().transform((value) => value || null),

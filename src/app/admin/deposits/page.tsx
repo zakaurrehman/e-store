@@ -10,6 +10,8 @@ import { DEPOSIT_STATUS_LABELS, DEPOSIT_STATUS_TONES, DEPOSITS_PAGE_SIZE, listDe
 import { DepositStatus } from "@/generated/prisma/enums";
 import { can, requirePagePermission } from "@/server/auth/guards";
 import { formatMoney } from "@/utils/money";
+import { depositMethodLabel, tronscanTransactionUrl } from "@/lib/money-methods";
+import { looksLikeTrc20TxId } from "@/lib/tron";
 
 export const metadata: Metadata = { title: "Deposit requests" };
 
@@ -122,12 +124,23 @@ async function Deposits({ searchParams }: PageProps<"/admin/deposits">) {
                     {credit && credit.amountCents !== deposit.amountCents && <span className="block text-[0.75rem] font-normal text-ink-500">declared differently</span>}
                   </Td>
                   <Td className="w-[15rem] max-w-[15rem] text-[0.8125rem] text-ink-600">
-                    <p className="whitespace-nowrap font-medium text-ink-800">{deposit.method === "CRYPTO" ? (deposit.network ?? "Crypto") : "Bank transfer"}</p>
-                    {deposit.reference && (
-                      <p className="truncate font-mono text-[0.75rem]" title={deposit.reference}>
-                        {deposit.reference}
-                      </p>
-                    )}
+                    <p className="whitespace-nowrap font-medium text-ink-800">{depositMethodLabel(deposit)}</p>
+                    {deposit.reference &&
+                      (deposit.method === "USDT_TRC20" && looksLikeTrc20TxId(deposit.reference) ? (
+                        <a
+                          href={tronscanTransactionUrl(deposit.reference)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block truncate font-mono text-[0.75rem] underline underline-offset-2 hover:text-ink-950"
+                          title="Check this transaction on Tronscan"
+                        >
+                          {deposit.reference}
+                        </a>
+                      ) : (
+                        <p className="truncate font-mono text-[0.75rem]" title={deposit.reference}>
+                          {deposit.reference}
+                        </p>
+                      ))}
                     {deposit.note && (
                       <p className="line-clamp-2 text-[0.75rem] text-ink-500" title={deposit.note}>
                         {deposit.note}
@@ -157,7 +170,8 @@ async function Deposits({ searchParams }: PageProps<"/admin/deposits">) {
                           amountCents={deposit.amountCents}
                           storeName={deposit.store.name}
                           ownerName={person.name}
-                          method={deposit.method === "CRYPTO" ? (deposit.network ?? "Crypto") : "Bank transfer"}
+                          method={depositMethodLabel(deposit)}
+                          transactionUrl={deposit.method === "USDT_TRC20" && deposit.reference && looksLikeTrc20TxId(deposit.reference) ? tronscanTransactionUrl(deposit.reference) : null}
                           reference={deposit.reference}
                           proof={deposit.proof}
                         />

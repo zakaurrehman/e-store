@@ -9,7 +9,7 @@ import { calculateOrderFinance, currentCommissionRule } from "@/features/finance
 import { getShippingOptions, getTaxRate } from "@/features/checkout/shipping";
 import type { PlaceOrderInput } from "@/features/checkout/schemas";
 import { loadSettings } from "@/features/settings/service";
-import { chargeOrderFulfilment, clearCollectedOrder, fulfilmentShortfallCents, recogniseOrderRevenue, reverseOrderLedger } from "@/features/wallet/service";
+import { chargeOrderFulfilment, fulfilmentShortfallCents, recogniseOrderRevenue, reverseOrderLedger, settleDeliveredOrder } from "@/features/wallet/service";
 import type { AddressSnapshot } from "@/lib/address";
 import { normalisePhone } from "@/lib/phone";
 import { storeUrl } from "@/lib/tenancy";
@@ -255,9 +255,20 @@ function confirmationTarget(order: { number: string; email: string }): { kind: "
   return { kind: "confirmation", url: `/checkout/confirmation/${order.number}?token=${orderAccessToken(order)}` };
 }
 
+/** The history line for an accepted order: how much the goods cost, and where that money came from. */
+function acceptedLine(chargedCents: number, fromBalanceCents: number, currency: string) {
+  if (chargedCents <= 0) return "Accepted by fulfilment";
+  const fromOrder = chargedCents - fromBalanceCents;
+  const cost = `${formatMoney(chargedCents, currency)} wholesale cost set aside`;
+  if (fromBalanceCents <= 0) return `Accepted by fulfilment — ${cost} from the customer's payment`;
+  if (fromOrder <= 0) return `Accepted by fulfilment — ${cost} from the store balance`;
+  return `Accepted by fulfilment — ${cost}: ${formatMoney(fromOrder, currency)} from the customer's payment, ${formatMoney(fromBalanceCents, currency)} from the store balance`;
+}
+
 /**
- * Hands the order to Zendropship fulfilment. The wholesale cost is charged to the owner's balance here —
- * exactly once, whatever happens — and the order waits as AWAITING_FUNDS if the balance cannot cover it.
+ * Hands the order to Zendropship fulfilment. The wholesale cost is set aside here — exactly once, whatever
+ * happens — from the customer's payment when it has been collected, otherwise from the owner's available
+ * balance; the order waits as AWAITING_FUNDS only if that balance genuinely cannot cover its part.
  * Safe to call again at any time: an order that is already accepted is left alone.
  */
 export async function acceptOrderForFulfilment(orderId: string, actorId?: string | null): Promise<NotificationEvent[]> {
@@ -282,8 +293,8 @@ export async function acceptOrderForFulfilment(orderId: string, actorId?: string
       return { changed: true as const, to: OrderStatus.AWAITING_FUNDS, shortfallCents: funding.shortfallCents };
     }
     await tx.order.update({ where: { id: orderId }, data: { status: OrderStatus.ACCEPTED, acceptedAt: new Date() } });
-    await addEvent(tx, orderId, OrderEventType.STATUS_CHANGED, funding.chargedCents > 0 ? `Accepted by fulfilment — ${formatMoney(funding.chargedCents, order.currency)} charged to the store balance` : "Accepted by fulfilment", {
-      data: { status: OrderStatus.ACCEPTED, chargedCents: funding.chargedCents },
+    await addEvent(tx, orderId, OrderEventType.STATUS_CHANGED, acceptedLine(funding.chargedCents, funding.fromBalanceCents, order.currency), {
+      data: { status: OrderStatus.ACCEPTED, chargedCents: funding.chargedCents, fromBalanceCents: funding.fromBalanceCents },
       actorId,
     });
     return { changed: true as const, to: OrderStatus.ACCEPTED, from: order.status };
@@ -492,17 +503,16 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus, ac
         await tx.shipment.create({ data: { orderId, status: shipmentStatus, shippedAt: new Date(), deliveredAt: status === OrderStatus.DELIVERED ? new Date() : null } });
       }
     }
+    // Delivered: the order's held money becomes the owner's, in the same transaction as the status, so an
+    // order can never be delivered with its money still held — or its money released without delivery.
+    if (status === OrderStatus.DELIVERED) await settleDeliveredOrder(orderId, tx);
   });
   await writeAudit({ actorId, action: "order.status", entityType: "Order", entityId: orderId, summary: `Order ${order.number} → ${ORDER_STATUS_LABELS[status]}` });
   if (status === OrderStatus.SHIPPED) {
     const shipment = await db.shipment.findFirstOrThrow({ where: { orderId }, orderBy: { createdAt: "desc" } });
     notifications.push({ type: "order.shipped", orderId, shipmentId: shipment.id });
   }
-  if (status === OrderStatus.DELIVERED) {
-    // Cash on delivery is collected by the courier, so the money counts once the parcel arrives.
-    await clearCollectedOrder(orderId);
-    notifications.push({ type: "order.delivered", orderId });
-  }
+  if (status === OrderStatus.DELIVERED) notifications.push({ type: "order.delivered", orderId });
   return notifications;
 }
 

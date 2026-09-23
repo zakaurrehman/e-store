@@ -99,7 +99,7 @@ describe("an owner's conversation with Zendropship", () => {
 
     // A withdrawal works the same way.
     await db.walletEntry.create({ data: { storeId: store.id, type: "ADJUSTMENT", amountCents: 5000, description: "Test float" } });
-    const payout = await requestPayout({ storeId: store.id, amountCents: 3000, method: "PAYPAL", destination: "owner@example.com", requestedById: user.id });
+    const payout = await requestPayout({ storeId: store.id, amountCents: 3000, method: "USDT_TRC20", destination: "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", requestedById: user.id });
     const second = await ask(user, "Where is my withdrawal?", "It has been three days.", { payoutId: payout.id });
     expect((await getOwnerTicket(user.id, second.id))?.payout).toMatchObject({ id: payout.id, amountCents: 3000 });
   });

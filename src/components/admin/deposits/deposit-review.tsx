@@ -21,6 +21,8 @@ type ReviewProps = {
   method: string;
   reference: string | null;
   proof: DepositProof;
+  /** For an on-chain deposit: where the transaction can be checked before anything is credited. */
+  transactionUrl?: string | null;
 };
 
 /** The proof as a thumbnail; clicking it opens the full-size image without leaving the page. */
@@ -72,7 +74,7 @@ export function ProofThumbnail({ proof, label = "Deposit proof" }: { proof: Depo
  * Deciding a deposit: the proof beside the figures, and a choice between crediting the owner's wallet
  * or rejecting the claim with a reason. Nothing is credited until the amount here is confirmed.
  */
-export function DepositReview({ depositId, amountCents, storeName, ownerName, method, reference, proof }: ReviewProps) {
+export function DepositReview({ depositId, amountCents, storeName, ownerName, method, reference, proof, transactionUrl }: ReviewProps) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"review" | "reject">("review");
   const [amount, setAmount] = useState((amountCents / 100).toFixed(2));
@@ -140,6 +142,17 @@ export function DepositReview({ depositId, amountCents, storeName, ownerName, me
       >
         {mode === "review" ? (
           <div className="space-y-4">
+            {transactionUrl && (
+              <a
+                href={transactionUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between gap-3 rounded-sm border border-line px-3 py-2.5 text-[0.875rem] font-medium text-ink-950 hover:border-ink-950"
+              >
+                Check this transaction on Tronscan
+                <span className="text-[0.75rem] font-normal text-ink-500">amount, network and the address it went to</span>
+              </a>
+            )}
             {proof ? (
               proof.mimeType.startsWith("image/") ? (
                 <a href={proof.url} target="_blank" rel="noopener noreferrer" title="Open the original">

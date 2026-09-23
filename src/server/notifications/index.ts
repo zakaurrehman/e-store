@@ -13,6 +13,7 @@ import { env } from "@/server/env";
 import { hmacSha256 } from "@/server/security/crypto";
 import { formatMoney } from "@/utils/money";
 import { getPushProvider, getSmsProvider } from "./channels";
+import { depositMethodLabel, payoutMethodLabel } from "@/lib/money-methods";
 
 /**
  * Customer emails are sent in the name of the store the customer shops at and link back to that store's domain.
@@ -474,7 +475,7 @@ async function plan(event: NotificationEvent): Promise<Planned[]> {
                     rendered: templates.staffAlertEmail(platformBrand, {
                       title: `Order ${order.number} is waiting for funds`,
                       lines: [
-                        `The fulfilment cost is ${formatMoney(order.fulfilmentCostCents, order.currency)} and your balance is ${shortfall} short.`,
+                        `The fulfilment cost is ${formatMoney(order.fulfilmentCostCents, order.currency)} and your available balance is ${shortfall} short.`,
                         "Deposit the difference and the order goes to fulfilment as soon as we confirm it.",
                       ],
                       href: app("/dashboard/balance"),
@@ -501,7 +502,7 @@ async function plan(event: NotificationEvent): Promise<Planned[]> {
       const staff = await staffRecipients("stores.manage");
       const lines = [
         `${deposit.store.name} says they have sent ${formatMoney(deposit.amountCents)}`,
-        `Method: ${deposit.method === "CRYPTO" ? (deposit.network ?? "crypto") : "bank transfer"}${deposit.reference ? ` · reference ${deposit.reference}` : ""}`,
+        `Method: ${depositMethodLabel(deposit)}${deposit.reference ? ` · reference ${deposit.reference}` : ""}`,
         deposit.proofMediaId ? "A screenshot is attached — check the transfer itself before confirming." : "No screenshot was attached.",
       ];
       return [
@@ -558,7 +559,7 @@ async function plan(event: NotificationEvent): Promise<Planned[]> {
             template: "staff.payout-requested",
             rendered: templates.staffAlertEmail(platformBrand, {
               title: `${payout.store.name} asked to withdraw ${formatMoney(payout.amountCents)}`,
-              lines: [`Send to: ${payout.method === "PAYPAL" ? "PayPal" : "bank transfer"} · ${payout.destination}`, "Mark it paid once the transfer has been sent."],
+              lines: [`Send to: ${payoutMethodLabel(payout.method)} · ${payout.destination}`, "Mark it paid once the transfer has been sent."],
               href: app("/admin/payouts"),
               cta: "Open withdrawals",
             }),

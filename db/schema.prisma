@@ -1564,9 +1564,11 @@ enum PayoutStatus {
   REJECTED
 }
 
+/// New withdrawals are sent in USDT on TRC20 only; the older methods stay so past payouts still read.
 enum PayoutMethod {
   BANK_TRANSFER
   PAYPAL
+  USDT_TRC20
 }
 
 /// A withdrawal the owner asked for. The amount leaves the balance when requested and returns if rejected.
@@ -1642,9 +1644,11 @@ enum DepositStatus {
   REJECTED
 }
 
+/// USDT_TRC20 is a transfer to Zendropship's Binance USDT (TRC20) address, checked by its transaction id.
 enum DepositMethod {
   BANK_TRANSFER
   CRYPTO
+  USDT_TRC20
 }
 
 /// Money the owner says they have transferred to Zendropship. Credited only once staff confirm it arrived.

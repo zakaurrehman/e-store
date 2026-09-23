@@ -1,6 +1,6 @@
 "use client";
 
-import { CreditCard, ExternalLink, LayoutDashboard, LifeBuoy, LogOut, Menu, Package, Palette, Search, ShoppingBag, Tags, Users, Wallet, X } from "lucide-react";
+import { CreditCard, ExternalLink, LayoutDashboard, LifeBuoy, LogOut, Menu, Package, Palette, Search, ShoppingBag, Tags, UserRound, Users, Wallet, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -19,6 +19,7 @@ const ITEMS = [
   { href: "/dashboard/design", label: "Design & details", icon: Palette },
   { href: "/dashboard/pricing", label: "Pricing", icon: Tags },
   { href: "/dashboard/payments", label: "Payments", icon: CreditCard },
+  { href: "/dashboard/profile", label: "Profile", icon: UserRound },
 ];
 
 export function DashboardNav({

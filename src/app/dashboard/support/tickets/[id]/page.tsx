@@ -12,6 +12,7 @@ import { markOwnerTicketReadAction } from "@/features/support/actions";
 import { CUSTOMER_SUPPORT_STATUS_LABELS, CUSTOMER_SUPPORT_STATUS_TONES, getOwnerTicket, type OwnerTicket, supportPulseStamp } from "@/features/support/queries";
 import { cn } from "@/utils/cn";
 import { formatMoney } from "@/utils/money";
+import { depositMethodLabel, payoutMethodLabel } from "@/lib/money-methods";
 
 export const metadata: Metadata = { title: "Zendropship support" };
 
@@ -28,7 +29,7 @@ function AboutCard({ ticket }: { ticket: OwnerTicket }) {
           <div>
             <dt className="text-[0.8125rem] text-ink-500">Deposit</dt>
             <dd className="text-ink-950">
-              {formatMoney(ticket.deposit.amountCents)} · {ticket.deposit.method === "CRYPTO" ? (ticket.deposit.network ?? "Crypto") : "Bank transfer"} · {DEPOSIT_LABELS[ticket.deposit.status] ?? ticket.deposit.status}
+              {formatMoney(ticket.deposit.amountCents)} · {depositMethodLabel(ticket.deposit)} · {DEPOSIT_LABELS[ticket.deposit.status] ?? ticket.deposit.status}
               <span className="block text-[0.8125rem] text-ink-500">
                 {dateTime.format(ticket.deposit.createdAt)}
                 {ticket.deposit.reference ? ` · ${ticket.deposit.reference}` : ""}
@@ -40,7 +41,7 @@ function AboutCard({ ticket }: { ticket: OwnerTicket }) {
           <div>
             <dt className="text-[0.8125rem] text-ink-500">Withdrawal</dt>
             <dd className="text-ink-950">
-              {formatMoney(ticket.payout.amountCents)} · {ticket.payout.method === "PAYPAL" ? "PayPal" : "Bank transfer"} · {PAYOUT_LABELS[ticket.payout.status] ?? ticket.payout.status}
+              {formatMoney(ticket.payout.amountCents)} · {payoutMethodLabel(ticket.payout.method)} · {PAYOUT_LABELS[ticket.payout.status] ?? ticket.payout.status}
               <span className="block text-[0.8125rem] text-ink-500">{dateTime.format(ticket.payout.createdAt)}</span>
             </dd>
           </div>

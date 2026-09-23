@@ -210,8 +210,38 @@ export function SupportWidgetPanel({ config, initialUnread = 0 }: { config: Supp
     };
   }, [open, baseline, session?.signedIn, load]);
 
+  // On a phone the on-screen keyboard covers the bottom of the screen, where this panel sits. iPhone Safari
+  // does not shrink the page for it, so the panel follows the visible area instead: lifted above the
+  // keyboard and no taller than what is left, keeping the message box and Send in view while typing.
+  const [keyboard, setKeyboard] = useState({ covered: 0, visible: 0 });
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!open || !viewport) return;
+    const follow = () => setKeyboard({ covered: Math.max(0, Math.round(window.innerHeight - viewport.height - viewport.offsetTop)), visible: Math.round(viewport.height) });
+    viewport.addEventListener("resize", follow);
+    viewport.addEventListener("scroll", follow);
+    return () => {
+      viewport.removeEventListener("resize", follow);
+      viewport.removeEventListener("scroll", follow);
+    };
+  }, [open]);
+  const aboveKeyboard = keyboard.covered > 40 ? { marginBottom: keyboard.covered, maxHeight: keyboard.visible - 8 } : undefined;
+  // Once the panel has moved, bring the field being typed in back into view inside it.
+  useEffect(() => {
+    if (keyboard.covered <= 40) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active.closest("dialog")) active.scrollIntoView({ block: "center" });
+  }, [keyboard.covered]);
+
   const thread = threadId ? session?.threads.find((row) => row.id === threadId) : undefined;
   const unread = session ? session.threads.filter((row) => row.unread).length : initialUnread;
+
+  // The newest turn stays in view — the panel is short on a phone, and a reply lands at the bottom.
+  const latestRef = useRef<HTMLLIElement>(null);
+  const turnCount = thread?.turns.length ?? 0;
+  useEffect(() => {
+    if (turnCount > 0) latestRef.current?.scrollIntoView({ block: "nearest" });
+  }, [turnCount, threadId]);
 
   const openThread = (id: string) => {
     setThreadId(id);
@@ -225,6 +255,7 @@ export function SupportWidgetPanel({ config, initialUnread = 0 }: { config: Supp
     setThreadId(null);
     setComposing(false);
     setSession(null);
+    setKeyboard({ covered: 0, visible: 0 });
   };
 
   // Checkout is a single-minded flow: nothing floats over the pay button.
@@ -260,6 +291,7 @@ export function SupportWidgetPanel({ config, initialUnread = 0 }: { config: Supp
         title={thread ? thread.subject : "Customer service"}
         description={thread ? STATUS_LABELS[thread.status] : `${config.answeredBy} · we usually reply within one business day`}
         className="sm:shadow-pop"
+        style={aboveKeyboard}
       >
         {loading && !session ? (
           <div className="space-y-3">
@@ -279,6 +311,7 @@ export function SupportWidgetPanel({ config, initialUnread = 0 }: { config: Supp
               {thread.turns.map((turn) => (
                 <Bubble key={turn.id} mine={turn.mine} body={turn.body} at={turn.at} author={turn.mine ? "You" : config.answeredBy} />
               ))}
+              <li ref={latestRef} aria-hidden className="h-0" />
             </ol>
             <div className="mt-4 border-t border-line pt-3">
               <ReplyForm threadId={thread.id} onSent={() => load()} />

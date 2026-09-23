@@ -1,7 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type CSSProperties, type ReactNode } from "react";
 import { cn } from "@/utils/cn";
 
 type DialogVariant = "center" | "right" | "left" | "bottom" | "corner";
@@ -18,6 +18,8 @@ type DialogProps = {
   hideTitle?: boolean;
   className?: string;
   bodyClassName?: string;
+  /** Inline styles that depend on the moment, e.g. lifting a sheet above the on-screen keyboard. */
+  style?: CSSProperties;
 };
 
 const variantClasses: Record<DialogVariant, string> = {
@@ -37,7 +39,7 @@ const variantClasses: Record<DialogVariant, string> = {
  * Accessible modal built on the native <dialog> element: focus is trapped and restored by the browser,
  * Escape closes it, and the page behind is inert. Used for modals, side drawers and mobile bottom sheets.
  */
-export function Dialog({ open, onClose, title, description, children, footer, variant = "center", hideTitle, className, bodyClassName }: DialogProps) {
+export function Dialog({ open, onClose, title, description, children, footer, variant = "center", hideTitle, className, bodyClassName, style }: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const descriptionId = useId();
@@ -59,6 +61,7 @@ export function Dialog({ open, onClose, title, description, children, footer, va
   return (
     <dialog
       ref={ref}
+      style={style}
       aria-labelledby={titleId}
       aria-describedby={description ? descriptionId : undefined}
       // React propagates close/cancel through the component tree even though the native events don't bubble,

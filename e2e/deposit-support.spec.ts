@@ -1,6 +1,6 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import sharp from "sharp";
-import { ADMIN_STATE, PLATFORM_URL, toast, unique } from "./helpers";
+import { ADMIN_STATE, chooseDepositMethod, PLATFORM_URL, toast, unique } from "./helpers";
 import { clearRateLimits } from "./rate-limits";
 
 /**
@@ -66,6 +66,7 @@ test.describe.serial("deposit, then support", () => {
     await expect(owner.getByText("$0.00").first()).toBeVisible();
     await owner.getByRole("button", { name: "Deposit" }).first().click();
     const dialog = owner.getByRole("dialog");
+    await chooseDepositMethod(dialog, "Bank transfer");
     await dialog.locator("#field-amount").fill(DECLARED);
     await dialog.locator("#field-reference").fill(reference);
     const [chooser] = await Promise.all([owner.waitForEvent("filechooser"), dialog.getByRole("button", { name: /Upload screenshot/ }).click()]);

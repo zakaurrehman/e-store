@@ -50,6 +50,10 @@ const LABELS: Record<string, { label: string; hint?: string; type?: "text" | "te
   defaultTitle: { label: "Homepage title" },
   defaultDescription: { label: "Default meta description", type: "textarea" },
   bankDetails: { label: "Bank transfer details for owners", hint: "Account name, IBAN/account number, bank — shown to store owners when they record a deposit.", type: "textarea" },
+  trc20Address: {
+    label: "Binance USDT (TRC20) deposit address",
+    hint: "Owners send USDT on the TRON (TRC20) network here. Copy it from Binance → Deposit → USDT → TRC20, and check every character. Leave empty to hide the option.",
+  },
   cryptoNetwork: { label: "Crypto network", hint: "e.g. USDT (TRC20). Leave empty to hide the crypto option." },
   cryptoAddress: { label: "Crypto wallet address", hint: "The address owners send to. Check it carefully." },
   instructions: { label: "Deposit instructions", type: "textarea" },
