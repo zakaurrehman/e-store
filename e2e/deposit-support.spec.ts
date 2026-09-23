@@ -116,6 +116,14 @@ test.describe.serial("deposit, then support", () => {
     await expect(owner.getByText(`$${ARRIVED}`).first()).toBeVisible();
   });
 
+  test("an owner who opens the admin lands in their own dashboard, not a dead end", async () => {
+    await owner.goto("/admin");
+    await owner.waitForURL(/\/dashboard/);
+    await expect(owner.getByRole("heading", { name: /Welcome/ })).toBeVisible();
+    // Nothing from the admin renders on the way.
+    await expect(owner.getByRole("link", { name: "Deposit requests" })).toHaveCount(0);
+  });
+
   test("staff see the whole picture on the store's page", async () => {
     await admin.goto(`/admin/stores?q=${encodeURIComponent(storeName)}`);
     await admin.getByRole("link", { name: storeName, exact: true }).click();

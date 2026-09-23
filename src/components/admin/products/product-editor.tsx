@@ -416,8 +416,8 @@ export function ProductEditor({ product, options, canDelete }: { product: Editor
           {!isNew && (
             <p className="text-[0.8125rem] text-ink-500">
               {form.salesCount} sold · {form.ratingCount ? `${form.ratingAverage.toFixed(1)}★ (${form.ratingCount})` : "no reviews yet"} ·{" "}
-              <Link href={`/p/${form.slug}`} target="_blank" className="underline underline-offset-2">
-                View on store
+              <Link href={`/catalog/p/${form.slug}`} target="_blank" className="underline underline-offset-2">
+                View in the catalogue
               </Link>
             </p>
           )}

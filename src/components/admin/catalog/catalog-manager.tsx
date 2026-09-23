@@ -147,8 +147,8 @@ export function BrandsManager({ brands }: { brands: BrandRow[] }) {
             <div className="min-w-0">
               <span className={cn("text-sm font-medium", !brand.isActive && "line-through opacity-60")}>{brand.name}</span>
               <span className="ml-2 text-[0.75rem] text-ink-500">
-                <Link href={`/brands/${brand.slug}`} target="_blank" className="underline-offset-2 hover:underline">
-                  /brands/{brand.slug}
+                <Link href={`/catalog?brand=${brand.slug}`} target="_blank" className="underline-offset-2 hover:underline">
+                  /{brand.slug}
                 </Link>{" "}
                 · {productCount(brand.productCount)}{brand.isFeatured && " · featured"}
               </span>

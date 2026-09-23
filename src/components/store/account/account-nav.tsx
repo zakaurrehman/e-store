@@ -19,7 +19,7 @@ const LINKS = [
   { href: "/account/security", label: "Password & security", icon: Shield },
 ];
 
-export function AccountNav({ unread, unreadSupport, isStaff }: { unread: number; unreadSupport: number; isStaff: boolean }) {
+export function AccountNav({ unread, unreadSupport, adminUrl }: { unread: number; unreadSupport: number; adminUrl: string | null }) {
   const pathname = usePathname();
   return (
     <nav aria-label="Account" className="lg:sticky lg:top-24">
@@ -47,11 +47,12 @@ export function AccountNav({ unread, unreadSupport, isStaff }: { unread: number;
             </li>
           );
         })}
-        {isStaff && (
+        {adminUrl && (
           <li className="shrink-0">
-            <Link href="/admin" className="flex items-center gap-2.5 whitespace-nowrap rounded-sm px-3 py-2 text-[0.9375rem] text-iris-700 hover:bg-iris-50">
+            {/* The admin is on the platform host, not this store's. */}
+            <a href={adminUrl} className="flex items-center gap-2.5 whitespace-nowrap rounded-sm px-3 py-2 text-[0.9375rem] text-iris-700 hover:bg-iris-50">
               <LayoutDashboard className="size-4" strokeWidth={1.7} aria-hidden /> Admin dashboard
-            </Link>
+            </a>
           </li>
         )}
         <li className="shrink-0 lg:mt-4 lg:border-t lg:border-line lg:pt-4">

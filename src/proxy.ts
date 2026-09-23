@@ -23,6 +23,8 @@ const PLATFORM_EQUIVALENTS: Array<[RegExp, (match: RegExpMatchArray) => string]>
   [/^\/c\/([^/]+)\/?$/, (match) => `/catalog/c/${match[1]}`],
   [/^\/(shop|search|brands|collections)(\/.*)?$/, () => "/catalog"],
   [/^\/account(\/.*)?$/, () => "/dashboard"],
+  // Customer service lives in each store; on the platform site the equivalent is writing to Zendropship.
+  [/^\/(support|faq)(\/.*)?$/, () => "/contact"],
 ];
 /** Storefront-only paths with no platform equivalent: they belong to the demo store. */
 const STOREFRONT_ONLY = /^\/(cart|checkout|wishlist|orders|track-order)(\/|$)/;

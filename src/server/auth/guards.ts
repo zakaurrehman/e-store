@@ -1,5 +1,5 @@
 import "server-only";
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import { hasPermission, type Permission } from "@/lib/permissions";
 import { getCurrentUser, type AuthUser } from "@/server/auth/session";
 import { PermissionError } from "@/server/errors";
@@ -11,11 +11,15 @@ export async function requireUser(returnTo = "/account"): Promise<AuthUser> {
   return user;
 }
 
-/** Admin pages: anonymous → sign in; signed-in customers get a 404 so the admin surface is not advertised. */
+/**
+ * Admin pages: anonymous visitors sign in first. Someone signed in who is not staff is sent to their own
+ * dashboard rather than a dead end — a 404 told a store owner who typed /admin nothing, and the sign-in
+ * redirect already gives away that the path exists. No admin content renders either way.
+ */
 export async function requireStaff(returnTo = "/admin"): Promise<AuthUser> {
   const user = await getCurrentUser();
   if (!user) redirect(`/login?next=${encodeURIComponent(returnTo)}`);
-  if (!user.role.isStaff) notFound();
+  if (!user.role.isStaff) redirect("/dashboard");
   return user;
 }
 

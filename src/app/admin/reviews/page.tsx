@@ -89,7 +89,7 @@ async function Reviews({ searchParams }: PageProps<"/admin/reviews">) {
                       </>
                     )}{" "}
                     · {dateTime.format(review.createdAt)} ·{" "}
-                    <Link href={`/p/${review.product.slug}#reviews`} target="_blank" className="underline underline-offset-2">
+                    <Link href={`/catalog/p/${review.product.slug}#reviews`} target="_blank" className="underline underline-offset-2">
                       {review.product.name}
                     </Link>
                   </p>
