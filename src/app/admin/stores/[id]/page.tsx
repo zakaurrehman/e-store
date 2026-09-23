@@ -66,6 +66,7 @@ async function StoreDetail({ params }: PageProps<"/admin/stores/[id]">) {
     summary,
     ledger,
     activity,
+    conversations,
     salesCents,
     orderCount,
     invitation,
@@ -579,6 +580,33 @@ async function StoreDetail({ params }: PageProps<"/admin/stores/[id]">) {
                 },
               ]}
             />
+          </Card>
+
+          <Card
+            title="Support conversations"
+            description="From this store's customers, and from its owner"
+            padded={false}
+            actions={
+              <Link href={`/admin/messages?q=${store.slug}`} className="text-[0.8125rem] text-ink-600 hover:text-ink-950">
+                Open inbox
+              </Link>
+            }
+          >
+            <ul className="divide-y divide-line px-5 text-sm">
+              {conversations.length === 0 && <li className="py-3 text-ink-500">Nothing written yet.</li>}
+              {conversations.map((conversation) => (
+                <li key={conversation.id} className="py-2.5">
+                  <Link href={`/admin/messages?id=${conversation.id}`} className="flex items-center gap-2 font-medium text-ink-950 hover:underline">
+                    {conversation.unreadForStaff && <span className="size-1.5 shrink-0 rounded-full bg-iris-600" aria-label="Unread" />}
+                    <span className="min-w-0 truncate">{conversation.subject}</span>
+                  </Link>
+                  <p className="text-[0.75rem] text-ink-500">
+                    {conversation.storeId ? conversation.name : "To Zendropship"} · {dateTime.format(conversation.lastMessageAt)}
+                    {conversation._count.replies > 0 ? ` · ${conversation._count.replies} repl${conversation._count.replies === 1 ? "y" : "ies"}` : ""}
+                  </p>
+                </li>
+              ))}
+            </ul>
           </Card>
 
           <Card title="Withdrawals" padded={false}>

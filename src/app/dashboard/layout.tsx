@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { DashboardNav } from "@/components/dashboard/nav";
+import { SupportWidget } from "@/components/support/support-widget";
 import { OrderStatus } from "@/generated/prisma/enums";
 import { requireStoreOwner } from "@/features/stores/guards";
 import { countUnreadOwnerTickets } from "@/features/support/queries";
@@ -24,6 +25,8 @@ async function DashboardShell({ children }: { children: React.ReactNode }) {
       <div className="lg:pl-60">
         <main className="mx-auto w-full max-w-[80rem] px-4 pb-20 pt-20 sm:px-6 lg:px-8 lg:pt-8">{children}</main>
       </div>
+      {/* Reaching Zendropship from wherever they are, in the same threads as Customer service. */}
+      <SupportWidget inboxHref="/dashboard/support/tickets" />
     </div>
   );
 }

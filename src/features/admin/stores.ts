@@ -77,7 +77,7 @@ export async function getStoreForAdmin(storeId: string) {
   });
   if (!store) return null;
 
-  const [summary, ledger, sales, storeAudit, ownerAudit] = await Promise.all([
+  const [summary, ledger, sales, storeAudit, ownerAudit, conversations] = await Promise.all([
     getWalletSummary(store.id),
     listWalletEntries(store.id, { pageSize: 8 }),
     db.order.aggregate({ where: { storeId: store.id, status: { notIn: [OrderStatus.PENDING, OrderStatus.CANCELLED] } }, _sum: { totalCents: true }, _count: { _all: true } }),
@@ -85,6 +85,13 @@ export async function getStoreForAdmin(storeId: string) {
     store.ownerId
       ? db.auditLog.findMany({ where: { actorId: store.ownerId }, orderBy: { createdAt: "desc" }, take: 15, include: { actor: { select: { firstName: true, lastName: true } } } })
       : Promise.resolve([]),
+    // Everything written about this store, and anything its owner asked Zendropship.
+    db.contactMessage.findMany({
+      where: store.ownerId ? { OR: [{ storeId: store.id }, { storeId: null, userId: store.ownerId }] } : { storeId: store.id },
+      orderBy: { lastMessageAt: "desc" },
+      take: 8,
+      select: { id: true, subject: true, name: true, status: true, storeId: true, unreadForStaff: true, lastMessageAt: true, _count: { select: { replies: true } } },
+    }),
   ]);
 
   // One history for the store and its owner, newest first. An action by the owner on their own store is
@@ -98,6 +105,7 @@ export async function getStoreForAdmin(storeId: string) {
     summary,
     ledger,
     activity,
+    conversations,
     salesCents: sales._sum.totalCents ?? 0,
     orderCount: sales._count._all,
     invitation: store.referral[0]?.code.code ?? null,
