@@ -155,6 +155,37 @@ test.describe.serial("the owner's profile and customer service on a phone", () =
     await expect(admin.getByText("No, that is all — thank you!")).toBeVisible({ timeout: 30000 });
   });
 
+  test("the chat stays on screen when the browser's own toolbar or the keyboard hides the bottom of the page", async () => {
+    await phone.goto("/dashboard/profile");
+    await phone.evaluate(() => window.scrollTo(0, 400));
+    await launcher().tap();
+    const panel = phone.getByRole("dialog").filter({ visible: true });
+    await panel.getByRole("button", { name: "New message" }).tap();
+    // Chrome on iPhone keeps its toolbar over the bottom of the page; the keyboard covers far more.
+    for (const [hidden, typing] of [
+      [110, false],
+      [300, true],
+    ] as Array<[number, boolean]>) {
+      if (typing) await phone.locator("#widget-message").focus();
+      await phone.evaluate((px) => {
+        const viewport = window.visualViewport!;
+        Object.defineProperty(viewport, "height", { configurable: true, get: () => window.innerHeight - px });
+        Object.defineProperty(viewport, "offsetTop", { configurable: true, get: () => 0 });
+        viewport.dispatchEvent(new Event("resize"));
+      }, hidden);
+      const visibleBottom = iPhone.viewport.height - hidden;
+      await expect.poll(async () => {
+        const box = await panel.boundingBox();
+        return box ? Math.round(box.y + box.height) : Infinity;
+      }).toBeLessThanOrEqual(visibleBottom + 1);
+      const message = await phone.locator("#widget-message").boundingBox();
+      const send = await panel.getByRole("button", { name: "Send message" }).boundingBox();
+      expect(message!.y).toBeLessThan(visibleBottom - 20);
+      expect(send!.y + send!.height).toBeLessThanOrEqual(visibleBottom + 1);
+    }
+    await phone.keyboard.press("Escape");
+  });
+
   test("Sign out on the profile ends the session", async () => {
     await phone.bringToFront();
     await phone.goto("/dashboard/profile");

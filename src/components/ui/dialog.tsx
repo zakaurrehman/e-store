@@ -28,10 +28,15 @@ const variantClasses: Record<DialogVariant, string> = {
   left: "my-0 ml-0 mr-auto h-dvh max-h-dvh w-[min(100vw,24rem)] animate-slide-in-left",
   bottom:
     "mx-0 mb-0 mt-auto w-full max-w-none max-h-[90dvh] rounded-t-xl animate-slide-in-up sm:m-auto sm:w-[min(calc(100vw-2rem),36rem)] sm:rounded-lg sm:animate-rise-in",
-  // A sheet on a phone; a panel in the bottom-right corner, where its launcher is, from small screens up.
-  // Once it is only a corner of the screen it stops dimming the page behind it, so it stays out of the way.
+  // A tall sheet on a phone; a panel in the bottom-right corner, where its launcher is, from small screens up.
+  // On a phone it hangs from the top of the screen rather than resting on the bottom: phone browsers disagree
+  // about where the bottom of the page is (Chrome on iPhone puts it under its own toolbar), and a sheet
+  // standing on that edge can end up with its message box off screen. Its owner can refine the placement
+  // with the visible area (see the support widget). Once it is only a corner of the screen it stops dimming
+  // the page behind it, so it stays out of the way.
   corner:
-    "mx-0 mb-0 mt-auto w-full max-w-none max-h-[85dvh] rounded-t-xl animate-slide-in-up sm:mb-4 sm:mr-4 sm:ml-auto sm:w-[23.5rem] sm:max-h-[min(80dvh,38rem)] sm:rounded-lg sm:animate-rise-in " +
+    "mx-0 mb-0 mt-[8svh] h-[92svh] max-h-[92svh] w-full max-w-none rounded-t-xl animate-slide-in-up " +
+    "sm:mb-4 sm:mr-4 sm:ml-auto sm:mt-auto sm:h-auto sm:w-[23.5rem] sm:max-h-[min(80dvh,38rem)] sm:rounded-lg sm:animate-rise-in " +
     "sm:[&::backdrop]:bg-transparent sm:[&::backdrop]:[backdrop-filter:none]",
 };
 
