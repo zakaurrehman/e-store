@@ -52,8 +52,18 @@ export function OrderActions({ order, tracking, can }: Props) {
         </Button>
       )}
       {can.update && order.paymentStatus !== "PAID" && order.status !== "CANCELLED" && (
-        <ActionButton action={() => markOrderPaidAction(order.id)} confirm={{ title: "Mark this order as paid?", description: "Use this only when payment was received outside the store (e.g. cash on delivery or bank transfer).", confirmLabel: "Mark as paid" }}>
-          Mark as paid
+        <ActionButton
+          action={() => markOrderPaidAction(order.id)}
+          // Waiting for payment is where this is the step to take, so it leads there and follows elsewhere.
+          variant={order.status === "PENDING" ? "primary" : "secondary"}
+          confirm={{
+            title: order.status === "PENDING" ? `Confirm payment for order ${order.number}?` : "Mark this order as paid?",
+            description:
+              "Use this only when payment was received outside the store, such as cash on delivery or a bank transfer. The sale is recorded and fulfilment takes the order straight away if the balance covers the wholesale cost.",
+            confirmLabel: order.status === "PENDING" ? "Confirm payment" : "Mark as paid",
+          }}
+        >
+          {order.status === "PENDING" ? "Confirm payment" : "Mark as paid"}
         </ActionButton>
       )}
       {can.refund && order.refundableCents > 0 && (

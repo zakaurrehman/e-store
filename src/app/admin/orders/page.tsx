@@ -7,7 +7,7 @@ import { AdminPagination, buildQuery, Card, dateTime, FilterLink, PageHeader, St
 import { Input, Select } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/misc";
-import { acceptOrderAction, setOrderStatusAction } from "@/features/admin/orders/actions";
+import { acceptOrderAction, markOrderPaidAction, setOrderStatusAction } from "@/features/admin/orders/actions";
 import { listOrders, OPEN_FILTER } from "@/features/admin/orders/queries";
 import { fulfilmentHint, nextFulfilmentStep } from "@/features/orders/progress";
 import { ORDER_STATUS_LABELS, OPEN_STATUSES, PAYMENT_STATUS_LABELS, paymentTone, statusTone } from "@/features/orders/status";
@@ -131,6 +131,24 @@ async function OrdersTable({ searchParams }: PageProps<"/admin/orders">) {
  * owner's balance once); everything after it is a plain status move. Cancelled and delivered orders have none.
  */
 function nextStepButton(order: { id: string; number: string; status: OrderStatus }) {
+  // An order still waiting for its payment is confirmed by recording that the money arrived, which is
+  // what moves it on: the sale is posted and fulfilment picks it up in the same step.
+  if (order.status === "PENDING") {
+    return (
+      <ActionButton
+        action={markOrderPaidAction.bind(null, order.id)}
+        size="xs"
+        variant="primary"
+        confirm={{
+          title: `Confirm payment for order ${order.number}?`,
+          description: "Only for money received outside the store, such as a bank transfer or cash on delivery. The order is confirmed, the sale is recorded, and fulfilment takes it straight away if the balance covers the wholesale cost.",
+          confirmLabel: "Confirm payment",
+        }}
+      >
+        Confirm payment
+      </ActionButton>
+    );
+  }
   const next = nextFulfilmentStep(order.status);
   if (!next) return <span className="text-[0.8125rem] text-ink-400">{order.status === "DELIVERED" ? "Complete" : "—"}</span>;
   const action = next.status === "ACCEPTED" ? acceptOrderAction.bind(null, order.id) : setOrderStatusAction.bind(null, order.id, next.status, undefined);
