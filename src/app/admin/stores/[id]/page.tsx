@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { ProofThumbnail } from "@/components/admin/deposits/deposit-review";
+import { CreditWallet } from "@/components/admin/stores/credit-wallet";
 import { ActionButton } from "@/components/admin/forms";
 import {
   Card,
@@ -550,7 +551,10 @@ async function StoreDetail({ params }: PageProps<"/admin/stores/[id]">) {
             />
           </Card>
 
-          <Card title="Money">
+          <Card
+            title="Money"
+            actions={canManage && owner ? <CreditWallet storeId={store.id} storeName={store.name} balanceCents={summary.balanceCents} /> : undefined}
+          >
             <DescriptionList
               items={[
                 { label: "Balance", value: formatMoney(summary.balanceCents) },

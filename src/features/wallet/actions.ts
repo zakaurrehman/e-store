@@ -9,6 +9,7 @@ import { acceptFundedOrders, flushNotifications } from "@/features/orders/servic
 import { assertStoreOwner } from "@/features/stores/guards";
 import { failure, handleActionError, success, zodFailure, type ActionState } from "@/server/actions";
 import { assertPermission } from "@/server/auth/guards";
+import { db } from "@/server/db";
 import { dispatchNotification, sendDeliveries, type NotificationEvent } from "@/server/notifications";
 import { rateLimit, retryAfterMessage } from "@/server/security/rate-limit";
 import { confirmDeposit, rejectDeposit, rejectPayout, markPayoutPaid, recordDeposit, requestPayout, setPayoutStatus } from "./service";
@@ -202,6 +203,57 @@ export async function rejectDepositAction(depositId: string, reason: string): Pr
     revalidatePath("/admin/payouts");
     revalidatePath(`/admin/stores/${deposit.storeId}`);
     return success("Deposit rejected. Nothing was credited.");
+  } catch (error) {
+    return handleActionError(error);
+  }
+}
+
+const creditSchema = z.object({
+  storeId: z.string().min(1).max(40),
+  amount: amountSchema,
+  reference: z.string().trim().max(120).optional().transform((value) => value || null),
+  reason: z.string().trim().min(3, "Say what this credit is for.").max(300),
+});
+
+/**
+ * Staff put money into an owner's balance themselves — a transfer that arrived without the owner
+ * recording it, or one they are owed. It goes through the same two steps as any other deposit, so it
+ * appears in their deposit history, lands on the ledger once with an audit record behind it, and
+ * releases anything of theirs that was waiting for funds. There is no path here that writes a balance.
+ */
+export async function creditStoreWalletAction(_state: ActionState, formData: FormData): Promise<ActionState> {
+  const parsed = creditSchema.safeParse({
+    storeId: formData.get("storeId"),
+    amount: formData.get("amount"),
+    reference: formData.get("reference") ?? undefined,
+    reason: formData.get("reason"),
+  });
+  if (!parsed.success) return zodFailure(parsed.error);
+  try {
+    const admin = await assertPermission("stores.manage");
+    const store = await db.store.findFirst({ where: { id: parsed.data.storeId, deletedAt: null }, select: { id: true, name: true, ownerId: true } });
+    if (!store) return failure("Store not found.");
+    if (!store.ownerId) return failure("The platform's own store has no balance to credit.");
+
+    const deposit = await recordDeposit({
+      storeId: store.id,
+      amountCents: parsed.data.amount,
+      method: DepositMethod.BANK_TRANSFER,
+      reference: parsed.data.reference,
+      note: `Credited by Zendropship staff — ${parsed.data.reason}`,
+      createdById: admin.id,
+    });
+    await confirmDeposit(deposit.id, admin.id, parsed.data.amount);
+
+    // Money has arrived: anything that was waiting for funds can go to fulfilment now.
+    const resumed = await acceptFundedOrders(store.id);
+    after(() => flushNotifications(resumed));
+    notifyAfter({ type: "wallet.deposit-settled", depositId: deposit.id, confirmed: true });
+    revalidatePath(`/admin/stores/${store.id}`);
+    revalidatePath("/admin/deposits");
+    revalidatePath("/admin/orders");
+    const credited = `$${(parsed.data.amount / 100).toFixed(2)} credited to ${store.name}.`;
+    return success(resumed.length > 0 ? `${credited} ${resumed.length} order(s) waiting for funds have been dealt with.` : credited);
   } catch (error) {
     return handleActionError(error);
   }
