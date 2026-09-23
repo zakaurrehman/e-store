@@ -1,5 +1,6 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { ADMIN_STATE, pathOf, PLATFORM_URL, toast, unique, waitForMail } from "./helpers";
+import { clearRateLimits } from "./rate-limits";
 
 test.describe.serial("customer account", () => {
   const email = `e2e.customer.${unique()}@example.com`;
@@ -9,6 +10,7 @@ test.describe.serial("customer account", () => {
   let page: Page;
 
   test.beforeAll(async ({ browser }) => {
+    await clearRateLimits();
     context = await browser.newContext();
     page = await context.newPage();
   });

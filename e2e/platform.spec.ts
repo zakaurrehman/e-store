@@ -1,6 +1,7 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import sharp from "sharp";
 import { ADMIN_STATE, orderNumberOn, pathOf, PLATFORM_URL, SHIPPING, storeUrlFor, STORE_URL, toast, unique, waitForMail } from "./helpers";
+import { clearRateLimits } from "./rate-limits";
 
 /**
  * The whole business, end to end (see the brief's section 24): staff invite an owner, the owner opens and
@@ -28,6 +29,7 @@ test.describe.serial("dropshipping platform", () => {
   let storePrice = "";
 
   test.beforeAll(async ({ browser }) => {
+    await clearRateLimits();
     owner = await (await browser.newContext({ baseURL: PLATFORM_URL })).newPage();
     adminContext = await browser.newContext({ storageState: ADMIN_STATE, baseURL: PLATFORM_URL });
     admin = await adminContext.newPage();

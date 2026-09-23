@@ -15,6 +15,8 @@ const baseURL = `${platform.protocol}//demo.${platform.host.replace(/^www\./, ""
 
 export default defineConfig({
   testDir: "e2e",
+  // Clears this machine's rate-limit buckets so a full run is not refused halfway through.
+  globalSetup: "./e2e/global-setup.ts",
   // Flows share one database, rate limits and the dev mailbox, so they run one at a time.
   workers: 1,
   fullyParallel: false,

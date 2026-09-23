@@ -1,5 +1,6 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { addToBag, ADMIN_STATE, PLATFORM_URL, toast, unique } from "./helpers";
+import { clearRateLimits } from "./rate-limits";
 
 /**
  * The floating customer-service button, which every page carries. What it writes must be an ordinary
@@ -18,6 +19,7 @@ test.describe.serial("customer service widget", () => {
   let admin: Page;
 
   test.beforeAll(async ({ browser }) => {
+    await clearRateLimits();
     context = await browser.newContext();
     page = await context.newPage();
     adminContext = await browser.newContext({ storageState: ADMIN_STATE, baseURL: PLATFORM_URL });
