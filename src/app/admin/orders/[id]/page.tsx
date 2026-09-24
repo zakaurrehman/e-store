@@ -34,9 +34,9 @@ async function OrderDetail({ params }: PageProps<"/admin/orders/[id]">) {
   const refundable = paid ? paid.capturedCents - paid.refundedCents : 0;
   const shipment = order.shipments[0] ?? null;
   const finance = storedOrderFinance(order);
-  // What accepting this order would still need from the owner's balance — 0 when its own payment covers it.
-  const needsFunding = order.status === "AWAITING_FUNDS" || order.status === "CONFIRMED";
-  const shortfall = needsFunding ? await fulfilmentShortfallCents(order.id) : 0;
+  // An order waiting to be accepted, and what that would still need from the owner's available balance.
+  const waiting = order.status === "AWAITING_FUNDS" || order.status === "CONFIRMED";
+  const shortfall = waiting && order.store.ownerId ? await fulfilmentShortfallCents(order.id) : 0;
   const stages = fulfilmentProgress({ status: order.status, placedAt: order.placedAt, deliveredAt: order.deliveredAt, events: order.events });
   const cancellation = order.status === "CANCELLED" ? order.events.find((event) => (event.data as { status?: string } | null)?.status === "CANCELLED") : null;
 
@@ -53,15 +53,12 @@ async function OrderDetail({ params }: PageProps<"/admin/orders/[id]">) {
         }
         description={`Placed ${dateTime.format(order.placedAt)} · ${order.paymentProvider}`}
       />
-      {order.status === "AWAITING_FUNDS" && (
-        <Alert tone="warning" title="Waiting for funds" className="mb-6">
-          {order.store.name} needs {formatMoney(shortfall, order.currency)} more in its balance before the {formatMoney(finance.fulfilmentCostCents, order.currency)} fulfilment cost can be charged. The order is
-          accepted automatically as soon as a deposit is confirmed.
-        </Alert>
-      )}
-      {order.status === "CONFIRMED" && shortfall === 0 && (
-        <Alert tone="success" title="Ready for fulfilment" className="mb-6">
-          This order&rsquo;s own payment covers the {formatMoney(finance.fulfilmentCostCents, order.currency)} fulfilment cost, so no deposit is needed. Accept it to charge the cost once and start fulfilment.
+      {waiting && order.store.ownerId && (
+        <Alert tone={shortfall > 0 ? "warning" : "info"} title="Waiting for the store owner to accept" className="mb-6">
+          {order.store.name} decides when this order goes to fulfilment; nothing happens to it until they press Accept.
+          {shortfall > 0
+            ? ` Their available balance is ${formatMoney(shortfall, order.currency)} short of what it needs, so they have to add funds first.`
+            : ` The ${formatMoney(finance.fulfilmentCostCents, order.currency)} wholesale cost is set aside once when they do.`}
         </Alert>
       )}
       {isFulfilmentComplete(order.status) && (
@@ -71,7 +68,7 @@ async function OrderDetail({ params }: PageProps<"/admin/orders/[id]">) {
       )}
       <div className="mb-6">
         <OrderActions
-          order={{ id: order.id, number: order.number, status: order.status, paymentStatus: order.paymentStatus, paymentProvider: order.paymentProvider, currency: order.currency, totalCents: order.totalCents, refundableCents: refundable }}
+          order={{ id: order.id, number: order.number, status: order.status, paymentStatus: order.paymentStatus, paymentProvider: order.paymentProvider, currency: order.currency, totalCents: order.totalCents, refundableCents: refundable, ownerAccepts: Boolean(order.store.ownerId) }}
           tracking={shipment ? { carrier: shipment.carrier, trackingNumber: shipment.trackingNumber, trackingUrl: shipment.trackingUrl } : null}
           can={{ update: can(user, "orders.update"), refund: can(user, "orders.refund"), cancel: can(user, "orders.cancel") }}
         />

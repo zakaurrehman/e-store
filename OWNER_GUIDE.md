@@ -47,26 +47,34 @@ Shipping and tax are collected for delivery and tax and are not part of your ear
 
 When a customer checks out in your store:
 
-- the order goes to Zendropship fulfilment automatically — you never forward, pack or ship anything;
+- it **waits for you to accept it** — nothing is fulfilled, and no money moves, until you do;
 - your customer gets order, shipping and delivery emails in your store's name;
-- you get an email with the order number and total.
+- you get an email with the order number and total, telling you it is waiting for you.
+
+Once you accept, Zendropship does the rest — you never forward, pack or ship anything.
 
 **Orders** shows each order's status, the tracking number once shipped, and what you earn. An order moves through: *Awaiting payment → Confirmed → Accepted → Processing → Packed → Shipped → Out for delivery → Delivered*. Each order page shows those stages with the time each one happened, and a **Timeline** of everything that has been done to it. You always see the same history Zendropship does, as soon as you refresh. A cancelled order stops there and goes no further.
 
+### Accepting an order
+
+A new order — paid by card, or cash on delivery — is **Confirmed** and waits for you. It is never accepted automatically: not when the customer pays, not when a deposit arrives. **Orders** shows how many are waiting (the *To accept* filter lists them), and each one has an **Accept** button, in the list and on the order page.
+
+Press **Accept**, check what the confirmation says will be set aside, and confirm. The order is accepted and goes straight into **Processing**; Zendropship takes every step after that (packed, shipped, out for delivery, delivered). Pressing Accept twice, refreshing or retrying never accepts it twice or takes money twice.
+
+If your available balance is too low, Accept is greyed out with *"Insufficient wallet balance to accept this order. Please add funds."* and the amount to add. Nothing is taken and the order keeps waiting for you. Deposit the difference (see below); once Zendropship confirms it, come back and press Accept — the deposit does not accept anything by itself.
+
 ### When the money moves
 
-When fulfilment accepts an order, its wholesale cost is **set aside once** — pressing a button twice, refreshing or retrying never takes it again:
+When you accept an order, its wholesale cost is **set aside once**:
 
 - **The customer has already paid** (card or another online payment): the cost comes out of that payment. **A normally priced paid order pays for itself**; you never deposit anything for it.
 - **Cash on delivery**: nobody has collected the cash yet, so the cost comes out of your **available balance** straight away, and cannot be withdrawn or spent on another order meanwhile.
 
 What the order earns you — the sale, less the wholesale cost and Zendropship's commission — is **held until the order is delivered**. You can see it on the order and under *Held until delivery* on your balance, but it is not yours to withdraw yet. When the order is marked **Delivered**, it becomes available, together with anything that was set aside from your balance for it.
 
-For example: you have $5,000 available and a cash-on-delivery order costs $300 wholesale. On acceptance, $300 is set aside and you have $4,700 available. When it is delivered, the $300 comes back with your profit on top.
+For example: you have $5,000 available and a cash-on-delivery order costs $300 wholesale. When you accept it, $300 is set aside and you have $4,700 available. When it is delivered, the $300 comes back with your profit on top.
 
-### Awaiting funds
-
-An order waits as **Awaiting funds** only when your available balance genuinely cannot cover the part of the cost it has to pay — a cash-on-delivery order when your balance is lower than its cost, or an item priced below what it costs. The order page tells you exactly how much is missing, and you get an email. Deposit that amount (see below); once Zendropship confirms it, the order goes to fulfilment automatically. Your customer is never told about this — they see their order as confirmed.
+Your customer never hears about any of this — to them the order is simply confirmed. (Orders from before accepting was your decision may show as *Awaiting funds*; they wait for your Accept in exactly the same way.)
 
 ## Customer service
 
@@ -101,7 +109,7 @@ The amount leaves your available balance immediately so it cannot be requested t
 
 ### Depositing
 
-**Deposit** records money you have transferred *to* Zendropship — needed only to cover an order that is awaiting funds, or to keep a balance for cash-on-delivery orders.
+**Deposit** records money you have transferred *to* Zendropship — needed only when an order needs more than your available balance, or to keep a balance for cash-on-delivery orders.
 
 **Binance · USDT (TRC20)** is offered first when Zendropship has set it up:
 
@@ -111,7 +119,7 @@ The amount leaves your available balance immediately so it cannot be requested t
 
 **Bank transfer** (and any other crypto network Zendropship lists) works the same way: send first, then record the amount, the reference and a screenshot of the transfer.
 
-Zendropship checks the transfer and confirms it. **Only then** is your balance credited, and any orders waiting for funds go to fulfilment. A deposit that can't be found is declined, with the reason.
+Zendropship checks the transfer and confirms it. **Only then** is your balance credited — then accept the orders that were waiting for it. A deposit that can't be found is declined, with the reason.
 
 ## Profile
 

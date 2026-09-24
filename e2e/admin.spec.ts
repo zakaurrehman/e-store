@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { ADMIN_STATE, PLATFORM_URL, STORE_URL, toast, unique } from "./helpers";
+import { addToBag, ADMIN_STATE, fillCheckout, orderNumberOn, PLATFORM_URL, STORE_URL, toast, unique } from "./helpers";
 
 test.use({ storageState: ADMIN_STATE, baseURL: PLATFORM_URL });
 
@@ -56,19 +56,38 @@ test.describe.serial("admin operations", () => {
     await expect(page.getByText("→ 7").first()).toBeVisible();
   });
 
-  test("order management: one click moves an order to its next status, and the tracker records it", async ({ page }) => {
-    await page.goto("/admin/orders?status=ACCEPTED");
-    await page.getByRole("link", { name: /VY-/ }).first().click();
+  test("order management: a paid order waits to be accepted; accepting it starts processing, and the tracker records it", async ({ page, browser }) => {
+    // A customer pays in Zendropship's own demo store — the one store whose orders staff accept.
+    const shopper = await browser.newContext({ baseURL: STORE_URL, storageState: { cookies: [], origins: [] } });
+    const shop = await shopper.newPage();
+    await addToBag(shop, "amber-wood-wick-candle");
+    await fillCheckout(shop, `e2e.accept.${stamp.toLowerCase()}@example.com`);
+    await shop.getByRole("button", { name: "Continue to payment" }).click();
+    await shop.waitForURL(/\/checkout\/sandbox\//);
+    await shop.getByRole("button", { name: /^Pay \$/ }).click();
+    await shop.waitForURL(/\/checkout\/confirmation\//);
+    const orderNumber = await orderNumberOn(shop);
+    await shopper.close();
+
+    // Paid, and still waiting: a payment never accepts an order by itself.
+    await page.goto(`/admin/orders?q=${orderNumber}`);
+    const row = page.locator("tbody tr", { hasText: orderNumber });
+    await expect(row).toContainText("Confirmed");
+    await expect(row).toContainText("Next: Accepted");
+    await page.getByRole("link", { name: orderNumber }).click();
     await page.waitForURL(/\/admin\/orders\/[a-z0-9]+$/);
-    await page.getByRole("button", { name: "Start processing" }).click();
-    await expect(page.getByText("Order status updated.").first()).toBeVisible();
+    await page.getByRole("button", { name: "Accept for fulfilment" }).click();
+    await page.getByRole("dialog").filter({ visible: true }).getByRole("button", { name: "Accept for fulfilment" }).click();
+    await expect(toast(page, /Order accepted/)).toBeVisible();
 
     await page.reload();
     const tracker = page.locator("section").filter({ has: page.getByRole("heading", { name: "Fulfilment", exact: true }) }).first();
+    await expect(tracker.getByText("Accepted").first()).toBeVisible();
     await expect(tracker.getByText("Processing").first()).toBeVisible();
     await expect(tracker.getByText("Store Owner").first()).toBeVisible();
-    // The next step is offered, and the stage just taken is not repeated.
+    // The next step is offered, and the step just taken is not repeated.
     await expect(page.getByRole("button", { name: "Mark packed" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Accept for fulfilment" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Start processing" })).toHaveCount(0);
   });
 });

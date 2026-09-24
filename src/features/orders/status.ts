@@ -2,9 +2,10 @@ import type { OrderStatus, PaymentStatus } from "@/generated/prisma/enums";
 
 /**
  * The order's life, in order. `PENDING` is "waiting for the customer's payment" and `CONFIRMED` is
- * "the money is in"; `ACCEPTED` means Zendropship fulfilment has taken the order and charged the wholesale
- * cost to the owner's balance. `AWAITING_FUNDS` sits between the two when that charge cannot be covered yet.
- * Refunded and failed are payment states, kept on `paymentStatus` so an order has one status, not two.
+ * "confirmed, waiting for the store owner to accept it" (cash on delivery is confirmed when placed).
+ * `ACCEPTED` is the owner's decision, never automatic: the wholesale cost is set aside once and fulfilment
+ * starts processing. `AWAITING_FUNDS` is only found on orders from before acceptance was the owner's call,
+ * and waits for them the same way. Refunded and failed are payment states, kept on `paymentStatus`.
  */
 export const FULFILMENT_STEPS: Array<{ status: OrderStatus; label: string; description: string }> = [
   { status: "PENDING", label: "Order placed", description: "We've received your order." },
@@ -50,8 +51,8 @@ export const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
 };
 
 /**
- * Allowed forward transitions for staff (cancellation is handled separately). Moving an order to ACCEPTED
- * goes through the funding check, which charges the wholesale cost to the owner's balance.
+ * The forward transitions (cancellation is handled separately). The step to ACCEPTED is taken only by
+ * `acceptOrder` — by the store owner, with the funding check — and never by a plain status change.
  */
 export const NEXT_STATUSES: Record<OrderStatus, OrderStatus[]> = {
   PENDING: ["CONFIRMED"],
@@ -65,6 +66,9 @@ export const NEXT_STATUSES: Record<OrderStatus, OrderStatus[]> = {
   DELIVERED: [],
   CANCELLED: [],
 };
+
+/** Waiting for the store owner to accept. `AWAITING_FUNDS` is only found on orders from before acceptance was the owner's call. */
+export const WAITING_FOR_ACCEPTANCE: OrderStatus[] = ["CONFIRMED", "AWAITING_FUNDS"];
 
 export const CANCELLABLE_STATUSES: OrderStatus[] = ["PENDING", "CONFIRMED", "AWAITING_FUNDS", "ACCEPTED", "PROCESSING", "PACKED"];
 

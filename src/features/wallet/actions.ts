@@ -5,7 +5,7 @@ import { after } from "next/server";
 import { z } from "zod";
 import { ingestImage } from "@/features/media/service";
 import { DepositMethod, PayoutMethod, PayoutStatus } from "@/generated/prisma/enums";
-import { acceptFundedOrders, flushNotifications } from "@/features/orders/service";
+import { WAITING_FOR_ACCEPTANCE } from "@/features/orders/status";
 import { TRC20_ADDRESS_PATTERN } from "@/lib/tron";
 import { assertStoreOwner } from "@/features/stores/guards";
 import { failure, handleActionError, success, zodFailure, type ActionState } from "@/server/actions";
@@ -26,6 +26,11 @@ function notifyAfter(...events: NotificationEvent[]) {
       }
     }
   });
+}
+
+/** How many of a store's orders are waiting for its owner to accept them — told to staff, never acted on. */
+function ordersWaitingForOwner(storeId: string) {
+  return db.order.count({ where: { storeId, status: { in: WAITING_FOR_ACCEPTANCE } } });
 }
 
 /** "12.50", "$1,250" → cents. */
@@ -181,16 +186,15 @@ export async function confirmDepositAction(depositId: string, amountCents?: numb
     const admin = await assertPermission("stores.manage");
     if (amountCents !== undefined && (!Number.isInteger(amountCents) || amountCents <= 0)) return failure("Enter the amount that actually arrived.");
     const deposit = await confirmDeposit(depositId, admin.id, amountCents);
-    // Money has arrived: anything that was waiting for funds can go to fulfilment now.
-    const resumed = await acceptFundedOrders(deposit.storeId);
-    after(() => flushNotifications(resumed));
+    // Crediting money accepts nothing: the owner decides, order by order, when to accept.
+    const waiting = await ordersWaitingForOwner(deposit.storeId);
     notifyAfter({ type: "wallet.deposit-settled", depositId: deposit.id, confirmed: true });
     revalidatePath("/admin/deposits");
     revalidatePath("/admin/payouts");
     revalidatePath(`/admin/stores/${deposit.storeId}`);
     revalidatePath("/admin/orders");
     const credited = `$${(deposit.amountCents / 100).toFixed(2)} credited to the owner's balance.`;
-    return success(resumed.length > 0 ? `${credited} ${resumed.length} order(s) waiting for funds have been dealt with.` : credited);
+    return success(waiting > 0 ? `${credited} They have ${waiting} order(s) waiting for them to accept.` : credited);
   } catch (error) {
     return handleActionError(error);
   }
@@ -220,8 +224,8 @@ const creditSchema = z.object({
 /**
  * Staff put money into an owner's balance themselves — a transfer that arrived without the owner
  * recording it, or one they are owed. It goes through the same two steps as any other deposit, so it
- * appears in their deposit history, lands on the ledger once with an audit record behind it, and
- * releases anything of theirs that was waiting for funds. There is no path here that writes a balance.
+ * appears in their deposit history and lands on the ledger once with an audit record behind it. It accepts
+ * no orders — that stays the owner's decision. There is no path here that writes a balance.
  */
 export async function creditStoreWalletAction(_state: ActionState, formData: FormData): Promise<ActionState> {
   const parsed = creditSchema.safeParse({
@@ -247,15 +251,14 @@ export async function creditStoreWalletAction(_state: ActionState, formData: For
     });
     await confirmDeposit(deposit.id, admin.id, parsed.data.amount);
 
-    // Money has arrived: anything that was waiting for funds can go to fulfilment now.
-    const resumed = await acceptFundedOrders(store.id);
-    after(() => flushNotifications(resumed));
+    // Crediting money accepts nothing: the owner decides, order by order, when to accept.
+    const waiting = await ordersWaitingForOwner(store.id);
     notifyAfter({ type: "wallet.deposit-settled", depositId: deposit.id, confirmed: true });
     revalidatePath(`/admin/stores/${store.id}`);
     revalidatePath("/admin/deposits");
     revalidatePath("/admin/orders");
     const credited = `$${(parsed.data.amount / 100).toFixed(2)} credited to ${store.name}.`;
-    return success(resumed.length > 0 ? `${credited} ${resumed.length} order(s) waiting for funds have been dealt with.` : credited);
+    return success(waiting > 0 ? `${credited} They have ${waiting} order(s) waiting for them to accept.` : credited);
   } catch (error) {
     return handleActionError(error);
   }

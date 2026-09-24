@@ -3,7 +3,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { OrderStatus, ProductStatus } from "@/generated/prisma/enums";
 import { db } from "@/server/db";
 import { storedOrderFinance, unitEarning, type CommissionRule } from "@/features/finance/order-finance";
-import { OPEN_STATUSES } from "@/features/orders/status";
+import { OPEN_STATUSES, WAITING_FOR_ACCEPTANCE } from "@/features/orders/status";
 import { storePriceFor, summarisePrices, type StorePricingRules } from "./pricing";
 
 /** Orders that count as sales: placed and not cancelled (unpaid online checkouts are still PENDING). */
@@ -47,9 +47,9 @@ export async function getStoreStats(storeId: string) {
     earningsCents: sum.ownerEarningCents ?? 0,
     byStatus: {
       pendingPayment: counts.PENDING ?? 0,
-      awaitingFunds: counts.AWAITING_FUNDS ?? 0,
-      confirmed: (counts.CONFIRMED ?? 0) + (counts.ACCEPTED ?? 0),
-      processing: (counts.PROCESSING ?? 0) + (counts.PACKED ?? 0),
+      /** Waiting for the owner to press Accept — nothing happens to these until they do. */
+      toAccept: (counts.CONFIRMED ?? 0) + (counts.AWAITING_FUNDS ?? 0),
+      withFulfilment: (counts.ACCEPTED ?? 0) + (counts.PROCESSING ?? 0) + (counts.PACKED ?? 0),
       shipped: (counts.SHIPPED ?? 0) + (counts.OUT_FOR_DELIVERY ?? 0),
       delivered: counts.DELIVERED ?? 0,
       cancelled: counts.CANCELLED ?? 0,
@@ -123,7 +123,8 @@ export async function listStoreProducts(store: { id: string; pricing: StorePrici
 export async function listStoreOrders(storeId: string, options: { page?: number; status?: string; pageSize?: number } = {}) {
   const pageSize = options.pageSize ?? 20;
   const page = Math.max(1, options.page ?? 1);
-  const status = Object.values(OrderStatus).includes(options.status as OrderStatus) ? (options.status as OrderStatus) : undefined;
+  // "TO_ACCEPT" is every order waiting for the owner to accept it, whichever of the two statuses it is in.
+  const status = options.status === "TO_ACCEPT" ? { in: WAITING_FOR_ACCEPTANCE } : Object.values(OrderStatus).includes(options.status as OrderStatus) ? (options.status as OrderStatus) : undefined;
   const where: Prisma.OrderWhereInput = { storeId, ...(status ? { status } : {}) };
   const [total, orders] = await Promise.all([
     db.order.count({ where }),
@@ -138,6 +139,7 @@ export async function listStoreOrders(storeId: string, options: { page?: number;
         email: true,
         status: true,
         paymentStatus: true,
+        paymentProvider: true,
         totalCents: true,
         discountCents: true,
         currency: true,

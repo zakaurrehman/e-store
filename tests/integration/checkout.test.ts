@@ -59,8 +59,9 @@ describe("checkout and payments", () => {
     expect(first.duplicate).toBe(false);
     const paid = await db.order.findUniqueOrThrow({ where: { id: order.id } });
     expect(paid.paymentStatus).toBe(PaymentStatus.PAID);
-    // The platform's own store has no balance to charge, so fulfilment takes the order at once.
-    expect(paid.status).toBe(OrderStatus.ACCEPTED);
+    // Paid means confirmed — never accepted. Accepting is a separate, deliberate step.
+    expect(paid.status).toBe(OrderStatus.CONFIRMED);
+    expect(paid.acceptedAt).toBeNull();
 
     const second = await processWebhook("sandbox", delivery());
     expect(second.duplicate).toBe(true);
@@ -116,7 +117,8 @@ describe("checkout and payments", () => {
     const outcome = await placeOrder(await orderInput({ paymentProvider: "cod" }), orderContext(cart.id));
     expect(outcome.result.next.kind).toBe("confirmation");
     const order = await db.order.findUniqueOrThrow({ where: { id: outcome.result.orderId } });
-    expect(order.status).toBe(OrderStatus.ACCEPTED);
+    expect(order.status).toBe(OrderStatus.CONFIRMED);
+    expect(order.acceptedAt).toBeNull();
     expect(order.paymentStatus).not.toBe(PaymentStatus.PAID);
   });
 });

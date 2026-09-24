@@ -9,7 +9,7 @@ import { calculateOrderFinance, currentCommissionRule } from "@/features/finance
 import { getShippingOptions, getTaxRate } from "@/features/checkout/shipping";
 import type { PlaceOrderInput } from "@/features/checkout/schemas";
 import { loadSettings } from "@/features/settings/service";
-import { chargeOrderFulfilment, fulfilmentShortfallCents, recogniseOrderRevenue, reverseOrderLedger, settleDeliveredOrder } from "@/features/wallet/service";
+import { chargeOrderFulfilment, recogniseOrderRevenue, reverseOrderLedger, settleDeliveredOrder } from "@/features/wallet/service";
 import type { AddressSnapshot } from "@/lib/address";
 import { normalisePhone } from "@/lib/phone";
 import { storeUrl } from "@/lib/tenancy";
@@ -22,7 +22,7 @@ import type { OrderForPayment, PaymentEvent } from "@/server/payments/types";
 import { hmacSha256, sha256 } from "@/server/security/crypto";
 import { formatMoney } from "@/utils/money";
 import { generateOrderNumber } from "./numbers";
-import { CANCELLABLE_STATUSES, NEXT_STATUSES, ORDER_STATUS_LABELS } from "./status";
+import { CANCELLABLE_STATUSES, NEXT_STATUSES, ORDER_STATUS_LABELS, WAITING_FOR_ACCEPTANCE } from "./status";
 
 export const UNPAID_ORDER_TTL_MS = 2 * 60 * 60 * 1000;
 
@@ -41,9 +41,10 @@ export async function flushNotifications(events: NotificationEvent[]) {
   }
 }
 
-async function addEvent(client: DbClient, orderId: string, type: OrderEventType, message: string, options: { data?: Prisma.InputJsonValue; isInternal?: boolean; actorId?: string | null } = {}) {
+/** `createdAt` orders events written in one transaction, whose database clock reads the same for all of them. */
+async function addEvent(client: DbClient, orderId: string, type: OrderEventType, message: string, options: { data?: Prisma.InputJsonValue; isInternal?: boolean; actorId?: string | null; createdAt?: Date } = {}) {
   return client.orderEvent.create({
-    data: { orderId, type, message, data: options.data, isInternal: options.isInternal ?? false, actorId: options.actorId ?? null },
+    data: { orderId, type, message, data: options.data, isInternal: options.isInternal ?? false, actorId: options.actorId ?? null, ...(options.createdAt ? { createdAt: options.createdAt } : {}) },
   });
 }
 
@@ -238,8 +239,8 @@ export async function placeOrder(
 
   if (isOffline) {
     await checkLowStock(order.items.map((item) => item.variantId).filter(Boolean) as string[], notifications);
+    // Confirmed, and nothing more: the store owner decides when to accept it (see acceptOrder).
     notifications.push({ type: "order.confirmed", orderId: order.id });
-    notifications.push(...(await acceptOrderForFulfilment(order.id)));
     return { result: { orderId: order.id, orderNumber: order.number, paymentId: null, next: confirmationTarget(order) }, notifications };
   }
 
@@ -255,69 +256,82 @@ function confirmationTarget(order: { number: string; email: string }): { kind: "
   return { kind: "confirmation", url: `/checkout/confirmation/${order.number}?token=${orderAccessToken(order)}` };
 }
 
-/** The history line for an accepted order: how much the goods cost, and where that money came from. */
-function acceptedLine(chargedCents: number, fromBalanceCents: number, currency: string) {
-  if (chargedCents <= 0) return "Accepted by fulfilment";
+/** The history line for an accepted order: who accepted it, what the goods cost, and where that money came from. */
+function acceptedLine(by: OrderAcceptor["as"], chargedCents: number, fromBalanceCents: number, currency: string) {
+  const accepted = by === "owner" ? "Accepted by the store owner" : "Accepted by Zendropship";
+  if (chargedCents <= 0) return accepted;
   const fromOrder = chargedCents - fromBalanceCents;
   const cost = `${formatMoney(chargedCents, currency)} wholesale cost set aside`;
-  if (fromBalanceCents <= 0) return `Accepted by fulfilment — ${cost} from the customer's payment`;
-  if (fromOrder <= 0) return `Accepted by fulfilment — ${cost} from the store balance`;
-  return `Accepted by fulfilment — ${cost}: ${formatMoney(fromOrder, currency)} from the customer's payment, ${formatMoney(fromBalanceCents, currency)} from the store balance`;
+  if (fromBalanceCents <= 0) return `${accepted} — ${cost} from the customer's payment`;
+  if (fromOrder <= 0) return `${accepted} — ${cost} from the store balance`;
+  return `${accepted} — ${cost}: ${formatMoney(fromOrder, currency)} from the customer's payment, ${formatMoney(fromBalanceCents, currency)} from the store balance`;
 }
 
 /**
- * Hands the order to Zendropship fulfilment. The wholesale cost is set aside here — exactly once, whatever
- * happens — from the customer's payment when it has been collected, otherwise from the owner's available
- * balance; the order waits as AWAITING_FUNDS only if that balance genuinely cannot cover its part.
- * Safe to call again at any time: an order that is already accepted is left alone.
+ * Who is accepting. An order in an owner's store is accepted by that owner and nobody else; an order in
+ * Zendropship's own store, which has no owner and no balance, by Zendropship staff.
  */
-export async function acceptOrderForFulfilment(orderId: string, actorId?: string | null): Promise<NotificationEvent[]> {
-  const before = await db.order.findUnique({ where: { id: orderId }, select: { status: true } });
-  if (!before || (before.status !== OrderStatus.CONFIRMED && before.status !== OrderStatus.AWAITING_FUNDS)) return [];
+export type OrderAcceptor = { userId: string; as: "owner" | "staff" };
 
-  const outcome = await db.$transaction(async (tx) => {
-    // Lock the order row first: acceptances of the same order queue up here, so the status read below is
-    // the real one and only the first of several simultaneous clicks writes anything.
+export const INSUFFICIENT_BALANCE_MESSAGE = "Insufficient wallet balance to accept this order. Please add funds.";
+
+export type AcceptOutcome = { already: true } | { already: false; number: string; chargedCents: number; fromBalanceCents: number };
+
+/**
+ * Accepts an order — the one way an order becomes Accepted, and only ever because someone chose to.
+ * Nothing calls it on its own: not placing an order, not a payment or its webhook, not a deposit.
+ *
+ * In one transaction, with the order row locked so simultaneous clicks queue up behind each other:
+ * checks who is accepting, sets the wholesale cost aside exactly once (from the customer's payment when
+ * it has been collected, otherwise from the owner's available balance), records Accepted and moves the
+ * order on to Processing. If the available balance cannot cover its part, nothing at all is written and
+ * the owner is told to add funds; the order keeps waiting for them. An order that is already accepted
+ * is left alone and reported as such, so a refresh, a retry or a second click changes nothing.
+ */
+export async function acceptOrder(orderId: string, acceptor: OrderAcceptor): Promise<{ outcome: AcceptOutcome; notifications: NotificationEvent[] }> {
+  const outcome = await db.$transaction(async (tx): Promise<AcceptOutcome> => {
     await tx.$executeRaw`SELECT 1 FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`;
-    const order = await tx.order.findUniqueOrThrow({ where: { id: orderId }, select: { status: true, currency: true } });
-    if (order.status !== OrderStatus.CONFIRMED && order.status !== OrderStatus.AWAITING_FUNDS) return { changed: false as const };
+    const order = await tx.order.findUnique({ where: { id: orderId }, select: { number: true, status: true, currency: true, store: { select: { ownerId: true } } } });
+    if (!order) throw new NotFoundError("Order not found.");
+
+    const ownerId = order.store.ownerId;
+    if (ownerId ? acceptor.as !== "owner" || acceptor.userId !== ownerId : acceptor.as !== "staff") {
+      throw new OrderError("NOT_YOURS_TO_ACCEPT", ownerId ? "Only the store's owner can accept this order." : "Orders in Zendropship's own store are accepted by Zendropship staff.", { status: 403 });
+    }
+    if (order.status === OrderStatus.PENDING) throw new OrderError("UNPAID", "This order is still waiting for the customer's payment, so it can't be accepted yet.");
+    if (order.status === OrderStatus.CANCELLED) throw new OrderError("CANCELLED", "This order was cancelled.");
+    if (!WAITING_FOR_ACCEPTANCE.includes(order.status)) return { already: true };
 
     const funding = await chargeOrderFulfilment(tx, orderId);
-    if (!funding.ok) {
-      if (order.status === OrderStatus.AWAITING_FUNDS) return { changed: false as const };
-      await tx.order.update({ where: { id: orderId }, data: { status: OrderStatus.AWAITING_FUNDS } });
-      await addEvent(tx, orderId, OrderEventType.STATUS_CHANGED, `Waiting for funds — the store balance is ${formatMoney(funding.shortfallCents, order.currency)} short of the fulfilment cost`, {
-        data: { status: OrderStatus.AWAITING_FUNDS, shortfallCents: funding.shortfallCents },
-        actorId,
-      });
-      return { changed: true as const, to: OrderStatus.AWAITING_FUNDS, shortfallCents: funding.shortfallCents };
-    }
-    await tx.order.update({ where: { id: orderId }, data: { status: OrderStatus.ACCEPTED, acceptedAt: new Date() } });
-    await addEvent(tx, orderId, OrderEventType.STATUS_CHANGED, acceptedLine(funding.chargedCents, funding.fromBalanceCents, order.currency), {
+    // Throwing rolls the whole transaction back: no status change, no ledger entry, nothing to undo.
+    if (!funding.ok) throw new OrderError("INSUFFICIENT_BALANCE", INSUFFICIENT_BALANCE_MESSAGE, { status: 409 });
+
+    const acceptedAt = new Date();
+    await tx.order.update({ where: { id: orderId }, data: { status: OrderStatus.ACCEPTED, acceptedAt } });
+    await addEvent(tx, orderId, OrderEventType.STATUS_CHANGED, acceptedLine(acceptor.as, funding.chargedCents, funding.fromBalanceCents, order.currency), {
       data: { status: OrderStatus.ACCEPTED, chargedCents: funding.chargedCents, fromBalanceCents: funding.fromBalanceCents },
-      actorId,
+      actorId: acceptor.userId,
+      createdAt: acceptedAt,
     });
-    return { changed: true as const, to: OrderStatus.ACCEPTED, from: order.status };
+    // Accepting hands the order to fulfilment, which starts processing it; every step after this is taken by hand.
+    await tx.order.update({ where: { id: orderId }, data: { status: OrderStatus.PROCESSING } });
+    await addEvent(tx, orderId, OrderEventType.STATUS_CHANGED, `Status changed to ${ORDER_STATUS_LABELS.PROCESSING}`, {
+      data: { status: OrderStatus.PROCESSING },
+      actorId: acceptor.userId,
+      createdAt: new Date(acceptedAt.getTime() + 1),
+    });
+    return { already: false, number: order.number, chargedCents: funding.chargedCents, fromBalanceCents: funding.fromBalanceCents };
   });
 
-  if (!outcome.changed) return [];
-  // The owner hears when an order starts waiting for money, and when a waiting order finally goes through.
-  if (outcome.to === OrderStatus.AWAITING_FUNDS) return [{ type: "order.awaiting-funds", orderId, shortfallCents: outcome.shortfallCents }];
-  return outcome.from === OrderStatus.AWAITING_FUNDS ? [{ type: "order.accepted", orderId }] : [];
-}
-
-/** After a deposit is confirmed: take every order that was waiting for money and could now be paid for. */
-export async function acceptFundedOrders(storeId: string): Promise<NotificationEvent[]> {
-  const waiting = await db.order.findMany({ where: { storeId, status: OrderStatus.AWAITING_FUNDS }, orderBy: { placedAt: "asc" }, select: { id: true }, take: 50 });
-  const notifications: NotificationEvent[] = [];
-  for (const order of waiting) {
-    try {
-      notifications.push(...(await acceptOrderForFulfilment(order.id)));
-    } catch (error) {
-      console.error(`[orders] could not accept ${order.id} after funding`, error);
-    }
-  }
-  return notifications;
+  if (outcome.already) return { outcome, notifications: [] };
+  await writeAudit({
+    actorId: acceptor.userId,
+    action: "order.accept",
+    entityType: "Order",
+    entityId: orderId,
+    summary: `Order ${outcome.number} accepted by the ${acceptor.as === "owner" ? "store owner" : "Zendropship staff"}${outcome.fromBalanceCents > 0 ? ` — ${formatMoney(outcome.fromBalanceCents)} set aside from the store balance` : ""}`,
+  });
+  return { outcome, notifications: [{ type: "order.accepted", orderId }] };
 }
 
 function toOrderForPayment(order: { id: string; number: string; email: string; currency: string; totalCents: number; shippingCents: number; taxCents: number; discountCents: number; items: Array<{ productName: string; variantTitle: string | null; quantity: number; unitPriceCents: number }> }): OrderForPayment {
@@ -365,8 +379,8 @@ export async function resumePayment(orderId: string, appUrl: string, providerKey
   const provider = getPaymentProvider(providerKey ?? order.paymentProvider);
   if (!provider) throw new OrderError("PAYMENT_METHOD_INVALID", "This payment method is no longer available.");
   if (provider.flow === "offline") {
+    // Confirmed only; accepting it stays the store owner's decision.
     await db.order.update({ where: { id: order.id }, data: { paymentProvider: provider.key, status: OrderStatus.CONFIRMED } });
-    await acceptOrderForFulfilment(order.id);
     return { orderId: order.id, orderNumber: order.number, paymentId: null, next: confirmationTarget(order) };
   }
   const reusable = order.payments.find((payment) => payment.provider === provider.key && payment.status === PaymentStatus.PENDING);
@@ -408,8 +422,8 @@ export async function applyPaymentEvent(providerKey: string, event: PaymentEvent
       await invalidateProducts(items.map((item) => item.productId));
       await checkLowStock(items.map((item) => item.variantId).filter(Boolean) as string[], notifications);
       await recogniseOrderRevenue(order.id);
+      // A confirmed payment confirms the order — it does not accept it. That is the store owner's decision.
       notifications.push(order.status === OrderStatus.PENDING ? { type: "order.confirmed", orderId: order.id } : { type: "order.payment-received", orderId: order.id });
-      notifications.push(...(await acceptOrderForFulfilment(order.id)));
       break;
     }
     case "payment.failed": {
@@ -480,15 +494,9 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus, ac
   if (status === OrderStatus.CONFIRMED && order.paymentStatus !== PaymentStatus.PAID && order.paymentProvider !== "cod") {
     throw new OrderError("UNPAID", "Record the payment before confirming this order.");
   }
-  // Accepting an order moves money, so it goes through the funding check rather than a plain status write.
+  // Accepting moves money and belongs to the store owner, so no status change can stand in for it.
   if (status === OrderStatus.ACCEPTED) {
-    const outcome = await acceptOrderForFulfilment(orderId, actorId);
-    const accepted = await db.order.findUniqueOrThrow({ where: { id: orderId }, select: { status: true } });
-    if (accepted.status !== OrderStatus.ACCEPTED) {
-      const shortfall = await fulfilmentShortfallCents(orderId);
-      throw new OrderError("AWAITING_FUNDS", `This store needs $${(shortfall / 100).toFixed(2)} more in its balance before fulfilment can take the order.`);
-    }
-    return outcome;
+    throw new OrderError("ACCEPT_SEPARATELY", "Orders are accepted with Accept — by the store owner, or by Zendropship for its own store.");
   }
   const notifications: NotificationEvent[] = [];
   await db.$transaction(async (tx) => {
@@ -539,14 +547,15 @@ export async function markPaidManually(orderId: string, actorId: string, note?: 
     await tx.paymentTransaction.create({ data: { paymentId: payment.id, type: TransactionType.CHARGE, status: TransactionStatus.SUCCEEDED, amountCents: order.totalCents, reason: note ?? "Marked as paid by staff", actorId } });
     await tx.order.update({ where: { id: orderId }, data: { paymentStatus: PaymentStatus.PAID, paidAt: new Date(), status: order.status === OrderStatus.PENDING ? OrderStatus.CONFIRMED : order.status } });
     await addEvent(tx, orderId, OrderEventType.PAYMENT, `Marked as paid${note ? ` — ${note}` : ""}`, { actorId });
+    if (order.status === OrderStatus.PENDING) await addEvent(tx, orderId, OrderEventType.STATUS_CHANGED, "Order confirmed", { data: { status: OrderStatus.CONFIRMED }, actorId });
   });
   await writeAudit({ actorId, action: "order.mark_paid", entityType: "Order", entityId: orderId, summary: `Order ${order.number} marked as paid` });
   const items = await db.orderItem.findMany({ where: { orderId }, select: { productId: true } });
   await recomputeProductSales(items.map((item) => item.productId).filter(Boolean) as string[]);
   await invalidateProducts(items.map((item) => item.productId));
-  // The money is in: record the sale (or clear a cash-on-delivery order's pending entries) and fund fulfilment.
+  // The money is in: record the sale, held until delivery. Accepting the order stays the store owner's decision.
   await recogniseOrderRevenue(orderId);
-  return [{ type: "order.payment-received", orderId }, ...(await acceptOrderForFulfilment(orderId, actorId))];
+  return order.status === OrderStatus.PENDING ? [{ type: "order.confirmed", orderId }] : [{ type: "order.payment-received", orderId }];
 }
 
 async function recordRefund(paymentId: string, amountCents: number, transactionId: string | null, reason: string, actorId: string | null, notifications: NotificationEvent[], client: DbClient = db) {

@@ -1,16 +1,16 @@
 import { Check } from "lucide-react";
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { Card, PageHeader, StatusBadge, Table, Td, Th, dateTime } from "@/components/admin/ui";
 import { OrderFinanceTable } from "@/components/commerce/order-finance";
+import { AcceptOrder } from "@/components/dashboard/accept-order";
 import { Alert, Skeleton } from "@/components/ui/misc";
 import { storedOrderFinance } from "@/features/finance/order-finance";
 import { fulfilmentProgress, isFulfilmentComplete } from "@/features/orders/progress";
-import { ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, paymentTone, statusTone } from "@/features/orders/status";
+import { ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, WAITING_FOR_ACCEPTANCE, paymentTone, statusTone } from "@/features/orders/status";
 import { getStoreOrder } from "@/features/stores/dashboard";
-import { fulfilmentShortfallCents } from "@/features/wallet/service";
+import { balanceNeededCents, getAvailableCents } from "@/features/wallet/service";
 import { requireStoreOwner } from "@/features/stores/guards";
 import { isAddressSnapshot } from "@/lib/address";
 import { cn } from "@/utils/cn";
@@ -26,7 +26,12 @@ async function OrderDetail({ params }: PageProps<"/dashboard/orders/[number]">) 
   const finance = storedOrderFinance(order);
   const stages = fulfilmentProgress({ status: order.status, placedAt: order.placedAt, deliveredAt: order.deliveredAt, events: order.events });
   const shipment = order.shipments[0];
-  const shortfall = order.status === "AWAITING_FUNDS" ? await fulfilmentShortfallCents(order.id) : 0;
+  // Waiting for this owner to accept it: what that would take from their available balance, and what they have.
+  const waiting = WAITING_FOR_ACCEPTANCE.includes(order.status);
+  const neededCents = waiting ? balanceNeededCents(order) : 0;
+  const availableCents = waiting ? await getAvailableCents(store.id) : 0;
+  const shortCents = Math.max(0, neededCents - Math.max(0, availableCents));
+  const money = (cents: number) => formatMoney(cents, order.currency);
 
   return (
     <>
@@ -41,22 +46,35 @@ async function OrderDetail({ params }: PageProps<"/dashboard/orders/[number]">) 
           </>
         }
       />
-      {order.status === "AWAITING_FUNDS" && (
-        <Alert tone="warning" title="Deposit required to fulfil this order" className="mb-6">
-          <p>
-            The fulfilment cost is {formatMoney(finance.fulfilmentCostCents, order.currency)} and your available balance is {formatMoney(shortfall, order.currency)} short. Deposit the difference and the order goes to
-            fulfilment as soon as Zendropship confirms it.
-          </p>
-          <p className="mt-2">
-            <Link href="/dashboard/balance" className="font-medium underline underline-offset-4">
-              Open your balance
-            </Link>
-          </p>
-        </Alert>
-      )}
+      {waiting &&
+        (shortCents > 0 ? (
+          <Alert tone="warning" title="Insufficient wallet balance to accept this order. Please add funds." className="mb-6">
+            <p>
+              Accepting this order needs {money(neededCents)} from your available balance, and you have {money(availableCents)}. Add {money(shortCents)}, and once Zendropship confirms it, come back and accept the order.
+              It waits for you until then.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <AcceptOrder order={{ id: order.id, number: order.number, currency: order.currency, fulfilmentCostCents: finance.fulfilmentCostCents }} neededCents={neededCents} availableCents={availableCents} />
+            </div>
+          </Alert>
+        ) : (
+          <Alert tone="info" title="This order is waiting for you to accept it" className="mb-6">
+            <p>
+              Nothing is fulfilled until you accept it. Accepting sets the {money(finance.fulfilmentCostCents)} wholesale cost aside once —{" "}
+              {neededCents > 0 ? `${money(neededCents)} from your available balance` : "out of the customer's payment, so nothing is taken from your balance"} — and Zendropship starts processing it. What you earn stays
+              held until it is delivered.
+            </p>
+            <div className="mt-3">
+              <AcceptOrder order={{ id: order.id, number: order.number, currency: order.currency, fulfilmentCostCents: finance.fulfilmentCostCents }} neededCents={neededCents} availableCents={availableCents} />
+            </div>
+          </Alert>
+        ))}
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
-          <Card title="Fulfilment" description={isFulfilmentComplete(order.status) ? "Delivered — this order is complete." : "Handled by Zendropship. You don't need to do anything to ship this order."}>
+          <Card
+            title="Fulfilment"
+            description={isFulfilmentComplete(order.status) ? "Delivered — this order is complete." : waiting ? "Zendropship fulfils it once you accept it." : "Handled by Zendropship. You don't need to do anything to ship this order."}
+          >
             {order.status === "CANCELLED" ? (
               <p className="text-[0.9375rem] text-danger">This order was cancelled.</p>
             ) : (
@@ -141,7 +159,7 @@ async function OrderDetail({ params }: PageProps<"/dashboard/orders/[number]">) 
           <Card title="Money" description="Worked out when the order was placed — later rate changes never alter it.">
             <OrderFinanceTable finance={finance} currency={order.currency} audience="owner" />
             <p className="mt-3 text-[0.8125rem] text-ink-500">
-              Your earning is credited to your balance when the customer&rsquo;s payment is collected{order.paymentProvider === "cod" ? " — on delivery for cash on delivery." : "."}
+              What you earn is held until the order is delivered, and becomes yours to withdraw then.
             </p>
           </Card>
           <Card title="Customer">

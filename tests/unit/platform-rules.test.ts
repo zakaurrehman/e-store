@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { placeOrderSchema, validatedAddressSchema } from "@/features/checkout/schemas";
 import { fulfilmentHint, fulfilmentProgress, isFulfilmentComplete, nextFulfilmentStep } from "@/features/orders/progress";
-import { CANCELLABLE_STATUSES, CUSTOMER_STATUS_LABELS, NEXT_STATUSES, stepIndex } from "@/features/orders/status";
+import { CANCELLABLE_STATUSES, CUSTOMER_STATUS_LABELS, NEXT_STATUSES, stepIndex, WAITING_FOR_ACCEPTANCE } from "@/features/orders/status";
 import { generateReferralCode, isReferralCodeShape, normaliseReferralCode, referralCodeState } from "@/features/referrals/codes";
 import { formatPhone, isValidPhone, normalisePhone } from "@/lib/phone";
 
@@ -65,7 +65,7 @@ describe("invitation codes", () => {
 });
 
 describe("order statuses", () => {
-  it("only moves forward through fulfilment, and only through the funding check to be accepted", () => {
+  it("only moves forward through fulfilment, and is accepted only from waiting for the owner", () => {
     expect(NEXT_STATUSES.CONFIRMED).toEqual(["ACCEPTED"]);
     expect(NEXT_STATUSES.AWAITING_FUNDS).toEqual(["ACCEPTED"]);
     expect(NEXT_STATUSES.ACCEPTED).toContain("PROCESSING");
@@ -73,6 +73,8 @@ describe("order statuses", () => {
     expect(NEXT_STATUSES.CANCELLED).toEqual([]);
     expect(NEXT_STATUSES.PENDING).not.toContain("SHIPPED");
     expect(CANCELLABLE_STATUSES).not.toContain("SHIPPED");
+    // Confirmed orders (and old ones left waiting for funds) are the ones waiting for the owner to accept.
+    expect(WAITING_FOR_ACCEPTANCE).toEqual(["CONFIRMED", "AWAITING_FUNDS"]);
   });
 
   it("does not tell customers that a store is short of money", () => {
@@ -86,26 +88,38 @@ describe("the fulfilment queue", () => {
   const events = [
     { type: "CREATED", message: "Order placed", data: null, createdAt: at("2026-09-20T10:00:00Z") },
     { type: "STATUS_CHANGED", message: "Order confirmed", data: { status: "CONFIRMED" }, createdAt: at("2026-09-20T10:01:00Z") },
-    { type: "STATUS_CHANGED", message: "Accepted by fulfilment", data: { status: "ACCEPTED" }, createdAt: at("2026-09-20T10:02:00Z") },
+    { type: "STATUS_CHANGED", message: "Accepted by the store owner", data: { status: "ACCEPTED" }, createdAt: at("2026-09-20T10:02:00Z"), actor: { firstName: "Olu", lastName: "Owner" } },
     { type: "STATUS_CHANGED", message: "Status changed to Processing", data: { status: "PROCESSING" }, createdAt: at("2026-09-20T11:00:00Z"), actor: { firstName: "Noor", lastName: "Staff" } },
   ];
 
+  const ownerStore = { ownerAccepts: true };
+  const platformStore = { ownerAccepts: false };
+
   it("offers one obvious next step per stage, and none once the order is finished or cancelled", () => {
-    expect(nextFulfilmentStep("CONFIRMED")?.status).toBe("ACCEPTED");
-    expect(nextFulfilmentStep("AWAITING_FUNDS")?.status).toBe("ACCEPTED");
-    expect(nextFulfilmentStep("ACCEPTED")?.status).toBe("PROCESSING");
-    expect(nextFulfilmentStep("PROCESSING")?.status).toBe("PACKED");
-    expect(nextFulfilmentStep("PACKED")?.status).toBe("SHIPPED");
-    expect(nextFulfilmentStep("SHIPPED")?.status).toBe("OUT_FOR_DELIVERY");
-    expect(nextFulfilmentStep("OUT_FOR_DELIVERY")?.status).toBe("DELIVERED");
-    expect(nextFulfilmentStep("DELIVERED")).toBeNull();
-    expect(nextFulfilmentStep("CANCELLED")).toBeNull();
-    expect(nextFulfilmentStep("PENDING")).toBeNull(); // the customer's payment comes first
+    expect(nextFulfilmentStep("ACCEPTED", ownerStore)?.status).toBe("PROCESSING");
+    expect(nextFulfilmentStep("PROCESSING", ownerStore)?.status).toBe("PACKED");
+    expect(nextFulfilmentStep("PACKED", ownerStore)?.status).toBe("SHIPPED");
+    expect(nextFulfilmentStep("SHIPPED", ownerStore)?.status).toBe("OUT_FOR_DELIVERY");
+    expect(nextFulfilmentStep("OUT_FOR_DELIVERY", ownerStore)?.status).toBe("DELIVERED");
+    expect(nextFulfilmentStep("DELIVERED", ownerStore)).toBeNull();
+    expect(nextFulfilmentStep("CANCELLED", ownerStore)).toBeNull();
+    expect(nextFulfilmentStep("PENDING", ownerStore)).toBeNull(); // the customer's payment comes first
     // Every suggested step is one the rules actually allow.
     for (const status of Object.keys(NEXT_STATUSES) as Array<keyof typeof NEXT_STATUSES>) {
-      const next = nextFulfilmentStep(status);
-      if (next) expect(NEXT_STATUSES[status]).toContain(next.status);
+      for (const store of [ownerStore, platformStore]) {
+        const next = nextFulfilmentStep(status, store);
+        if (next) expect(NEXT_STATUSES[status]).toContain(next.status);
+      }
     }
+  });
+
+  it("gives staff no Accept on an owner's order — only on an order in Zendropship's own store", () => {
+    expect(nextFulfilmentStep("CONFIRMED", ownerStore)).toBeNull();
+    expect(nextFulfilmentStep("AWAITING_FUNDS", ownerStore)).toBeNull();
+    expect(fulfilmentHint("CONFIRMED", ownerStore)).toBe("Waiting for the store owner to accept");
+    expect(fulfilmentHint("AWAITING_FUNDS", ownerStore)).toBe("Waiting for the store owner to accept");
+    expect(nextFulfilmentStep("CONFIRMED", platformStore)?.status).toBe("ACCEPTED");
+    expect(fulfilmentHint("CONFIRMED", platformStore)).toBe("Next: Accepted");
   });
 
   it("builds the timeline from the order's own events, with who moved it", () => {
@@ -114,7 +128,7 @@ describe("the fulfilment queue", () => {
     expect(done.map((stage) => stage.status)).toEqual(["PENDING", "CONFIRMED", "ACCEPTED", "PROCESSING"]);
     expect(done.every((stage) => stage.at !== null)).toBe(true);
     expect(stages.find((stage) => stage.status === "PROCESSING")?.by).toBe("Noor Staff");
-    expect(stages.find((stage) => stage.status === "ACCEPTED")?.by).toBeNull();
+    expect(stages.find((stage) => stage.status === "ACCEPTED")?.by).toBe("Olu Owner");
     expect(stages.find((stage) => stage.status === "PROCESSING")?.current).toBe(true);
     expect(stages.find((stage) => stage.status === "PACKED")?.at).toBeNull();
     expect(isFulfilmentComplete("PROCESSING")).toBe(false);
@@ -124,8 +138,8 @@ describe("the fulfilment queue", () => {
   it("shows nothing as reached once an order is cancelled", () => {
     const stages = fulfilmentProgress({ status: "CANCELLED", placedAt: at("2026-09-20T10:00:00Z"), deliveredAt: null, events });
     expect(stages.some((stage) => stage.done)).toBe(false);
-    expect(fulfilmentHint("CANCELLED")).toMatch(/Cancelled/);
-    expect(fulfilmentHint("DELIVERED")).toMatch(/complete/);
-    expect(fulfilmentHint("ACCEPTED")).toBe("Next: Processing");
+    expect(fulfilmentHint("CANCELLED", ownerStore)).toMatch(/Cancelled/);
+    expect(fulfilmentHint("DELIVERED", ownerStore)).toMatch(/complete/);
+    expect(fulfilmentHint("ACCEPTED", ownerStore)).toBe("Next: Processing");
   });
 });

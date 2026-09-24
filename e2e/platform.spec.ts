@@ -5,10 +5,11 @@ import { clearRateLimits } from "./rate-limits";
 
 /**
  * The whole business, end to end (see the brief's section 24): staff invite an owner, the owner opens and
- * brands a store, stocks and prices it, customers buy, the money is split and held until delivery, an
- * order the balance cannot cover waits for a deposit, staff confirm the deposit and fulfil the order step
- * by step, the owner withdraws in USDT (TRC20), and customer service runs between the customer, the store
- * and Zendropship.
+ * brands a store, stocks and prices it, customers buy, and every order waits for the owner to accept it —
+ * nothing accepts an order on its own. The money is split and held until delivery; an order the balance
+ * cannot cover cannot be accepted until a deposit is confirmed; staff fulfil accepted orders step by step;
+ * the owner withdraws in USDT (TRC20); and customer service runs between the customer, the store and
+ * Zendropship.
  */
 test.describe.serial("dropshipping platform", () => {
   const stamp = unique();
@@ -174,9 +175,10 @@ test.describe.serial("dropshipping platform", () => {
     expect(ownerAlert.links.some((link) => pathOf(link).startsWith("/dashboard/orders/"))).toBe(true);
     await shopper.close();
 
-    // The owner sees the full breakdown; the numbers add up and commission is 10% of the goods.
+    // Paid — and waiting for the owner. The payment confirmed the order; it did not accept it.
     await owner.goto(`/dashboard/orders/${orderNumber}`);
-    await expect(owner.getByText("Accepted").first()).toBeVisible();
+    await expect(owner.getByText("This order is waiting for you to accept it")).toBeVisible();
+    // The owner sees the full breakdown; the numbers add up and commission is 10% of the goods.
     const goods = await amountBeside(owner, "Goods sold");
     const cost = await amountBeside(owner, "Fulfilment cost");
     const commission = await amountBeside(owner, "Zendropship commission (10%)");
@@ -185,8 +187,32 @@ test.describe.serial("dropshipping platform", () => {
     expect(earning).toBe(goods - cost - commission);
     cardEarning = earning;
     await expect(owner.getByText("Customer paid").first()).toBeVisible();
-    // The customer has paid, so the order pays its own wholesale cost — the owner's balance is not touched.
-    await expect(owner.getByText(new RegExp(`Accepted by fulfilment — ${dollars(cost)} wholesale cost set aside from the customer's payment`))).toHaveCount(1);
+
+    // Staff have nothing to press on it: accepting an order in an owner's store is the owner's alone.
+    await admin.goto(`/admin/orders?q=${orderNumber}`);
+    const queued = admin.locator("tbody tr", { hasText: orderNumber });
+    await expect(queued).toContainText("Waiting for the store owner to accept");
+    await expect(queued.getByRole("button")).toHaveCount(0);
+
+    // The owner's order list shows it with an Accept button.
+    await owner.goto("/dashboard/orders");
+    await expect(owner.getByText(/waiting for you to accept/).first()).toBeVisible();
+    await expect(owner.locator("tbody tr", { hasText: orderNumber }).getByRole("button", { name: "Accept" }).filter({ visible: true })).toBeVisible();
+
+    // They accept it from the order page. The customer's payment covers the cost, and the dialog says so.
+    await owner.goto(`/dashboard/orders/${orderNumber}`);
+    await owner.getByRole("button", { name: "Accept", exact: true }).click();
+    const confirm = owner.getByRole("dialog").filter({ visible: true });
+    await expect(confirm.getByText(/comes out of the customer's payment/)).toBeVisible();
+    await confirm.getByRole("button", { name: "Accept order" }).click();
+    await expect(toast(owner, new RegExp(`Order ${orderNumber} accepted`))).toBeVisible();
+
+    // A refresh shows it accepted and processing, with nothing left to accept.
+    await owner.reload();
+    await expect(owner.getByText("This order is waiting for you to accept it")).toHaveCount(0);
+    await expect(owner.getByRole("button", { name: "Accept", exact: true })).toHaveCount(0);
+    await expect(owner.getByText(new RegExp(`Accepted by the store owner — ${dollars(cost)} wholesale cost set aside from the customer's payment`))).toHaveCount(1);
+    await expect(owner.getByText("Status changed to Processing")).toHaveCount(1);
   });
 
   test("a paid order's earnings are held until delivery: shown, but not spendable and not withdrawable", async () => {
@@ -205,8 +231,9 @@ test.describe.serial("dropshipping platform", () => {
     await admin.goto(`/admin/orders?q=${orderNumber}`);
     await admin.getByRole("link", { name: orderNumber }).click();
     await admin.waitForURL(/\/admin\/orders\/[a-z0-9]+$/);
+    // The owner's Accept already put it in processing; staff take every step after that by hand.
+    await expect(admin.getByRole("button", { name: "Start processing" })).toHaveCount(0);
     for (const [button, confirm] of [
-      ["Start processing", null],
       ["Mark packed", null],
       ["Mark shipped", "Mark shipped"],
       ["Out for delivery", null],
@@ -282,7 +309,7 @@ test.describe.serial("dropshipping platform", () => {
     await expect(withdrawals.getByRole("link", { name: payoutTxId })).toHaveAttribute("href", new RegExp(`tronscan.org/#/transaction/${payoutTxId}`));
   });
 
-  test("11–19. a cash-on-delivery order waits for funds; a USDT (TRC20) deposit confirmed by staff releases it, charged once", async ({ browser }) => {
+  test("11–19. a cash-on-delivery order waits for its owner, who cannot accept it until a USDT (TRC20) deposit is confirmed, then accepts it once", async ({ browser }) => {
     // Staff publish the Binance TRC20 address owners deposit to.
     await admin.goto("/admin/settings?section=deposits");
     await admin.locator("#deposits-trc20Address").fill(TRC20_ADDRESS);
@@ -305,15 +332,23 @@ test.describe.serial("dropshipping platform", () => {
     await expect(page.getByText("Awaiting funds")).toHaveCount(0);
     await shopper.close();
 
-    // No cash has been collected and the owner has nothing available, so the whole cost is genuinely short.
+    // No cash has been collected and the owner has nothing available: Accept is blocked, and says why.
     await owner.goto(`/dashboard/orders/${fundedOrderNumber}`);
-    await expect(owner.getByText("Deposit required to fulfil this order")).toBeVisible();
+    await expect(owner.getByText("Insufficient wallet balance to accept this order. Please add funds.")).toBeVisible();
+    await expect(owner.getByRole("button", { name: "Accept", exact: true })).toBeDisabled();
     const cost = await amountBeside(owner, "Fulfilment cost");
-    const shortfallText = await owner.getByText(/your available balance is \$[\d,.]+ short/).innerText();
-    const shortfall = Math.round(Number(/\$([\d,.]+) short/.exec(shortfallText)![1].replace(/,/g, "")) * 100);
+    const shortfallText = await owner.getByText(/Add \$[\d,.]+, and once Zendropship confirms it/).innerText();
+    const shortfall = Math.round(Number(/Add \$([\d,.]+),/.exec(shortfallText)![1].replace(/,/g, "")) * 100);
     expect(shortfall).toBe(cost);
     const codEarning = await amountBeside(owner, "You earn");
-    await waitForMail((mail) => mail.to === ownerEmail && mail.subject.includes("waiting for funds"));
+    // The list says the same, with the amount to add.
+    await owner.goto("/dashboard/orders");
+    const listed = owner.locator("tbody tr", { hasText: fundedOrderNumber });
+    await expect(listed.getByRole("button", { name: "Accept" }).filter({ visible: true })).toBeDisabled();
+    await expect(listed.getByRole("link", { name: /^Add \$[\d,.]+ to accept$/ }).filter({ visible: true })).toBeVisible();
+    // The owner is emailed that the order waits for them, and that funds are needed first.
+    const newOrderMail = await waitForMail((mail) => mail.to === ownerEmail && mail.subject.includes("New order") && (mail.text ?? "").includes(fundedOrderNumber));
+    expect(newOrderMail.text).toMatch(/short of what this order needs/);
 
     // The owner deposits through Binance: the address to send to, and the transaction id as proof.
     const deposit = Math.max(500, shortfall);
@@ -332,9 +367,9 @@ test.describe.serial("dropshipping platform", () => {
     await depositDialog.getByRole("button", { name: "Record deposit" }).click();
     await expect(toast(owner, new RegExp(`Deposit of ${dollars(deposit)} recorded`))).toBeVisible();
 
-    // Declaring a deposit changes nothing: the order is still waiting.
+    // Declaring a deposit changes nothing: Accept is still blocked.
     await owner.goto(`/dashboard/orders/${fundedOrderNumber}`);
-    await expect(owner.getByText("Deposit required to fulfil this order")).toBeVisible();
+    await expect(owner.getByText("Insufficient wallet balance to accept this order. Please add funds.")).toBeVisible();
 
     // Staff find the transfer in the deposit queue, check it on Tronscan, and credit it.
     await admin.goto("/admin/deposits?status=PENDING");
@@ -345,13 +380,32 @@ test.describe.serial("dropshipping platform", () => {
     const review = admin.getByRole("dialog").filter({ visible: true });
     await expect(review.getByRole("link", { name: /Tronscan/ })).toHaveAttribute("href", new RegExp(depositTxId));
     await review.getByRole("button", { name: /Approve & credit/ }).click();
-    await expect(toast(admin, /order\(s\) waiting for funds have been dealt with/)).toBeVisible();
+    await expect(toast(admin, /They have 1 order\(s\) waiting for them to accept/)).toBeVisible();
 
-    // Exactly one charge — the order's wholesale cost, set aside from the balance the deposit filled.
+    // The money is in — and nothing happened by itself: the order still waits for its owner, untouched.
     await owner.goto(`/dashboard/orders/${fundedOrderNumber}`);
-    await expect(owner.getByText("Deposit required to fulfil this order")).toHaveCount(0);
-    await expect(owner.getByText(new RegExp(`Accepted by fulfilment — ${dollars(cost)} wholesale cost set aside from the store balance`))).toHaveCount(1);
+    await expect(owner.getByText("This order is waiting for you to accept it")).toBeVisible();
+    await expect(owner.getByText(/^Accepted by/)).toHaveCount(0);
     await owner.goto("/dashboard/balance");
+    expect(await balanceFigure(owner, "Available to withdraw")).toBe(deposit);
+
+    // Now the owner accepts. The dialog says exactly what leaves the balance.
+    await owner.goto(`/dashboard/orders/${fundedOrderNumber}`);
+    await owner.getByRole("button", { name: "Accept", exact: true }).click();
+    const confirm = owner.getByRole("dialog").filter({ visible: true });
+    await expect(confirm.getByText(new RegExp(`${dollars(cost)} is set aside from your available balance now`))).toBeVisible();
+    await confirm.getByRole("button", { name: "Accept order" }).click();
+    await expect(toast(owner, new RegExp(`Order ${fundedOrderNumber} accepted`))).toBeVisible();
+
+    // Exactly one charge — the order's wholesale cost, set aside from the balance the deposit filled — however
+    // often the page is refreshed.
+    for (let refresh = 0; refresh < 2; refresh += 1) {
+      await owner.goto(`/dashboard/orders/${fundedOrderNumber}`);
+      await expect(owner.getByRole("button", { name: "Accept", exact: true })).toHaveCount(0);
+      await expect(owner.getByText(new RegExp(`Accepted by the store owner — ${dollars(cost)} wholesale cost set aside from the store balance`))).toHaveCount(1);
+    }
+    await owner.goto("/dashboard/balance");
+    await expect(owner.getByRole("cell", { name: `Fulfilment cost set aside from your balance · order ${fundedOrderNumber}` })).toHaveCount(1);
     expect(await balanceFigure(owner, "Available to withdraw")).toBe(deposit - cost);
     // What the order will bring in is shown as held, not added to what can be spent.
     expect(await balanceFigure(owner, "Held until delivery")).toBe(codEarning + cost);
@@ -361,13 +415,12 @@ test.describe.serial("dropshipping platform", () => {
   test("20–22. staff fulfil the order step by step from the queue; the owner and the customer follow it", async () => {
     // The queue: one click moves an order to its next stage, without opening it.
     await admin.goto(`/admin/orders?q=${fundedOrderNumber}`);
+    // The owner's Accept put it in processing, so packing is next.
     const row = admin.locator("tbody tr", { hasText: fundedOrderNumber });
-    await expect(row).toContainText("Next: Processing");
-    await row.getByRole("button", { name: "Processing", exact: true }).click();
+    await expect(row).toContainText("Next: Packed");
+    await row.getByRole("button", { name: "Packed", exact: true }).filter({ visible: true }).click();
     await expect(toast(admin, "Order status updated.")).toBeVisible();
-    await expect(admin.locator("tbody tr", { hasText: fundedOrderNumber })).toContainText("Next: Packed");
-    await admin.locator("tbody tr", { hasText: fundedOrderNumber }).getByRole("button", { name: "Packed", exact: true }).click();
-    await expect(toast(admin, "Order status updated.")).toBeVisible();
+    await expect(admin.locator("tbody tr", { hasText: fundedOrderNumber })).toContainText("Next: Shipped");
 
     // The rest from the order itself, where the steps that tell the customer ask for confirmation.
     await admin.getByRole("link", { name: fundedOrderNumber }).click();
@@ -403,7 +456,7 @@ test.describe.serial("dropshipping platform", () => {
     // 21. The owner sees the whole timeline, after a refresh, with the times.
     await owner.goto(`/dashboard/orders/${fundedOrderNumber}`);
     await expect(owner.getByText("Delivered — this order is complete.")).toBeVisible();
-    for (const line of ["Waiting for funds", "Accepted by fulfilment", "Status changed to Processing", "Status changed to Packed", "Status changed to Shipped", "Status changed to Out for delivery", "Status changed to Delivered"]) {
+    for (const line of ["Accepted by the store owner", "Status changed to Processing", "Status changed to Packed", "Status changed to Shipped", "Status changed to Out for delivery", "Status changed to Delivered"]) {
       await expect(owner.getByText(new RegExp(line)).first()).toBeVisible();
     }
 
@@ -452,6 +505,9 @@ test.describe.serial("dropshipping platform", () => {
     await page.waitForURL(/\/support\/[a-z0-9]+\?sent=1/);
     await expect(page.getByText("Message sent")).toBeVisible();
     const threadUrl = page.url().split("?")[0];
+    // The customer moves on. (Had they stayed on the conversation, the reply would appear there as it is
+    // sent and count as read — admin-actions.spec covers that.)
+    await page.goto("/account");
 
     // Zendropship staff see it in the support inbox, with the store beside it.
     await admin.goto(`/admin/messages?q=${encodeURIComponent(`Gift wrap ${stamp}`)}`);
@@ -492,6 +548,8 @@ test.describe.serial("dropshipping platform", () => {
     await expect(owner.getByText("Message sent")).toBeVisible();
     await expect(owner.getByText("The deposit I sent still shows as waiting")).toBeVisible();
     await expect(owner.getByText("What this is about")).toBeVisible();
+    // The owner moves on, so the reply waits for them as new (an open thread would show it live, read).
+    await owner.goto("/dashboard/orders");
 
     // Staff answer from the support inbox, with the deposit in front of them.
     await admin.goto(`/admin/messages?q=${encodeURIComponent(subject)}`);

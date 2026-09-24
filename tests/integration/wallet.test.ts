@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { addItem, createGuestCart } from "@/features/cart/service";
-import { acceptFundedOrders, acceptOrderForFulfilment, cancelOrder, placeOrder, processWebhook, refundOrder, updateOrderStatus } from "@/features/orders/service";
+import { acceptOrder, cancelOrder, INSUFFICIENT_BALANCE_MESSAGE, markPaidManually, placeOrder, processWebhook, refundOrder, resumePayment, updateOrderStatus } from "@/features/orders/service";
 import { saveSettingsSection } from "@/features/settings/service";
 import { openStoreForNewOwner } from "@/features/stores/onboarding";
 import { addProductsToStore, updateStoreProduct } from "@/features/stores/service";
@@ -75,12 +75,31 @@ async function paidOrder(store: { id: string }, variantId: string, quantity = 1)
 /** A real TRON address (the USDT contract) — withdrawals only go to addresses whose checksum is right. */
 const TRC20_ADDRESS = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
 
-/** Staff take an accepted order all the way to the customer's door. */
+/** The store's owner presses Accept (Zendropship staff do, for the platform's own store). */
+async function accept(orderId: string) {
+  const order = await db.order.findUniqueOrThrow({ where: { id: orderId }, select: { store: { select: { ownerId: true } } } });
+  const ownerId = order.store.ownerId;
+  return acceptOrder(orderId, ownerId ? { userId: ownerId, as: "owner" } : { userId: (await staff()).id, as: "staff" });
+}
+
+/** A paid order its owner has accepted. */
+async function acceptedOrder(store: { id: string }, variantId: string, quantity = 1) {
+  const order = await paidOrder(store, variantId, quantity);
+  await accept(order.id);
+  return db.order.findUniqueOrThrow({ where: { id: order.id } });
+}
+
+const LADDER: OrderStatus[] = [OrderStatus.PROCESSING, OrderStatus.PACKED, OrderStatus.SHIPPED, OrderStatus.OUT_FOR_DELIVERY, OrderStatus.DELIVERED];
+
+/** The owner accepts the order if they have not yet, then staff take it step by step to the customer's door. */
 async function deliver(orderId: string) {
   const admin = await staff();
-  for (const status of [OrderStatus.PROCESSING, OrderStatus.PACKED, OrderStatus.SHIPPED, OrderStatus.OUT_FOR_DELIVERY, OrderStatus.DELIVERED]) {
-    await updateOrderStatus(orderId, status, admin.id);
+  let { status } = await db.order.findUniqueOrThrow({ where: { id: orderId }, select: { status: true } });
+  if (status === OrderStatus.CONFIRMED || status === OrderStatus.AWAITING_FUNDS) {
+    await accept(orderId);
+    status = OrderStatus.PROCESSING;
   }
+  for (const next of LADDER.slice(LADDER.indexOf(status) + 1)) await updateOrderStatus(orderId, next, admin.id);
 }
 
 /** The owner deposits and staff confirm it: money in the available balance. */
@@ -112,10 +131,19 @@ describe("order finance and the store wallet", () => {
     expect(order.commissionBase).toBe("ORDER_REVENUE");
     expect(order.commissionCents).toBe(1000);
     expect(order.ownerEarningCents).toBe(3000);
-    expect(order.status).toBe(OrderStatus.ACCEPTED);
-    expect(order.acceptedAt).not.toBeNull();
+    // Paid, and waiting for the owner: the payment confirmed the order, it did not accept it.
+    expect(order.status).toBe(OrderStatus.CONFIRMED);
+    expect(order.acceptedAt).toBeNull();
+    expect(await db.walletEntry.count({ where: { orderId: order.id, type: WalletEntryType.ORDER_FULFILMENT } })).toBe(0);
 
-    // The customer has paid, so the order pays its own wholesale cost; everything it did is held.
+    // The owner accepts: the customer's payment covers the wholesale cost, and the order goes to processing.
+    const { outcome } = await accept(order.id);
+    expect(outcome).toMatchObject({ already: false, chargedCents: 6000, fromBalanceCents: 0 });
+    const accepted = await db.order.findUniqueOrThrow({ where: { id: order.id } });
+    expect(accepted.status).toBe(OrderStatus.PROCESSING);
+    expect(accepted.acceptedAt).not.toBeNull();
+
+    // Everything the order did is held.
     const entries = await entriesOf(order.id);
     expect(entries.map((entry) => [entry.type, entry.amountCents, entry.status])).toEqual(
       expect.arrayContaining([
@@ -132,7 +160,7 @@ describe("order finance and the store wallet", () => {
 
     // A replayed webhook, a retried acceptance and a second charge attempt change nothing.
     await processWebhook("sandbox", await webhookFor(order.id, `evt_replay_${order.id}`));
-    await acceptOrderForFulfilment(order.id);
+    expect((await accept(order.id)).outcome).toEqual({ already: true });
     const again = await db.$transaction((tx) => chargeOrderFulfilment(tx, order.id));
     expect(again).toMatchObject({ ok: true, alreadyCharged: true, chargedCents: 6000, fromBalanceCents: 0 });
     expect(await entriesOf(order.id)).toHaveLength(3);
@@ -182,19 +210,26 @@ describe("order finance and the store wallet", () => {
 
     // Nobody has collected any money for this order yet, so an empty wallet genuinely cannot pay its $30 cost.
     const waiting = await placeIn(store, variant.id, 1, "cod");
-    expect(waiting.status).toBe(OrderStatus.AWAITING_FUNDS);
+    expect(waiting.status).toBe(OrderStatus.CONFIRMED);
     expect(await fulfilmentShortfallCents(waiting.id)).toBe(3000);
-    expect(await db.walletEntry.count({ where: { orderId: waiting.id, type: WalletEntryType.ORDER_FULFILMENT } })).toBe(0);
+    // The owner presses Accept anyway: refused, with nothing written — no charge, no status change.
+    const refused = accept(waiting.id);
+    await expect(refused).rejects.toThrow(INSUFFICIENT_BALANCE_MESSAGE);
+    expect(await errorCode(accept(waiting.id))).toBe("INSUFFICIENT_BALANCE");
+    expect((await db.order.findUniqueOrThrow({ where: { id: waiting.id } })).status).toBe(OrderStatus.CONFIRMED);
+    expect(await db.walletEntry.count({ where: { orderId: waiting.id } })).toBe(0);
 
-    // The owner has $50: the $30 cost is set aside when fulfilment takes the order — once.
+    // The owner adds $50. That accepts nothing — the order is still waiting for them.
     await fund(store, user.id, 5000);
-    await Promise.all([acceptFundedOrders(store.id), acceptOrderForFulfilment(waiting.id), acceptOrderForFulfilment(waiting.id)]);
-    expect((await db.order.findUniqueOrThrow({ where: { id: waiting.id } })).status).toBe(OrderStatus.ACCEPTED);
+    expect((await db.order.findUniqueOrThrow({ where: { id: waiting.id } })).status).toBe(OrderStatus.CONFIRMED);
+    // Now they accept (twice at once, as a double click would): the $30 is set aside once, and it goes to processing.
+    await Promise.all([accept(waiting.id), accept(waiting.id)]);
+    expect((await db.order.findUniqueOrThrow({ where: { id: waiting.id } })).status).toBe(OrderStatus.PROCESSING);
     const fulfilment = await db.walletEntry.findMany({ where: { orderId: waiting.id, type: WalletEntryType.ORDER_FULFILMENT } });
     expect(fulfilment.map((entry) => [entry.amountCents, entry.status])).toEqual([[-3000, WalletEntryStatus.CLEARED]]);
     expect(await getAvailableCents(store.id)).toBe(2000);
-    const acceptedLine = await db.orderEvent.findFirst({ where: { orderId: waiting.id, message: { startsWith: "Accepted by fulfilment" } } });
-    expect(acceptedLine?.message).toBe("Accepted by fulfilment — $30.00 wholesale cost set aside from the store balance");
+    const acceptedLine = await db.orderEvent.findFirst({ where: { orderId: waiting.id, message: { startsWith: "Accepted by" } } });
+    expect(acceptedLine?.message).toBe("Accepted by the store owner — $30.00 wholesale cost set aside from the store balance");
     // The sale and commission are held: shown, not spendable, and not earnings yet.
     expect((await getWalletSummary(store.id)).pendingCents).toBe(4500);
     expect((await getWalletSummary(store.id)).earnedThisMonthCents).toBe(0);
@@ -214,7 +249,9 @@ describe("order finance and the store wallet", () => {
     const { user, store, variant } = await storeWithProduct();
     await fund(store, user.id, 5000);
     const order = await placeIn(store, variant.id, 1, "cod");
-    expect(order.status).toBe(OrderStatus.ACCEPTED);
+    expect(order.status).toBe(OrderStatus.CONFIRMED);
+    expect(await getAvailableCents(store.id)).toBe(5000);
+    await accept(order.id);
     expect(await getAvailableCents(store.id)).toBe(2000);
 
     await cancelOrder(order.id, "Customer refused the parcel", (await staff()).id);
@@ -230,25 +267,27 @@ describe("order finance and the store wallet", () => {
     await updateStoreProduct(store.id, product.id, { fixedPriceCents: 2000 }, { userId: user.id, asOwner: true });
     const order = await paidOrder(store, variant.id);
 
-    expect(order.status).toBe(OrderStatus.AWAITING_FUNDS);
+    expect(order.status).toBe(OrderStatus.CONFIRMED);
     expect(order.ownerEarningCents).toBe(-1200);
     // Sale ($20) less commission ($2) is in the balance; the $30 cost is not charged yet.
     expect(await getBalanceCents(store.id)).toBe(1800);
     expect(await fulfilmentShortfallCents(order.id)).toBe(1200);
+    expect(await errorCode(accept(order.id))).toBe("INSUFFICIENT_BALANCE");
     expect(await db.walletEntry.count({ where: { orderId: order.id, type: WalletEntryType.ORDER_FULFILMENT } })).toBe(0);
 
-    // A deposit the owner merely declares does nothing.
+    // A deposit the owner merely declares changes nothing: Accept is still refused.
     const deposit = await recordDeposit({ storeId: store.id, amountCents: 1200, method: "BANK_TRANSFER", reference: "TOPUP-1", createdById: user.id });
-    expect(await acceptFundedOrders(store.id)).toEqual([]);
-    expect((await db.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe(OrderStatus.AWAITING_FUNDS);
+    expect(await errorCode(accept(order.id))).toBe("INSUFFICIENT_BALANCE");
 
-    // Staff confirm the money arrived; several acceptance attempts race, and only one charge lands.
+    // Staff confirm the money arrived — the order still waits for its owner. Four Accepts race; one charge lands.
     const admin = await staff();
     await confirmDeposit(deposit.id, admin.id);
-    await Promise.all([acceptFundedOrders(store.id), acceptOrderForFulfilment(order.id), acceptOrderForFulfilment(order.id), acceptOrderForFulfilment(order.id)]);
+    expect((await db.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe(OrderStatus.CONFIRMED);
+    const results = await Promise.all([accept(order.id), accept(order.id), accept(order.id), accept(order.id)]);
+    expect(results.filter((result) => !result.outcome.already)).toHaveLength(1);
 
     const accepted = await db.order.findUniqueOrThrow({ where: { id: order.id } });
-    expect(accepted.status).toBe(OrderStatus.ACCEPTED);
+    expect(accepted.status).toBe(OrderStatus.PROCESSING);
     // One $30 charge, paid for in two parts: $18 from the customer's own payment (held with the order) and
     // the $12 the order could not cover, taken from the owner's balance at once.
     const charge = await db.walletEntry.findMany({ where: { orderId: order.id, type: WalletEntryType.ORDER_FULFILMENT }, orderBy: { amountCents: "asc" } });
@@ -260,9 +299,10 @@ describe("order finance and the store wallet", () => {
     expect(await getAvailableCents(store.id)).toBe(0);
 
     const timeline = await db.orderEvent.findMany({ where: { orderId: order.id, type: "STATUS_CHANGED" }, orderBy: { createdAt: "asc" } });
-    expect(timeline.map((event) => (event.data as { status?: string } | null)?.status)).toEqual(["CONFIRMED", "AWAITING_FUNDS", "ACCEPTED"]);
-    // The history says where the money came from.
-    expect(timeline.at(-1)?.message).toBe("Accepted by fulfilment — $30.00 wholesale cost set aside: $18.00 from the customer's payment, $12.00 from the store balance");
+    expect(timeline.map((event) => (event.data as { status?: string } | null)?.status)).toEqual(["CONFIRMED", "ACCEPTED", "PROCESSING"]);
+    // The history says who accepted it and where the money came from.
+    expect(timeline[1].message).toBe("Accepted by the store owner — $30.00 wholesale cost set aside: $18.00 from the customer's payment, $12.00 from the store balance");
+    expect(timeline[1].actorId).toBe(user.id);
   });
 
   it("walks an accepted order through every fulfilment step, and refuses steps out of order", async () => {
@@ -270,7 +310,13 @@ describe("order finance and the store wallet", () => {
     const order = await paidOrder(store, variant.id);
     const admin = await staff();
     expect(await errorCode(updateOrderStatus(order.id, OrderStatus.DELIVERED, admin.id))).toBe("INVALID_TRANSITION");
-    for (const status of [OrderStatus.PROCESSING, OrderStatus.PACKED, OrderStatus.SHIPPED, OrderStatus.OUT_FOR_DELIVERY, OrderStatus.DELIVERED]) {
+    expect(await errorCode(updateOrderStatus(order.id, OrderStatus.PROCESSING, admin.id))).toBe("INVALID_TRANSITION");
+    // No status change stands in for the owner's Accept.
+    expect(await errorCode(updateOrderStatus(order.id, OrderStatus.ACCEPTED, admin.id))).toBe("ACCEPT_SEPARATELY");
+    await accept(order.id);
+    // Accepted puts it in processing; every step after that is taken by hand, one at a time.
+    expect(await errorCode(updateOrderStatus(order.id, OrderStatus.DELIVERED, admin.id))).toBe("INVALID_TRANSITION");
+    for (const status of [OrderStatus.PACKED, OrderStatus.SHIPPED, OrderStatus.OUT_FOR_DELIVERY, OrderStatus.DELIVERED]) {
       await updateOrderStatus(order.id, status, admin.id);
     }
     expect(await errorCode(updateOrderStatus(order.id, OrderStatus.PROCESSING, admin.id))).toBe("INVALID_TRANSITION");
@@ -280,7 +326,7 @@ describe("order finance and the store wallet", () => {
 
   it("reverses a refund with compensating entries, in proportion, without touching the originals", async () => {
     const { store, variant } = await storeWithProduct();
-    const order = await paidOrder(store, variant.id, 2);
+    const order = await acceptedOrder(store, variant.id, 2);
     const originals = await entriesOf(order.id);
     const admin = await staff();
 
@@ -318,7 +364,7 @@ describe("order finance and the store wallet", () => {
     await deliver(delivered.id);
 
     // An order that has not been delivered yet holds its $80: shown in the balance, not withdrawable.
-    await paidOrder(store, variant.id);
+    await acceptedOrder(store, variant.id);
     expect(await getBalanceCents(store.id)).toBe(16000);
     expect(await getAvailableCents(store.id)).toBe(8000);
 
@@ -446,7 +492,7 @@ describe("order finance and the store wallet", () => {
   it("keeps each store's balance to itself and gives the platform store no ledger at all", async () => {
     const mine = await storeWithProduct();
     const theirs = await storeWithProduct();
-    await paidOrder(mine.store, mine.variant.id);
+    await acceptedOrder(mine.store, mine.variant.id);
     expect(await getBalanceCents(mine.store.id)).toBe(1500);
     expect(await getBalanceCents(theirs.store.id)).toBe(0);
 
@@ -454,8 +500,96 @@ describe("order finance and the store wallet", () => {
     const { variant } = await createProduct({ priceCents: 4000, stock: 5 });
     await db.productVariant.update({ where: { id: variant.id }, data: { costCents: 1000 } });
     const order = await paidOrder(platform, variant.id);
-    expect(order.status).toBe(OrderStatus.ACCEPTED);
+    // Zendropship's own store has no owner: its orders wait for staff to accept them, and nothing is charged.
+    expect(order.status).toBe(OrderStatus.CONFIRMED);
     expect(order.commissionCents).toBe(0);
+    await accept(order.id);
+    expect((await db.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe(OrderStatus.PROCESSING);
     expect(await db.walletEntry.count({ where: { storeId: platform.id } })).toBe(0);
+  });
+});
+
+describe("accepting an order", () => {
+  const acceptedEvents = (orderId: string) => db.orderEvent.count({ where: { orderId, type: "STATUS_CHANGED", message: { startsWith: "Accepted" } } });
+
+  it("never happens on its own: payments, webhooks, cash on delivery, staff confirmations, deposits and jobs all leave the order waiting", async () => {
+    const { user, store, variant } = await storeWithProduct();
+    const admin = await staff();
+
+    // A card order, paid through the signed webhook — and the same webhook delivered again.
+    const card = await paidOrder(store, variant.id);
+    await processWebhook("sandbox", await webhookFor(card.id, `evt_again_${card.id}`));
+    // Cash on delivery, confirmed the moment it is placed.
+    const cod = await placeIn(store, variant.id, 1, "cod");
+    // Staff record a cash payment on it.
+    await markPaidManually(cod.id, admin.id, "Cash collected early");
+    // A card order the customer switches to cash on delivery.
+    const switched = await placeIn(store, variant.id);
+    await resumePayment(switched.id, "http://localhost:3000", "cod");
+    // Money arrives in the wallet, and the scheduled jobs run.
+    await fund(store, user.id, 50_000);
+    const { runJobs } = await import("@/server/jobs");
+    await runJobs();
+
+    for (const { id } of [card, cod, switched]) {
+      const order = await db.order.findUniqueOrThrow({ where: { id } });
+      expect(order.status).toBe(OrderStatus.CONFIRMED);
+      expect(order.acceptedAt).toBeNull();
+      expect(await acceptedEvents(id)).toBe(0);
+      expect(await db.walletEntry.count({ where: { orderId: id, type: WalletEntryType.ORDER_FULFILMENT } })).toBe(0);
+    }
+    // All the money is still there, untouched by any order.
+    expect(await getAvailableCents(store.id)).toBe(50_000);
+  });
+
+  it("is the store owner's alone: staff, another owner and a plain status change are all refused", async () => {
+    const { store, variant } = await storeWithProduct();
+    const stranger = await storeWithProduct();
+    const order = await paidOrder(store, variant.id);
+    const admin = await staff();
+
+    expect(await errorCode(acceptOrder(order.id, { userId: admin.id, as: "staff" }))).toBe("NOT_YOURS_TO_ACCEPT");
+    expect(await errorCode(acceptOrder(order.id, { userId: stranger.user.id, as: "owner" }))).toBe("NOT_YOURS_TO_ACCEPT");
+    expect(await errorCode(updateOrderStatus(order.id, OrderStatus.ACCEPTED, admin.id))).toBe("ACCEPT_SEPARATELY");
+    expect((await db.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe(OrderStatus.CONFIRMED);
+    expect(await db.walletEntry.count({ where: { orderId: order.id, type: WalletEntryType.ORDER_FULFILMENT } })).toBe(0);
+  });
+
+  it("is refused for an order the customer has not paid for, or one that was cancelled", async () => {
+    const { store, variant } = await storeWithProduct();
+    const unpaid = await placeIn(store, variant.id);
+    expect(unpaid.status).toBe(OrderStatus.PENDING);
+    expect(await errorCode(accept(unpaid.id))).toBe("UNPAID");
+
+    const cancelled = await placeIn(store, variant.id, 1, "cod");
+    await cancelOrder(cancelled.id, "Customer changed their mind", (await staff()).id);
+    expect(await errorCode(accept(cancelled.id))).toBe("CANCELLED");
+    expect(await db.walletEntry.count({ where: { orderId: { in: [unpaid.id, cancelled.id] }, type: WalletEntryType.ORDER_FULFILMENT } })).toBe(0);
+  });
+
+  it("takes the money once however many times Accept is pressed — together, or again after a refresh", async () => {
+    const { user, store, variant } = await storeWithProduct();
+    await fund(store, user.id, 10_000);
+    const order = await placeIn(store, variant.id, 1, "cod");
+
+    const results = await Promise.all(Array.from({ length: 5 }, () => accept(order.id)));
+    expect(results.filter((result) => !result.outcome.already)).toHaveLength(1);
+    // Pressed again later — a refresh, a retry: nothing changes.
+    expect((await accept(order.id)).outcome).toEqual({ already: true });
+
+    expect(await db.walletEntry.count({ where: { orderId: order.id, type: WalletEntryType.ORDER_FULFILMENT } })).toBe(1);
+    expect(await getAvailableCents(store.id)).toBe(7000);
+    expect(await acceptedEvents(order.id)).toBe(1);
+    expect(await db.orderEvent.count({ where: { orderId: order.id, type: "STATUS_CHANGED", data: { path: ["status"], equals: "PROCESSING" } } })).toBe(1);
+    expect(await db.auditLog.count({ where: { entityId: order.id, action: "order.accept" } })).toBe(1);
+
+    // Accepted, then processing — recorded in that order, both by the owner.
+    const timeline = await db.orderEvent.findMany({ where: { orderId: order.id, type: "STATUS_CHANGED" }, orderBy: { createdAt: "asc" } });
+    expect(timeline.map((event) => (event.data as { status?: string } | null)?.status)).toEqual(["CONFIRMED", "ACCEPTED", "PROCESSING"]);
+    expect(timeline.slice(1).every((event) => event.actorId === user.id)).toBe(true);
+
+    // Delivered: the $30 set aside comes back with the $15 profit, once.
+    await deliver(order.id);
+    expect(await getAvailableCents(store.id)).toBe(11_500);
   });
 });

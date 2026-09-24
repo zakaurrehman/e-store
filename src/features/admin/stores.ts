@@ -2,6 +2,7 @@ import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
 import { OrderStatus, StoreStatus, WalletEntryType } from "@/generated/prisma/enums";
 import { balancesByStore, getWalletSummary, listWalletEntries } from "@/features/wallet/queries";
+import { WAITING_FOR_ACCEPTANCE } from "@/features/orders/status";
 import { db } from "@/server/db";
 
 export const STORES_PAGE_SIZE = 25;
@@ -40,7 +41,8 @@ export async function listStoresForAdmin(filters: { q?: string; status?: string;
     : [];
   const byStore = new Map(sales.map((row) => [row.storeId, { orders: row._count._all, salesCents: row._sum.totalCents ?? 0 }]));
   const balances = await balancesByStore(ids);
-  const awaiting = ids.length ? await db.order.groupBy({ by: ["storeId"], where: { storeId: { in: ids }, status: OrderStatus.AWAITING_FUNDS }, _count: { _all: true } }) : [];
+  // Orders waiting for their owner to accept them.
+  const awaiting = ids.length ? await db.order.groupBy({ by: ["storeId"], where: { storeId: { in: ids }, status: { in: WAITING_FOR_ACCEPTANCE } }, _count: { _all: true } }) : [];
   const waitingByStore = new Map(awaiting.map((row) => [row.storeId, row._count._all]));
   return {
     total,
@@ -52,7 +54,7 @@ export async function listStoresForAdmin(filters: { q?: string; status?: string;
       ...(byStore.get(store.id) ?? { orders: 0, salesCents: 0 }),
       balanceCents: balances.get(store.id)?.balanceCents ?? 0,
       availableCents: balances.get(store.id)?.availableCents ?? 0,
-      awaitingFunds: waitingByStore.get(store.id) ?? 0,
+      toAccept: waitingByStore.get(store.id) ?? 0,
       invitation: store.referral[0]?.code.code ?? null,
     })),
   };

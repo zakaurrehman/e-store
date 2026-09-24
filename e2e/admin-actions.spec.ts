@@ -171,15 +171,18 @@ test.describe.serial("what staff do", () => {
     await admin.getByRole("dialog").filter({ visible: true }).getByRole("button", { name: "Confirm payment" }).click();
     await expect(toast(admin, /paid|confirmed/i)).toBeVisible();
 
-    // Paying for it hands it to fulfilment: the next thing to do is start processing.
+    // Paying for it confirms it, and nothing more: it waits to be accepted. This is Zendropship's own demo
+    // store, so accepting is staff's to do (in an owner's store it is the owner's alone).
     const row0 = admin.locator("tbody tr", { hasText: orderNumber });
     await admin.goto(`/admin/orders?q=${orderNumber}`);
-    await expect(row0).toContainText("Next: Processing");
+    await expect(row0).toContainText("Confirmed");
+    await expect(row0).toContainText("Next: Accepted");
 
     // From there the ladder runs to delivered, one step at a time. Each button is the one visible at this
     // width (the row carries a second copy for phones), and each step is checked by what the row says next.
+    // Accepting puts it straight into processing, so packing is what follows.
     const ladder: Array<[button: string, after: string, confirms: boolean]> = [
-      ["Processing", "Next: Packed", false],
+      ["Accept", "Next: Packed", true],
       ["Packed", "Next: Shipped", false],
       ["Shipped", "Next: Out for delivery", true],
       ["Out for delivery", "Next: Delivered", false],
@@ -191,7 +194,7 @@ test.describe.serial("what staff do", () => {
       await row.getByRole("button", { name: label, exact: true }).filter({ visible: true }).click();
       if (confirms) {
         const dialog = admin.getByRole("dialog").filter({ visible: true });
-        await dialog.getByRole("button", { name: /^Mark / }).click();
+        await dialog.getByRole("button", { name: /^(Mark |Accept for fulfilment)/ }).click();
       }
       await expect(row, `after "${label}"`).toContainText(after);
     }

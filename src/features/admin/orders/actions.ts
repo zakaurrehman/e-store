@@ -4,8 +4,7 @@ import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { OrderStatus } from "@/generated/prisma/enums";
-import { acceptOrderForFulfilment, addOrderNote, cancelOrder, flushNotifications, markPaidManually, refundOrder, setShipmentTracking, updateOrderStatus } from "@/features/orders/service";
-import { fulfilmentShortfallCents } from "@/features/wallet/service";
+import { acceptOrder, addOrderNote, cancelOrder, flushNotifications, markPaidManually, refundOrder, setShipmentTracking, updateOrderStatus } from "@/features/orders/service";
 import { failure, handleActionError, success, type ActionState } from "@/server/actions";
 import { assertPermission } from "@/server/auth/guards";
 import { db } from "@/server/db";
@@ -18,19 +17,17 @@ function refresh(orderId: string) {
   revalidatePath("/admin");
 }
 
-/** Takes the order for fulfilment: charges the wholesale cost to the owner's balance, exactly once. */
+/**
+ * Staff accept an order in Zendropship's own store, which has no owner to do it. An order in an owner's
+ * store is refused here: accepting it is the owner's decision, made from their dashboard.
+ */
 export async function acceptOrderAction(orderId: string): Promise<ActionState> {
   try {
     const user = await assertPermission("orders.update");
-    const notifications = await acceptOrderForFulfilment(String(orderId).slice(0, 40), user.id);
+    const { outcome, notifications } = await acceptOrder(String(orderId).slice(0, 40), { userId: user.id, as: "staff" });
     if (notifications.length) after(() => flushNotifications(notifications));
-    const order = await db.order.findUnique({ where: { id: String(orderId).slice(0, 40) }, select: { status: true } });
     refresh(orderId);
-    if (order?.status === OrderStatus.AWAITING_FUNDS) {
-      const shortfall = await fulfilmentShortfallCents(orderId);
-      return failure(`The store's balance is ${(shortfall / 100).toFixed(2)} short of the fulfilment cost. The order is waiting for a deposit.`);
-    }
-    return success("Order accepted for fulfilment.");
+    return success(outcome.already ? "This order is already accepted." : "Order accepted — it is now in processing.");
   } catch (error) {
     return handleActionError(error);
   }

@@ -12,7 +12,8 @@ import { CANCELLABLE_STATUSES, NEXT_STATUSES, ORDER_STATUS_LABELS } from "@/feat
 import { formatMoney } from "@/utils/money";
 
 type Props = {
-  order: { id: string; number: string; status: OrderStatus; paymentStatus: string; paymentProvider: string; currency: string; totalCents: number; refundableCents: number };
+  /** `ownerAccepts`: the order is in an owner's store, so accepting it is the owner's decision, not staff's. */
+  order: { id: string; number: string; status: OrderStatus; paymentStatus: string; paymentProvider: string; currency: string; totalCents: number; refundableCents: number; ownerAccepts: boolean };
   tracking: { carrier: string | null; trackingNumber: string | null; trackingUrl: string | null } | null;
   can: { update: boolean; refund: boolean; cancel: boolean };
 };
@@ -26,7 +27,7 @@ export function OrderActions({ order, tracking, can }: Props) {
   const [statusNote, setStatusNote] = useState("");
   const [cancelReason, setCancelReason] = useState("");
   // The usual next step gets its own button; the dialog is for the valid jumps that skip a stage.
-  const next = nextFulfilmentStep(order.status);
+  const next = nextFulfilmentStep(order.status, { ownerAccepts: order.ownerAccepts });
   const otherOptions = NEXT_STATUSES[order.status].filter((status) => status !== "ACCEPTED" && status !== next?.status);
   const cancellable = CANCELLABLE_STATUSES.includes(order.status);
 

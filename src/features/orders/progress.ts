@@ -20,7 +20,7 @@ export type FulfilmentStage = {
   description: string;
   /** When the order reached this stage (null when it has not, or for old orders with no event). */
   at: Date | null;
-  /** Who moved it — a staff name, or null for the system (payment webhooks, automatic acceptance). */
+  /** Who moved it — the staff member or store owner, or null for the system (payment confirmations). */
   by: string | null;
   done: boolean;
   current: boolean;
@@ -66,18 +66,20 @@ export type NextStep = {
 
 /**
  * The single next step staff normally take. Other valid jumps (accepted straight to shipped, say) stay
- * available in the full status dialog; this is the one-click path down the happy road.
+ * available in the full status dialog; this is the one-click path down the happy road. `ownerAccepts` is
+ * true for an order in an owner's store: accepting it is the owner's decision, so staff have no step until
+ * they have made it. Only an order in Zendropship's own store is accepted by staff.
  */
-export function nextFulfilmentStep(status: OrderStatus): NextStep | null {
+export function nextFulfilmentStep(status: OrderStatus, options: { ownerAccepts: boolean }): NextStep | null {
   switch (status) {
     case "CONFIRMED":
     case "AWAITING_FUNDS":
+      if (options.ownerAccepts) return null;
       return {
         status: "ACCEPTED",
         label: "Accept for fulfilment",
         short: "Accept",
-        confirm:
-          "The wholesale cost is set aside once: from the customer's payment when they have already paid, otherwise from the store's available balance. The owner's earnings stay held until the order is delivered.",
+        confirm: "The order is accepted and goes straight into processing. Zendropship's own store has no owner balance, so nothing is charged.",
       };
     case "ACCEPTED":
       return { status: "PROCESSING", label: "Start processing", short: "Processing" };
@@ -95,17 +97,18 @@ export function nextFulfilmentStep(status: OrderStatus): NextStep | null {
 }
 
 /** Short line for the list: what is expected of staff next, or why nothing is. */
-export function fulfilmentHint(status: OrderStatus): string {
+export function fulfilmentHint(status: OrderStatus, options: { ownerAccepts: boolean }): string {
   switch (status) {
     case "PENDING":
       return "Waiting for the customer's payment";
+    case "CONFIRMED":
     case "AWAITING_FUNDS":
-      return "Waiting for the store owner to deposit the shortfall";
+      return options.ownerAccepts ? "Waiting for the store owner to accept" : "Next: Accepted";
     case "DELIVERED":
       return "Fulfilment complete";
     case "CANCELLED":
       return "Cancelled — fulfilment stopped";
     default:
-      return `Next: ${ORDER_STATUS_LABELS[nextFulfilmentStep(status)?.status ?? status]}`;
+      return `Next: ${ORDER_STATUS_LABELS[nextFulfilmentStep(status, options)?.status ?? status]}`;
   }
 }

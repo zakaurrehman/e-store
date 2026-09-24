@@ -45,27 +45,31 @@ async function unpaidCardOrder(store: { id: string }, variantId: string) {
 }
 
 describe("confirming the payment on an order that is still waiting for it", () => {
-  it("records the money, confirms the order and hands it to fulfilment in one step", async () => {
+  it("records the money and confirms the order — and leaves accepting it to the store owner", async () => {
     const { store, variant } = await storeWithProduct();
     const agent = await staff();
     const order = await unpaidCardOrder(store, variant.id);
     expect(order.status).toBe(OrderStatus.PENDING);
     expect(order.paymentStatus).toBe(PaymentStatus.PENDING);
 
-    await markPaidManually(order.id, agent.id, "Bank transfer arrived");
+    const notifications = await markPaidManually(order.id, agent.id, "Bank transfer arrived");
 
     const after = await db.order.findUniqueOrThrow({ where: { id: order.id }, include: { events: true } });
     expect(after.paymentStatus).toBe(PaymentStatus.PAID);
     expect(after.paidAt).not.toBeNull();
-    // The customer's own payment covers the wholesale cost, so fulfilment takes it without a deposit.
-    expect(after.status).toBe(OrderStatus.ACCEPTED);
+    // Confirmed, with the step on its timeline — not accepted: that stays the owner's decision.
+    expect(after.status).toBe(OrderStatus.CONFIRMED);
+    expect(after.acceptedAt).toBeNull();
     expect(after.events.some((event) => event.message.includes("Marked as paid"))).toBe(true);
+    expect(after.events.some((event) => (event.data as { status?: string } | null)?.status === "CONFIRMED")).toBe(true);
+    // The owner is told there is a new order waiting for them.
+    expect(notifications).toEqual([{ type: "order.confirmed", orderId: order.id }]);
 
-    // The sale and its costs are on the ledger once each.
+    // The sale and commission are on the ledger once each, held; nothing is charged until the owner accepts.
     const entries = await db.walletEntry.findMany({ where: { orderId: order.id } });
     expect(entries.filter((entry) => entry.type === WalletEntryType.ORDER_SALE)).toHaveLength(1);
-    expect(entries.filter((entry) => entry.type === WalletEntryType.ORDER_FULFILMENT)).toHaveLength(1);
     expect(entries.filter((entry) => entry.type === WalletEntryType.ORDER_COMMISSION)).toHaveLength(1);
+    expect(entries.filter((entry) => entry.type === WalletEntryType.ORDER_FULFILMENT)).toHaveLength(0);
   });
 
   it("changes nothing when it is done twice", async () => {

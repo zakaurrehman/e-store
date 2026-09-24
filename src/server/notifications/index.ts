@@ -7,6 +7,7 @@ import { isAddressSnapshot } from "@/lib/address";
 import { storeUrl } from "@/lib/tenancy";
 import type { Permission } from "@/lib/permissions";
 import { loadSettings } from "@/features/settings/service";
+import { fulfilmentShortfallCents } from "@/features/wallet/service";
 import { db } from "@/server/db";
 import { getEmailProvider } from "@/server/email/provider";
 import { env } from "@/server/env";
@@ -36,7 +37,6 @@ export type NotificationEvent =
   | { type: "contact.replied"; messageId: string; replyId: string }
   | { type: "support.customer-replied"; messageId: string; replyId: string }
   | { type: "order.accepted"; orderId: string }
-  | { type: "order.awaiting-funds"; orderId: string; shortfallCents: number }
   | { type: "wallet.deposit-submitted"; depositId: string }
   | { type: "wallet.deposit-settled"; depositId: string; confirmed: boolean }
   | { type: "wallet.payout-requested"; payoutId: string }
@@ -218,28 +218,39 @@ async function plan(event: NotificationEvent): Promise<Planned[]> {
             }),
           })),
         },
-        // The store owner hears about every sale; fulfilment is already queued with the platform.
+        // The store owner hears about every sale, and that it waits for them: nothing is fulfilled until they accept it.
         ...(owner && !owner.deletedAt
-          ? [
-              {
-                inApp: { audience: NotificationAudience.CUSTOMER, userId: owner.id, type: "store.order-new", title: `New order ${order.number}`, body: `${formatMoney(order.totalCents, order.currency)} · sent to fulfilment automatically`, href: `/dashboard/orders/${order.number}` },
-                emails: [
-                  {
-                    to: owner.email,
-                    template: "owner.order-new",
-                    rendered: templates.staffAlertEmail(platformBrand, {
-                      title: `New order in ${order.store.name}`,
-                      lines: [
-                        `Order ${order.number} · ${formatMoney(order.totalCents, order.currency)}`,
-                        "It has been passed to Zendropship fulfilment automatically — there is nothing you need to do to ship it.",
-                      ],
-                      href: app(`/dashboard/orders/${order.number}`),
-                      cta: "View in your dashboard",
-                    }),
+          ? await (async () => {
+              const shortCents = await fulfilmentShortfallCents(order.id);
+              return [
+                {
+                  inApp: {
+                    audience: NotificationAudience.CUSTOMER,
+                    userId: owner.id,
+                    type: "store.order-new",
+                    title: `New order ${order.number} — accept it to start fulfilment`,
+                    body: shortCents > 0 ? `Add ${formatMoney(shortCents, order.currency)} to your balance, then accept it` : `${formatMoney(order.totalCents, order.currency)} · waiting for you to accept`,
+                    href: `/dashboard/orders/${order.number}`,
                   },
-                ],
-              },
-            ]
+                  emails: [
+                    {
+                      to: owner.email,
+                      template: "owner.order-new",
+                      rendered: templates.staffAlertEmail(platformBrand, {
+                        title: `New order in ${order.store.name}`,
+                        lines: [
+                          `Order ${order.number} · ${formatMoney(order.totalCents, order.currency)}`,
+                          "It is waiting for you: open it and press Accept, and Zendropship starts fulfilling it.",
+                          ...(shortCents > 0 ? [`Your available balance is ${formatMoney(shortCents, order.currency)} short of what this order needs. Add funds first, then accept it.`] : []),
+                        ],
+                        href: app(`/dashboard/orders/${order.number}`),
+                        cta: "Open the order",
+                      }),
+                    },
+                  ],
+                },
+              ];
+            })()
           : []),
       ];
     }
@@ -419,80 +430,18 @@ async function plan(event: NotificationEvent): Promise<Planned[]> {
     }
 
     case "order.accepted": {
-      const order = await db.order.findUniqueOrThrow({ where: { id: event.orderId }, select: { id: true, number: true, storeId: true, currency: true, fulfilmentCostCents: true, ownerEarningCents: true } });
-      const target = await storeOwner(order.storeId);
-      if (!target) return [];
+      // The owner accepted it themselves; fulfilment is who needs to know there is something to pack.
+      const order = await db.order.findUniqueOrThrow({ where: { id: event.orderId }, select: { id: true, number: true, store: { select: { name: true, ownerId: true } } } });
       return [
         {
           inApp: {
-            audience: NotificationAudience.CUSTOMER,
-            userId: target.owner.id,
+            audience: NotificationAudience.STAFF,
+            userId: null,
             type: "order.accepted",
-            title: `Order ${order.number} is with fulfilment`,
-            body: `${formatMoney(order.fulfilmentCostCents, order.currency)} fulfilment cost · you keep ${formatMoney(order.ownerEarningCents, order.currency)}`,
-            href: `/dashboard/orders/${order.number}`,
+            title: `Order ${order.number} accepted — ready to fulfil`,
+            body: order.store.ownerId ? `Accepted by ${order.store.name}` : "Accepted for Zendropship's own store",
+            href: `/admin/orders/${order.id}`,
           },
-          emails: [
-            {
-              to: target.owner.email,
-              template: "owner.order-accepted",
-              rendered: templates.staffAlertEmail(platformBrand, {
-                title: `Order ${order.number} accepted for fulfilment`,
-                lines: [
-                  `Fulfilment cost charged to your balance: ${formatMoney(order.fulfilmentCostCents, order.currency)}`,
-                  `Your earning on this order: ${formatMoney(order.ownerEarningCents, order.currency)}`,
-                ],
-                href: app(`/dashboard/orders/${order.number}`),
-                cta: "View the order",
-              }),
-            },
-          ],
-        },
-      ];
-    }
-
-    case "order.awaiting-funds": {
-      const order = await db.order.findUniqueOrThrow({ where: { id: event.orderId }, select: { id: true, number: true, storeId: true, currency: true, fulfilmentCostCents: true } });
-      const target = await storeOwner(order.storeId);
-      const staff = await staffRecipients("orders.view");
-      const shortfall = formatMoney(event.shortfallCents, order.currency);
-      return [
-        ...(target
-          ? [
-              {
-                inApp: {
-                  audience: NotificationAudience.CUSTOMER,
-                  userId: target.owner.id,
-                  type: "order.awaiting-funds",
-                  title: `Order ${order.number} needs funds`,
-                  body: `Deposit ${shortfall} so fulfilment can take it.`,
-                  href: "/dashboard/balance",
-                },
-                emails: [
-                  {
-                    to: target.owner.email,
-                    template: "owner.order-awaiting-funds",
-                    rendered: templates.staffAlertEmail(platformBrand, {
-                      title: `Order ${order.number} is waiting for funds`,
-                      lines: [
-                        `The fulfilment cost is ${formatMoney(order.fulfilmentCostCents, order.currency)} and your available balance is ${shortfall} short.`,
-                        "Deposit the difference and the order goes to fulfilment as soon as we confirm it.",
-                      ],
-                      href: app("/dashboard/balance"),
-                      cta: "Open your balance",
-                    }),
-                  },
-                ],
-              },
-            ]
-          : []),
-        {
-          inApp: { audience: NotificationAudience.STAFF, userId: null, type: "order.awaiting-funds", title: `Order ${order.number} is waiting for funds`, body: `${target?.store.name ?? "A store"} is ${shortfall} short`, href: `/admin/orders/${order.id}` },
-          emails: staff.map((member) => ({
-            to: member.email,
-            template: "staff.order-awaiting-funds",
-            rendered: templates.staffAlertEmail(platformBrand, { title: `Order ${order.number} is waiting for funds`, lines: [`${target?.store.name ?? "A store"} is ${shortfall} short of the fulfilment cost.`], href: app(`/admin/orders/${order.id}`), cta: "Open order" }),
-          })),
         },
       ];
     }

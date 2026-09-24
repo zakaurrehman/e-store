@@ -108,7 +108,7 @@ async function OrdersTable({ searchParams }: PageProps<"/admin/orders">) {
                 <Td className="whitespace-nowrap text-ink-600">{dateTime.format(order.placedAt)}</Td>
                 <Td>
                   <StatusBadge label={ORDER_STATUS_LABELS[order.status]} tone={statusTone(order.status)} />
-                  <span className="mt-0.5 block text-[0.75rem] text-ink-500">{fulfilmentHint(order.status)}</span>
+                  <span className="mt-0.5 block text-[0.75rem] text-ink-500">{fulfilmentHint(order.status, { ownerAccepts: Boolean(order.store.ownerId) })}</span>
                 </Td>
                 <Td>
                   <StatusBadge label={PAYMENT_STATUS_LABELS[order.paymentStatus]} tone={paymentTone(order.paymentStatus)} />
@@ -127,12 +127,12 @@ async function OrdersTable({ searchParams }: PageProps<"/admin/orders">) {
 }
 
 /**
- * One click for the step staff take next. Accepting goes through the funding check (which charges the
- * owner's balance once); everything after it is a plain status move. Cancelled and delivered orders have none.
+ * One click for the step staff take next. An order in an owner's store has none until the owner accepts
+ * it; staff accept only orders in Zendropship's own store. Cancelled and delivered orders have none.
  */
-function nextStepButton(order: { id: string; number: string; status: OrderStatus }) {
-  // An order still waiting for its payment is confirmed by recording that the money arrived, which is
-  // what moves it on: the sale is posted and fulfilment picks it up in the same step.
+function nextStepButton(order: { id: string; number: string; status: OrderStatus; store: { ownerId: string | null } }) {
+  // An order still waiting for its payment is confirmed by recording that the money arrived. That confirms
+  // it and records the sale; accepting it is still up to the store owner.
   if (order.status === "PENDING") {
     return (
       <ActionButton
@@ -141,7 +141,7 @@ function nextStepButton(order: { id: string; number: string; status: OrderStatus
         variant="primary"
         confirm={{
           title: `Confirm payment for order ${order.number}?`,
-          description: "Only for money received outside the store, such as a bank transfer or cash on delivery. The order is confirmed, the sale is recorded, and fulfilment takes it straight away if the balance covers the wholesale cost.",
+          description: "Only for money received outside the store, such as a bank transfer or cash on delivery. The order is confirmed and the sale recorded; the store owner then decides when to accept it.",
           confirmLabel: "Confirm payment",
         }}
       >
@@ -149,8 +149,11 @@ function nextStepButton(order: { id: string; number: string; status: OrderStatus
       </ActionButton>
     );
   }
-  const next = nextFulfilmentStep(order.status);
-  if (!next) return <span className="text-[0.8125rem] text-ink-400">{order.status === "DELIVERED" ? "Complete" : "—"}</span>;
+  const next = nextFulfilmentStep(order.status, { ownerAccepts: Boolean(order.store.ownerId) });
+  if (!next) {
+    const waiting = order.status === "CONFIRMED" || order.status === "AWAITING_FUNDS";
+    return <span className="text-[0.8125rem] text-ink-400">{order.status === "DELIVERED" ? "Complete" : waiting ? "Owner to accept" : "—"}</span>;
+  }
   const action = next.status === "ACCEPTED" ? acceptOrderAction.bind(null, order.id) : setOrderStatusAction.bind(null, order.id, next.status, undefined);
   return (
     <ActionButton

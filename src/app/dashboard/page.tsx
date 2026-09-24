@@ -77,8 +77,8 @@ async function Overview({ searchParams }: PageProps<"/dashboard">) {
           <ul className="divide-y divide-line">
             {[
               { label: "Awaiting payment", value: stats.byStatus.pendingPayment, href: "/dashboard/orders?status=PENDING", tone: "" },
-              { label: "Awaiting funds", value: stats.byStatus.awaitingFunds, href: "/dashboard/orders?status=AWAITING_FUNDS", tone: "text-warning", hint: "Deposit needed before fulfilment can take these" },
-              { label: "With fulfilment", value: stats.byStatus.confirmed + stats.byStatus.processing, href: "/dashboard/orders", tone: "" },
+              { label: "Waiting for you to accept", value: stats.byStatus.toAccept, href: "/dashboard/orders?status=TO_ACCEPT", tone: "text-warning", hint: "Nothing is fulfilled until you accept it" },
+              { label: "With fulfilment", value: stats.byStatus.withFulfilment, href: "/dashboard/orders?status=PROCESSING", tone: "" },
               { label: "Shipped", value: stats.byStatus.shipped, href: "/dashboard/orders?status=SHIPPED", tone: "" },
               { label: "Delivered", value: stats.byStatus.delivered, href: "/dashboard/orders?status=DELIVERED", tone: "text-success" },
             ].map((row) => (

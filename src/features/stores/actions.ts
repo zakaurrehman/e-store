@@ -5,9 +5,11 @@ import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { z } from "zod";
 import { ingestImage } from "@/features/media/service";
+import { acceptOrder, flushNotifications } from "@/features/orders/service";
 import { isValidStoreSlug, storeUrl } from "@/lib/tenancy";
 import { failure, handleActionError, success, zodFailure, type ActionState } from "@/server/actions";
 import { assertPermission } from "@/server/auth/guards";
+import { db } from "@/server/db";
 import { getCurrentUser, startSession } from "@/server/auth/session";
 import { isDomainError } from "@/server/errors";
 import { dispatchNotification, sendDeliveries } from "@/server/notifications";
@@ -18,6 +20,7 @@ import { openStoreForNewOwner, openStoreForUser } from "./onboarding";
 import { storeCatalogTag, storeTag, STORES_TAG } from "./queries";
 import { openStoreSchema, openStoreSignedInSchema, storePricingSchema, storeProductPricingSchema, storeSettingsSchema } from "./schemas";
 import { addProductsToStore, isStoreSlugAvailable, removeProductFromStore, setStoreStatus, suggestStoreSlug, updateStoreProduct, updateStoreSettings } from "./service";
+import { formatMoney } from "@/utils/money";
 
 /** Storefront caches for one store: its record (name, theme, pricing rules) and its shelf. */
 function refreshStore(store: { id: string; slug: string }) {
@@ -251,6 +254,29 @@ export async function setStoreStatusAction(storeId: string, status: "ACTIVE" | "
     updateTag(STORES_TAG);
     revalidatePath("/admin/stores");
     return success(status === "SUSPENDED" ? `${store.name} is suspended and no longer visible to shoppers.` : `${store.name} is open again.`);
+  } catch (error) {
+    return handleActionError(error);
+  }
+}
+
+// ─── Orders ──────────────────────────────────────────────────────────────────
+
+/**
+ * The owner accepts one of their store's orders — the only way an order in their store is accepted. The
+ * order must be theirs; the money check, the single charge and the move to processing happen in
+ * `acceptOrder`, in one locked transaction, so a double click or a retry changes nothing the second time.
+ */
+export async function acceptMyOrderAction(orderId: string): Promise<ActionState> {
+  try {
+    const { user, store } = await assertStoreOwner();
+    const order = await db.order.findFirst({ where: { id: String(orderId).slice(0, 40), storeId: store.id }, select: { id: true, number: true, currency: true } });
+    if (!order) return failure("Order not found.");
+    const { outcome, notifications } = await acceptOrder(order.id, { userId: user.id, as: "owner" });
+    if (notifications.length) after(() => flushNotifications(notifications));
+    for (const path of ["/dashboard", "/dashboard/orders", `/dashboard/orders/${order.number}`, "/dashboard/balance", "/dashboard/profile"]) revalidatePath(path);
+    if (outcome.already) return success(`Order ${order.number} is already accepted.`);
+    const setAside = outcome.fromBalanceCents > 0 ? ` ${formatMoney(outcome.fromBalanceCents, order.currency)} was set aside from your balance.` : "";
+    return success(`Order ${order.number} accepted — Zendropship is processing it.${setAside}`);
   } catch (error) {
     return handleActionError(error);
   }

@@ -115,6 +115,9 @@ const orderLedgerSelect = {
 
 type OrderForLedger = Prisma.OrderGetPayload<{ select: typeof orderLedgerSelect }>;
 
+/** What the funding rule reads from an order. Select these with an order to show what accepting it would take. */
+export type OrderFundingFields = Pick<OrderForLedger, "status" | "paymentStatus" | "paymentProvider" | keyof typeof orderFinanceSelect>;
+
 const loadOrder = (client: DbClient, orderId: string) => client.order.findUnique({ where: { id: orderId }, select: orderLedgerSelect });
 
 /** True once Zendropship actually holds the customer's money: online payments when paid, cash on delivery on arrival. */
@@ -184,7 +187,7 @@ export type FulfilmentFunding = { ok: true; chargedCents: number; fromBalanceCen
  * taken from the available balance now. Pending money from other orders never counts: it is not the
  * owner's yet, and would vanish if those orders were cancelled.
  */
-function fundingPlan(order: OrderForLedger, available: number) {
+function fundingPlan(order: OrderFundingFields, available: number) {
   const finance = storedOrderFinance(order);
   const ownMoney = moneyCollected(order) ? Math.max(0, finance.revenueCents - finance.commissionCents) : 0;
   const fromOrder = Math.min(finance.fulfilmentCostCents, ownMoney);
@@ -238,6 +241,14 @@ export async function chargeOrderFulfilment(tx: DbClient, orderId: string): Prom
     });
   }
   return { ok: true, chargedCents: plan.cost, fromBalanceCents: plan.fromBalance, alreadyCharged: false };
+}
+
+/**
+ * What accepting this order would take from the owner's available balance: 0 when the customer's own
+ * collected payment covers the wholesale cost, the whole cost for cash on delivery. Pure, for lists.
+ */
+export function balanceNeededCents(order: OrderFundingFields) {
+  return fundingPlan(order, 0).fromBalance;
 }
 
 /** What an order still needs in the available balance before fulfilment can take it (0 when it is covered). */

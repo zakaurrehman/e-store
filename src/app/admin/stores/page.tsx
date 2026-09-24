@@ -92,7 +92,7 @@ async function StoresTable({ searchParams }: PageProps<"/admin/stores">) {
                 {store.owner ? (
                   <Link href={`/admin/stores/${store.id}#ledger`} className="hover:underline">
                     {formatMoney(store.balanceCents)}
-                    {store.awaitingFunds > 0 && <span className="block text-[0.75rem] font-medium text-warning">{store.awaitingFunds} awaiting funds</span>}
+                    {store.toAccept > 0 && <span className="block text-[0.75rem] font-medium text-warning">{store.toAccept} waiting for the owner to accept</span>}
                   </Link>
                 ) : (
                   <span className="text-ink-400">—</span>
