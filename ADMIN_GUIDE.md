@@ -31,7 +31,7 @@ Managers cannot delete or import products, refund or cancel orders, change custo
 | Products | Catalogue list, editor, bulk actions, CSV export | `products.*` |
 | Inventory | Stock per variant, adjustments, ledger | `products.view`, `inventory.update` |
 | Categories & brands | Categories, brands, collections, tags, attributes | `catalog.manage` |
-| Reviews | Moderation | `reviews.moderate` |
+| Product reviews / Store reviews | Moderation of product reviews and of customers' ratings of stores | `reviews.moderate` |
 | Import & export | CSV and WooCommerce import, run history | `products.import` |
 | Homepage & banners | Homepage sections, banners, menus | `content.manage` |
 | Pages & FAQ | Static pages and FAQ | `content.manage` |
@@ -137,10 +137,20 @@ Limits are enforced when the order is placed. Deleting a coupon stops the code w
 
 ## Reviews
 
+**Product reviews** (Catalogue → Product reviews):
+
 - **Approve, Reject, Hide or Feature** reviews. Featured reviews can appear on the homepage.
 - **Reply** publicly as the store.
 - Only approved reviews count towards a product's rating.
 - **Settings → Commerce** controls whether reviews need approval, whether only verified purchasers may review, and whether photos are allowed.
+
+**Store reviews** (Sales → Store reviews) are ratings of a whole store, 1–5 stars and a few words:
+
+- Only the customer of a **delivered** order can leave one — signed in, or from the link in their order emails — and only one per order (the database enforces it). They are written from the order's page in the store.
+- They follow the same **Settings → Commerce → reviews need approval** switch: while it is on, a new review waits under *Waiting* until you **Publish** it. **Hide** takes it off the store, **Reject** refuses a waiting one, and **Delete** removes it for good — the customer cannot review that order again.
+- Owners can **reply** in public and **report** a review; reported reviews are listed under *Reported by owners* with the owner's reason. **Dismiss report** leaves the review as it is. Owners cannot hide or delete reviews themselves — only staff decide what is shown.
+- Each store's page shows its average, the number of reviews, the spread of stars and the latest reviews near the top, and a full list at `/reviews`. Only published reviews count.
+- **Demo reviews** are sample data from the seed (`npm run db:seed:demo-reviews`, never in production). Each is labelled **Demo review** wherever it appears, and a store's rating says how many of its reviews are demo data. The *Demo* filter lists them, and **Remove demo reviews** deletes them all in one step before stores go in front of real customers.
 
 ## Customers and messages
 

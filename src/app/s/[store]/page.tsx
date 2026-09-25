@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
+import { Fragment, Suspense } from "react";
 import { HomeSection } from "@/components/store/home/sections";
+import { StoreReviewsHighlight } from "@/components/store/reviews/store-reviews-highlight";
 import { JsonLd, organizationJsonLd, storeOrganizationJsonLd, websiteJsonLd } from "@/components/seo/json-ld";
 import { Skeleton } from "@/components/ui/misc";
 import { getHomeSections } from "@/features/cms/home-queries";
@@ -32,9 +33,22 @@ async function Home({ params }: PageProps<"/s/[store]">) {
   return (
     <>
       <JsonLd data={structured} />
-      {sections.map((section) => (
-        <HomeSection key={section.id} store={store} section={{ ...section, type: section.type as HomeSectionType }} />
+      {sections.map((section, index) => (
+        <Fragment key={section.id}>
+          <HomeSection store={store} section={{ ...section, type: section.type as HomeSectionType }} />
+          {/* The store's rating sits right under the first section (the hero), where shoppers see it first. */}
+          {index === 0 && (
+            <Suspense fallback={null}>
+              <StoreReviewsHighlight store={store} />
+            </Suspense>
+          )}
+        </Fragment>
       ))}
+      {sections.length === 0 && (
+        <Suspense fallback={null}>
+          <StoreReviewsHighlight store={store} />
+        </Suspense>
+      )}
     </>
   );
 }

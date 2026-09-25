@@ -101,6 +101,7 @@ model User {
   wishlist            Wishlist?
   orders              Order[]
   reviews             Review[]
+  storeReviews        StoreReview[]
   notifications       Notification[]
   recentlyViewed      RecentlyViewed[]
   searchHistory       SearchHistory[]
@@ -634,6 +635,7 @@ model Store {
   deposits          Deposit[]
   referral          ReferralRedemption[]
   signups           User[]               @relation("StoreSignups")
+  reviews           StoreReview[]
 
   @@index([status])
   @@index([createdAt])
@@ -826,6 +828,7 @@ model Order {
   inventoryMoves      InventoryMovement[]
   walletEntries       WalletEntry[]
   supportMessages     ContactMessage[]
+  storeReview         StoreReview?
 
   @@index([userId, createdAt])
   @@index([storeId, status])
@@ -1148,6 +1151,41 @@ model Review {
   @@unique([productId, userId])
   @@index([productId, status, createdAt])
   @@index([status, createdAt])
+}
+
+/// A customer's rating of a store as a whole — one per delivered order. Demo reviews have no order.
+model StoreReview {
+  id             String       @id @default(cuid())
+  storeId        String
+  /// The delivered order it is about: one review per order. Null only for demo reviews.
+  orderId        String?      @unique
+  /// The customer's account, when they have one (guests review through their order's signed link)
+  userId         String?
+  /// 1–5 stars
+  rating         Int
+  body           String
+  /// As shown on the store: first name and last initial
+  authorName     String
+  status         ReviewStatus @default(PENDING)
+  /// Sample review for testing and presentation, never a real customer: always labelled "Demo review" where shown
+  isDemo         Boolean      @default(false)
+  /// The store owner's public answer
+  ownerReply     String?
+  ownerRepliedAt DateTime?
+  /// The owner asked Zendropship to check it, and why
+  reportedAt     DateTime?
+  reportReason   String?
+  moderatedAt    DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  deletedAt      DateTime?
+  store          Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  order          Order?       @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([storeId, status, createdAt])
+  @@index([status, createdAt])
+  @@index([reportedAt])
 }
 
 model ReviewImage {

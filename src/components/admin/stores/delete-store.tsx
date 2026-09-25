@@ -109,8 +109,8 @@ export function DeleteStore({ storeId, storeName, size = "xs", afterDelete = "re
                     </li>
                     <li>{preview.store.ownerEmail ? `Access for its owner, ${preview.store.ownerEmail}` : "Its owner's access"} — they would need a new invitation to open another store.</li>
                     <li>
-                      {count(preview.removes.products, "product")} on its shelf, {count(preview.removes.carts, "shopping bag")}, {count(preview.removes.coupons, "coupon")} and{" "}
-                      {count(preview.removes.conversations, "customer conversation")}.
+                      {count(preview.removes.products, "product")} on its shelf, {count(preview.removes.carts, "shopping bag")}, {count(preview.removes.coupons, "coupon")},{" "}
+                      {count(preview.removes.conversations, "customer conversation")} and {count(preview.removes.reviews, "review")}.
                     </li>
                     {preview.removes.unpaidOrders > 0 && <li>{count(preview.removes.unpaidOrders, "unpaid order")} cancelled, with the stock returned.</li>}
                     {preview.removes.signups > 0 && <li>{count(preview.removes.signups, "customer account")} signed up here stay open, no longer tied to the store.</li>}

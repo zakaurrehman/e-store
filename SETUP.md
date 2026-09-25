@@ -57,7 +57,9 @@ npm run db:seed       # roles, settings, shipping & tax, admin, demo catalogue, 
 
 The first seed downloads and optimises the demo photos (a few minutes). Re-running the seed is safe.
 
-Optional: set `SEED_DEMO_DATA=true` before seeding to add development-only demo customers, orders (placed through the real checkout and confirmed through signed sandbox webhooks) and approved reviews, so the dashboard and order screens have data. Demo customers have no password and cannot sign in. It refuses to run in production.
+Optional: set `SEED_DEMO_DATA=true` before seeding to add development-only demo customers, orders (placed through the real checkout and confirmed through signed sandbox webhooks) and approved reviews, so the dashboard and order screens have data, plus 24 demo store reviews spread over the demo store and up to three owner stores. Demo customers have no password and cannot sign in. It refuses to run in production.
+
+`npm run db:seed:demo-reviews` adds (or refreshes) just the demo store reviews on a database that already has stores. Every one is marked as demo data — labelled "Demo review" on the store — and Admin → Store reviews → **Remove demo reviews** deletes them all. It refuses to run in production.
 
 ## 5. Run
 

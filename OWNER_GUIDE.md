@@ -76,6 +76,16 @@ For example: you have $5,000 available and a cash-on-delivery order costs $300 w
 
 Your customer never hears about any of this — to them the order is simply confirmed. (Orders from before accepting was your decision may show as *Awaiting funds*; they wait for your Accept in exactly the same way.)
 
+## Reviews
+
+Customers can rate your store — 1 to 5 stars and a few words — once their order has been **delivered**, one review per order. Your store shows its average rating, the number of reviews and the latest ones near the top of its home page, and all of them at `/reviews`.
+
+**Reviews** in the menu lists every review of your store and where it stands: *On your store*, *Being checked* (new reviews wait for Zendropship while approval is on), or *Not shown*.
+
+- **Reply** — your answer appears under the review on your store. Save it empty to remove it.
+- **Report** — if a review breaks the rules (abuse, spam, personal details, or not about your store), tell Zendropship why. They check it and hide it if it should go. You cannot hide or delete reviews yourself, so your rating stays trustworthy.
+- Reviews marked **Demo review** are sample data for demonstration, not real customers; they are removed before real trading.
+
 ## Customer service
 
 **Customer service** is your inbox for messages from your customers. Customers write from the **Customer Service** button in the corner of every page of your store, from your store's **Customer service** page, from an order, or from the contact page; signed-in customers follow the conversation in that panel and in their account, and everyone gets your replies by email in your store's name.

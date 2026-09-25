@@ -1,8 +1,8 @@
 "use client";
 
 import {
-  BarChart3,
   Banknote,
+  BarChart3,
   Bell,
   Boxes,
   ClipboardList,
@@ -14,17 +14,18 @@ import {
   LayoutTemplate,
   LogOut,
   Menu,
+  MessageSquareQuote,
   Package,
   Settings,
   ShoppingBag,
   Star,
   Store,
-  Wallet,
   Tags,
   Ticket,
   Truck,
   Upload,
   Users,
+  Wallet,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -54,6 +55,7 @@ const GROUPS: NavGroup[] = [
       { href: "/admin/deposits", label: "Deposits", icon: Banknote, permission: "stores.view" },
       { href: "/admin/payouts", label: "Withdrawals", icon: Wallet, permission: "stores.view" },
       { href: "/admin/referrals", label: "Invitations", icon: Ticket, permission: "stores.view" },
+      { href: "/admin/store-reviews", label: "Store reviews", icon: MessageSquareQuote, permission: "reviews.moderate" },
       { href: "/admin/orders", label: "Orders", icon: ShoppingBag, permission: "orders.view" },
       { href: "/admin/customers", label: "Customers", icon: Users, permission: "customers.view" },
       { href: "/admin/discounts", label: "Discounts", icon: Ticket, permission: "discounts.manage" },
@@ -66,7 +68,7 @@ const GROUPS: NavGroup[] = [
       { href: "/admin/products", label: "Products", icon: Package, permission: "products.view" },
       { href: "/admin/inventory", label: "Inventory", icon: Boxes, permission: "products.view" },
       { href: "/admin/catalog", label: "Categories & brands", icon: Tags, permission: "catalog.manage" },
-      { href: "/admin/reviews", label: "Reviews", icon: Star, permission: "reviews.moderate" },
+      { href: "/admin/reviews", label: "Product reviews", icon: Star, permission: "reviews.moderate" },
       { href: "/admin/imports", label: "Import & export", icon: Upload, permission: "products.import" },
     ],
   },

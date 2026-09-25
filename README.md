@@ -21,6 +21,8 @@ The platform grew out of a review of a reference site that turned out to be a fa
 
 **Admin** (`/admin`, role-based access enforced on the server) — everything from the single-store version (orders, customers, products, inventory, catalogue organisation, coupons, reviews, messages, content, media, settings, shipping and tax, staff and roles, audit log, import/export) plus **Stores** (every store with its owner, products, orders and sales, with suspend and reopen and a permanent delete that keeps the money records, and a page per store gathering the owner's account, the wallet ledger, deposits, orders and activity — with a password-reset link in place of any password), **Deposits** (requests from owners with their contact details and proof, approved and credited as one ledger entry or rejected with a reason), **Withdrawals** (owners' balances and the USDT TRC20 withdrawals to approve and send, marked paid with the transfer's TxID), **Invitations** (generate, disable and trace invitation codes), a **support inbox** (every conversation, with assignment, internal notes and resolve), every order's money breakdown and wallet movements, and commission settings.
 
+**Store reviews** — customers rate a store (1–5 stars and a review) from a delivered order's page, once per order; stores show their average, count, star spread and latest reviews near the top of their home page and in full at `/reviews`; owners reply in public and report reviews; staff publish, hide, reject or delete them. Demo reviews from the seed are always labelled as demo data and can be removed in one step.
+
 **Operations** — idempotent catalogue importer (CLI and admin), background jobs endpoint, security headers, per-host sitemap and robots, structured data.
 
 ## Quick start

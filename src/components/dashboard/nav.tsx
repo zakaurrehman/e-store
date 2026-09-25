@@ -1,6 +1,6 @@
 "use client";
 
-import { CreditCard, ExternalLink, LayoutDashboard, LifeBuoy, LogOut, Menu, Package, Palette, Search, ShoppingBag, Tags, UserRound, Users, Wallet, X } from "lucide-react";
+import { CreditCard, ExternalLink, LayoutDashboard, LifeBuoy, LogOut, Menu, Package, Palette, Search, ShoppingBag, Star, Tags, UserRound, Users, Wallet, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -15,6 +15,7 @@ const ITEMS = [
   { href: "/dashboard/orders", label: "Orders", icon: ShoppingBag, badge: "orders" as const },
   { href: "/dashboard/balance", label: "Balance", icon: Wallet },
   { href: "/dashboard/customers", label: "Customers", icon: Users },
+  { href: "/dashboard/reviews", label: "Reviews", icon: Star },
   { href: "/dashboard/support", label: "Customer service", icon: LifeBuoy, badge: "support" as const },
   { href: "/dashboard/design", label: "Design & details", icon: Palette },
   { href: "/dashboard/pricing", label: "Pricing", icon: Tags },

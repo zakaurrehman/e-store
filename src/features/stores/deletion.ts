@@ -13,7 +13,7 @@ export class StoreDeletionError extends DomainError {}
 /**
  * Deleting a store, permanently.
  *
- * What goes: everything that makes it a store — its shelf, bags, coupons, customer conversations, its
+ * What goes: everything that makes it a store — its shelf, bags, coupons, customer conversations, reviews, its
  * address (the subdomain stops resolving and can be taken again), its logo and domain links, and its
  * owner's access (they can open another store only with a new invitation). Unpaid orders are cancelled.
  *
@@ -69,12 +69,13 @@ export type StoreDeletionPreview = Awaited<ReturnType<typeof storeDeletionPrevie
 export async function storeDeletionPreview(storeId: string) {
   const store = await liveStore(storeId);
   if (!store) throw new NotFoundError("Store not found.");
-  const [blockers, products, carts, coupons, conversations, unpaidOrders, signups, orders, ledgerEntries, deposits, payouts] = await Promise.all([
+  const [blockers, products, carts, coupons, conversations, reviews, unpaidOrders, signups, orders, ledgerEntries, deposits, payouts] = await Promise.all([
     blockersFor(db, store),
     db.storeProduct.count({ where: { storeId } }),
     db.cart.count({ where: { storeId } }),
     db.coupon.count({ where: { storeId, deletedAt: null } }),
     db.contactMessage.count({ where: { storeId } }),
+    db.storeReview.count({ where: { storeId, deletedAt: null } }),
     db.order.count({ where: { storeId, status: OrderStatus.PENDING } }),
     db.user.count({ where: { registeredStoreId: storeId } }),
     db.order.count({ where: { storeId, status: { not: OrderStatus.PENDING } } }),
@@ -85,7 +86,7 @@ export async function storeDeletionPreview(storeId: string) {
   return {
     store: { id: store.id, name: store.name, slug: store.slug, ownerEmail: store.owner?.email ?? null },
     blockers,
-    removes: { products, carts, coupons, conversations, unpaidOrders, signups },
+    removes: { products, carts, coupons, conversations, reviews, unpaidOrders, signups },
     keeps: { orders, ledgerEntries, deposits, payouts },
   };
 }
@@ -128,6 +129,7 @@ export async function deleteStore(storeId: string, confirmation: string, actorId
     // Coupons are retired rather than erased: an order that used one keeps the record of it.
     const coupons = await tx.coupon.updateMany({ where: { storeId, deletedAt: null }, data: { isActive: false, deletedAt: now } });
     const conversations = await tx.contactMessage.deleteMany({ where: { storeId } });
+    const reviews = await tx.storeReview.deleteMany({ where: { storeId } });
     // Customers who signed up in the store keep their accounts; they simply no longer belong to it.
     const signups = await tx.user.updateMany({ where: { registeredStoreId: storeId }, data: { registeredStoreId: null } });
     await tx.store.update({
@@ -145,7 +147,7 @@ export async function deleteStore(storeId: string, confirmation: string, actorId
         ownerId: null,
       },
     });
-    return { products: products.count, carts: carts.count, coupons: coupons.count, conversations: conversations.count, signups: signups.count };
+    return { products: products.count, carts: carts.count, coupons: coupons.count, conversations: conversations.count, reviews: reviews.count, signups: signups.count };
   });
 
   await writeAudit({
@@ -155,7 +157,7 @@ export async function deleteStore(storeId: string, confirmation: string, actorId
     entityId: storeId,
     summary:
       `Deleted store "${store.name}" (${store.slug})${store.ownerEmail ? ` of ${store.ownerEmail}` : ""}: removed ${plural(removed.products, "product")}, ${plural(removed.carts, "bag")}, ` +
-      `${plural(removed.coupons, "coupon")}, ${plural(removed.conversations, "conversation")}, ${plural(unpaid.length, "unpaid order")} cancelled; kept ${plural(preview.keeps.orders, "order")}, ` +
+      `${plural(removed.coupons, "coupon")}, ${plural(removed.conversations, "conversation")}, ${plural(removed.reviews, "review")}, ${plural(unpaid.length, "unpaid order")} cancelled; kept ${plural(preview.keeps.orders, "order")}, ` +
       `${plural(preview.keeps.ledgerEntries, "ledger entry", "ledger entries")}, ${plural(preview.keeps.deposits, "deposit")} and ${plural(preview.keeps.payouts, "withdrawal")} on record`,
   });
   return { name: store.name, slug: store.slug, notifications };

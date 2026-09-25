@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { Breadcrumbs } from "@/components/store/breadcrumbs";
 import { StoreBrand } from "@/components/store/header/store-brand";
 import { OrderView } from "@/components/store/orders/order-view";
+import { OrderStoreReview } from "@/components/store/reviews/order-store-review";
 import { Skeleton } from "@/components/ui/misc";
 import { getOrderByAccessToken, getOrderForCustomer } from "@/features/orders/queries";
 import { storeFromParams } from "@/features/stores/route";
@@ -27,6 +28,7 @@ async function GuestOrderContent({ params, searchParams }: PageProps<"/s/[store]
       <div className="mt-8">
         <OrderView order={order} accessToken={token} />
       </div>
+      <OrderStoreReview order={order} token={token ?? null} storeName={store.name} />
     </>
   );
 }

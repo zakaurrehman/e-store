@@ -19,6 +19,7 @@
     "db:deploy": "prisma migrate deploy",
     "db:reset": "prisma migrate reset --force",
     "db:seed": "tsx --conditions=react-server db/seed/index.ts",
+    "db:seed:demo-reviews": "tsx --conditions=react-server db/seed/demo-store-reviews.ts",
     "db:studio": "prisma studio",
     "import:categories": "tsx --conditions=react-server scripts/import/cli.ts categories",
     "import:products": "tsx --conditions=react-server scripts/import/cli.ts products",

@@ -33,6 +33,7 @@ export type NotificationEvent =
   | { type: "order.cancelled"; orderId: string; reason?: string; refunded: boolean }
   | { type: "inventory.low-stock"; variantIds: string[] }
   | { type: "review.submitted"; reviewId: string }
+  | { type: "store-review.submitted"; reviewId: string }
   | { type: "contact.received"; messageId: string }
   | { type: "contact.replied"; messageId: string; replyId: string }
   | { type: "support.customer-replied"; messageId: string; replyId: string }
@@ -361,6 +362,21 @@ async function plan(event: NotificationEvent): Promise<Planned[]> {
           inApp: { audience: NotificationAudience.STAFF, userId: null, type: event.type, title: `New ${review.rating}★ review`, body: `${review.product.name}: “${review.title}”`, href: `/admin/reviews?status=${review.status}` },
         },
       ];
+    }
+
+    case "store-review.submitted": {
+      // The owner hears about every review of their store; staff too while it waits for their approval.
+      const review = await db.storeReview.findUniqueOrThrow({ where: { id: event.reviewId }, include: { store: { select: { name: true, ownerId: true } } } });
+      const stars = "★".repeat(review.rating);
+      const excerpt = review.body.length > 80 ? `${review.body.slice(0, 77)}…` : review.body;
+      const deliveries: Planned[] = [];
+      if (review.store.ownerId) {
+        deliveries.push({ inApp: { audience: NotificationAudience.CUSTOMER, userId: review.store.ownerId, type: event.type, title: `New ${stars} review from ${review.authorName}`, body: excerpt, href: "/dashboard/reviews" } });
+      }
+      if (review.status === "PENDING") {
+        deliveries.push({ inApp: { audience: NotificationAudience.STAFF, userId: null, type: event.type, title: `New ${review.rating}★ review of ${review.store.name}`, body: excerpt, href: "/admin/store-reviews?status=PENDING" } });
+      }
+      return deliveries;
     }
 
     case "contact.received": {

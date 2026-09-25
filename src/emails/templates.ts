@@ -234,9 +234,10 @@ export function deliveryConfirmationEmail(brand: EmailBrand, input: { order: Ord
         paragraph(greeting(order.customerFirstName)) +
         paragraph(`Order ${order.number} was delivered. We hope everything is just right. If something isn't, you can start a return from your order page.`) +
         button("Review your purchase", input.reviewUrl) +
+        paragraph(`How was shopping with ${brand.storeName}? You can rate the store on your order page: ${input.orderUrl}`) +
         smallPrint(`Not the right fit? Returns are free within the return window shown on your order page: ${input.orderUrl}`),
     }),
-    text: `${greeting(order.customerFirstName)}\n\nOrder ${order.number} was delivered.\nReview your purchase: ${input.reviewUrl}\nOrder: ${input.orderUrl}\n\n— ${brand.storeName}`,
+    text: `${greeting(order.customerFirstName)}\n\nOrder ${order.number} was delivered.\nReview your purchase: ${input.reviewUrl}\nRate ${brand.storeName}: ${input.orderUrl}\nOrder: ${input.orderUrl}\n\n— ${brand.storeName}`,
   };
 }
 

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { OrderView } from "@/components/store/orders/order-view";
+import { OrderStoreReview } from "@/components/store/reviews/order-store-review";
 import { Skeleton } from "@/components/ui/misc";
 import { getOrderForCustomer } from "@/features/orders/queries";
 import { storeFromParams } from "@/features/stores/route";
@@ -28,6 +29,7 @@ async function OrderDetail({ params }: PageProps<"/s/[store]/account/orders/[num
       <div id="tracking">
         <OrderView order={order} />
       </div>
+      <OrderStoreReview order={order} token={null} storeName={store.name} />
     </div>
   );
 }

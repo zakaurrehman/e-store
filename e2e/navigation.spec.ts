@@ -32,6 +32,7 @@ const STOREFRONT = [
   "/track-order",
   "/contact",
   "/faq",
+  "/reviews",
   "/pages/shipping",
   "/login",
   "/register",
@@ -63,6 +64,7 @@ const ADMIN = [
   "/admin/settings/audit",
   "/admin/settings/shipping",
   "/admin/settings/staff",
+  "/admin/store-reviews",
   "/admin/stores",
 ];
 

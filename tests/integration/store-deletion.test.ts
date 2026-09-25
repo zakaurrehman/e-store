@@ -4,11 +4,13 @@ import { acceptOrder, placeOrder, processWebhook, updateOrderStatus } from "@/fe
 import { deleteStore, storeDeletionPreview } from "@/features/stores/deletion";
 import { openStoreForNewOwner, openStoreForUser } from "@/features/stores/onboarding";
 import { getOwnedStore } from "@/features/stores/queries";
+import { submitStoreReview } from "@/features/store-reviews/service";
 import { addProductsToStore } from "@/features/stores/service";
 import { confirmDeposit, getBalanceCents, markPayoutPaid, recordDeposit, requestPayout, setPayoutStatus } from "@/features/wallet/service";
 import { DiscountType, OrderStatus, PayoutStatus, StoreStatus } from "@/generated/prisma/enums";
 import { db } from "@/server/db";
 import { isDomainError } from "@/server/errors";
+import { orderAccessToken } from "@/server/notifications";
 import { createProduct, invitation, orderContext, orderInput, sandboxGateway } from "./helpers";
 
 const TRC20_ADDRESS = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
@@ -120,6 +122,8 @@ describe("deleting a store", () => {
     // A delivered, paid-out order: real money records that must survive.
     const delivered = await deliveredOrder(store, variant.id);
     await settle(store, user.id);
+    // Its customer reviewed the store.
+    const review = await submitStoreReview({ storeId: store.id, orderNumber: delivered.number, rating: 5, body: "Arrived quickly and beautifully packed.", author: { userId: null, token: orderAccessToken(delivered) } });
     expect(await getBalanceCents(store.id)).toBe(0);
     // Things that belong to the store alone.
     const unpaid = await place(store.id, variant.id); // a card order never paid
@@ -140,7 +144,7 @@ describe("deleting a store", () => {
     const preview = await storeDeletionPreview(store.id);
     expect(preview.blockers).toEqual([]);
     // Every checkout leaves its (emptied) bag behind, as well as the one still holding an item.
-    expect(preview.removes).toMatchObject({ products: 1, carts: await db.cart.count({ where: { storeId: store.id } }), coupons: 1, conversations: 1, unpaidOrders: 1, signups: 1 });
+    expect(preview.removes).toMatchObject({ products: 1, carts: await db.cart.count({ where: { storeId: store.id } }), coupons: 1, conversations: 1, reviews: 1, unpaidOrders: 1, signups: 1 });
     expect(preview.removes.carts).toBeGreaterThanOrEqual(1);
     expect(preview.keeps).toMatchObject({ orders: 1, ledgerEntries: keptBefore.ledger, payouts: 1 });
 
@@ -164,6 +168,7 @@ describe("deleting a store", () => {
     expect(await db.cartItem.count({ where: { cartId: cart.id } })).toBe(0);
     expect(await db.contactMessage.count({ where: { storeId: store.id } })).toBe(0);
     expect(await db.contactReply.count({ where: { messageId: conversation.id } })).toBe(0);
+    expect(await db.storeReview.count({ where: { id: review.id } })).toBe(0);
     expect(await db.coupon.count({ where: { storeId: store.id, deletedAt: null } })).toBe(0);
     expect((await db.user.findUniqueOrThrow({ where: { id: customer.id } })).registeredStoreId).toBeNull();
     // The unpaid order is cancelled, and its stock is back on the shelf.
