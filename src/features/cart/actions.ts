@@ -9,7 +9,7 @@ import { isCountryCode } from "@/lib/countries";
 import { getCurrentUser } from "@/server/auth/session";
 import { isDomainError } from "@/server/errors";
 import { getRequestMeta } from "@/server/request";
-import { rateLimit, retryAfterMessage } from "@/server/security/rate-limit";
+import { rateLimitByIp, retryAfterMessage } from "@/server/security/rate-limit";
 import { addItem, loadCart, removeItem, setCartCoupon, setItemQuantity, toPricingLines } from "./service";
 import { ensureCart, getCurrentCartId } from "./session";
 import { buildCartSnapshot, EMPTY_CART, type CartSnapshot } from "./snapshot";
@@ -80,7 +80,7 @@ export async function applyCouponAction(input: { code: string }): Promise<CartAc
   const cartId = await currentCartId();
   if (!cartId) return { ok: false, error: "Add something to your bag first.", cart: EMPTY_CART };
   const meta = await getRequestMeta();
-  const limit = await rateLimit("coupon", meta.ipAddress);
+  const limit = await rateLimitByIp("coupon", meta.ipAddress);
   if (!limit.success) return { ok: false, error: retryAfterMessage(limit.resetAt), cart: await snapshot(cartId) };
   try {
     const code = normaliseCouponCode(String(input?.code ?? "").slice(0, 40));

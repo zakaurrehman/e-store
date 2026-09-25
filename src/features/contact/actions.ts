@@ -9,7 +9,7 @@ import { failure, success, zodFailure, type ActionState } from "@/server/actions
 import { getCurrentUser } from "@/server/auth/session";
 import { dispatchNotification, sendDeliveries } from "@/server/notifications";
 import { getRequestMeta } from "@/server/request";
-import { rateLimit, retryAfterMessage } from "@/server/security/rate-limit";
+import { rateLimitByIp, retryAfterMessage } from "@/server/security/rate-limit";
 
 const schema = z.object({
   name: z.string().trim().min(2, "Enter your name.").max(80),
@@ -35,7 +35,7 @@ export async function submitContactAction(_state: ActionState, formData: FormDat
     return zodFailure(parsed.error);
   }
   const meta = await getRequestMeta();
-  const limit = await rateLimit("contact", meta.ipAddress);
+  const limit = await rateLimitByIp("contact", meta.ipAddress);
   if (!limit.success) return failure(retryAfterMessage(limit.resetAt));
   const { website: _website, ...data } = parsed.data;
   // On a store host the message belongs to that store's owner; on the platform site it is for Zendropship.

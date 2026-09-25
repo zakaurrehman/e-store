@@ -28,7 +28,7 @@ export async function listReferralCodes(options: { page?: number; q?: string; st
         createdBy: { select: { firstName: true, lastName: true } },
         redemptions: {
           orderBy: { createdAt: "asc" },
-          include: { user: { select: { id: true, email: true, firstName: true, lastName: true } }, store: { select: { slug: true, name: true } } },
+          include: { user: { select: { id: true, email: true, firstName: true, lastName: true } }, store: { select: { slug: true, name: true, deletedAt: true } } },
         },
       },
     }),

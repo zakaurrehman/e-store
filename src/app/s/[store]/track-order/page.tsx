@@ -6,7 +6,7 @@ import { Alert } from "@/components/ui/misc";
 import { lookupOrder } from "@/features/orders/queries";
 import { getCurrentStore } from "@/features/stores/current";
 import { getRequestMeta } from "@/server/request";
-import { rateLimit } from "@/server/security/rate-limit";
+import { rateLimitByIp } from "@/server/security/rate-limit";
 import { Suspense } from "react";
 
 export const metadata: Metadata = { title: "Track your order", description: "Check the status of your order with your order number and email address.", alternates: { canonical: "/track-order" } };
@@ -16,7 +16,7 @@ async function lookup(formData: FormData) {
   const number = String(formData.get("number") ?? "");
   const email = String(formData.get("email") ?? "");
   const meta = await getRequestMeta();
-  const limit = await rateLimit("orderLookup", meta.ipAddress);
+  const limit = await rateLimitByIp("orderLookup", meta.ipAddress);
   if (!limit.success) redirect("/track-order?error=rate");
   const store = await getCurrentStore();
   const found = store ? await lookupOrder(number, email, store.id) : null;

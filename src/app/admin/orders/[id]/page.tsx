@@ -216,7 +216,7 @@ async function OrderDetail({ params }: PageProps<"/admin/orders/[id]">) {
                 <Link href={`/admin/stores?q=${order.store.slug}`} className="block truncate font-medium text-ink-950 hover:underline">
                   {order.store.name}
                 </Link>
-                <p className="truncate text-[0.8125rem] text-ink-500">{order.store.owner ? `${order.store.owner.firstName} ${order.store.owner.lastName} · ${order.store.owner.email}` : "Zendropship's own store"}</p>
+                <p className="truncate text-[0.8125rem] text-ink-500">{order.store.deletedAt ? "Deleted store — this order is kept for the records" : order.store.owner ? `${order.store.owner.firstName} ${order.store.owner.lastName} · ${order.store.owner.email}` : "Zendropship's own store"}</p>
               </div>
             </div>
             <div className="mt-4 border-t border-line pt-4">

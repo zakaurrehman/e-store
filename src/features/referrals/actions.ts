@@ -5,20 +5,21 @@ import { z } from "zod";
 import { handleActionError, success, zodFailure, type ActionState } from "@/server/actions";
 import { assertPermission } from "@/server/auth/guards";
 import { getRequestMeta } from "@/server/request";
-import { rateLimit, retryAfterMessage } from "@/server/security/rate-limit";
+import { invitationCheckRefusal, noteWrongInvitationCheck } from "@/features/stores/opening-guard";
 import { normaliseReferralCode } from "./codes";
 import { checkReferralCode, createReferralCodes, setReferralCodeActive } from "./service";
 
 export type ReferralCheck = { ok: boolean; message: string | null };
 
-/** Live feedback on the "create your store" form. Rate-limited, so it cannot be used to hunt for codes. */
+/** Live feedback on the "create your store" form. Wrong codes count towards the guessing limit, so it cannot be used to hunt for codes. */
 export async function checkReferralCodeAction(value: string): Promise<ReferralCheck> {
   const code = normaliseReferralCode(String(value ?? "").slice(0, 20));
   if (!code) return { ok: false, message: null };
   const meta = await getRequestMeta();
-  const limit = await rateLimit("register", `referral:${meta.ipAddress}`, { limit: 20, windowMs: 10 * 60_000 });
-  if (!limit.success) return { ok: false, message: retryAfterMessage(limit.resetAt) };
+  const refusal = await invitationCheckRefusal(meta.ipAddress);
+  if (refusal) return { ok: false, message: refusal };
   const result = await checkReferralCode(code);
+  if (!result.ok) await noteWrongInvitationCheck(meta.ipAddress);
   return result.ok ? { ok: true, message: "Invitation accepted." } : { ok: false, message: result.message };
 }
 

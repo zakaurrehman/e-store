@@ -596,6 +596,8 @@ model Store {
   slug              String               @unique
   name              String
   ownerId           String?              @unique
+  /// Who owned a store staff have deleted. The owner link itself is released, so they can open another.
+  formerOwnerId     String?
   status            StoreStatus          @default(ACTIVE)
   pricingMode       StorePricingMode     @default(SUGGESTED)
   /// Markup over wholesale in basis points (4000 = 40%) when pricingMode is MARKUP

@@ -15,7 +15,7 @@ import { db } from "@/server/db";
 import { NotFoundError } from "@/server/errors";
 import { dispatchNotification, sendDeliveries } from "@/server/notifications";
 import { getRequestMeta } from "@/server/request";
-import { rateLimit, retryAfterMessage } from "@/server/security/rate-limit";
+import { rateLimit, rateLimitByIp, retryAfterMessage } from "@/server/security/rate-limit";
 import { supportPulseStamp, widgetThreads } from "./queries";
 import { addReply, assignConversation, markConversationRead, openConversation, setConversationStatus } from "./service";
 
@@ -116,7 +116,7 @@ async function openFromForm(formData: FormData): Promise<Opened> {
     return { ok: false, state: zodFailure(parsed.error) };
   }
   const meta = await getRequestMeta();
-  const limit = await rateLimit("contact", meta.ipAddress);
+  const limit = await rateLimitByIp("contact", meta.ipAddress);
   if (!limit.success) return { ok: false, state: failure(retryAfterMessage(limit.resetAt)) };
 
   const [user, store] = await Promise.all([getCurrentUser(), getCurrentStore()]);

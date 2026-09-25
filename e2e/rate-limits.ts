@@ -16,7 +16,7 @@ export async function clearRateLimits() {
   const client = new Client({ connectionString: url });
   await client.connect();
   try {
-    const result = await client.query(`DELETE FROM "RateLimitBucket" WHERE "key" LIKE 'register:%' OR "key" LIKE 'contact:%' OR "key" LIKE 'login:%'`);
+    const result = await client.query(`DELETE FROM "RateLimitBucket" WHERE "key" LIKE 'register:%' OR "key" LIKE 'contact:%' OR "key" LIKE 'login:%' OR "key" LIKE 'openStore:%' OR "key" LIKE 'inviteGuess:%' OR "key" LIKE 'inviteCheck:%'`);
     return result.rowCount ?? 0;
   } finally {
     await client.end();

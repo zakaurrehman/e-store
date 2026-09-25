@@ -36,7 +36,7 @@ export async function validateCoupon(
   if (context.storeId) {
     const valid = coupon.storeId
       ? coupon.storeId === context.storeId
-      : !!(await client.store.findFirst({ where: { id: context.storeId, ownerId: null }, select: { id: true } }));
+      : !!(await client.store.findFirst({ where: { id: context.storeId, ownerId: null, deletedAt: null }, select: { id: true } }));
     if (!valid) throw new CouponError("COUPON_INVALID", "That promo code isn't valid.");
   }
 

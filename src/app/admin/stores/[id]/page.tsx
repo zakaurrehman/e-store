@@ -30,6 +30,7 @@ import {
 } from "@/features/admin/deposits";
 import { getStoreForAdmin } from "@/features/admin/stores";
 import { ORDER_STATUS_LABELS, statusTone } from "@/features/orders/status";
+import { DeleteStore } from "@/components/admin/stores/delete-store";
 import { setStoreStatusAction } from "@/features/stores/actions";
 import { WALLET_ENTRY_LABELS } from "@/features/wallet/queries";
 import { PayoutStatus } from "@/generated/prisma/enums";
@@ -134,6 +135,7 @@ async function StoreDetail({ params }: PageProps<"/admin/stores/[id]">) {
                   Suspend store
                 </ActionButton>
               ))}
+            {canManage && owner && <DeleteStore storeId={store.id} storeName={store.name} size="sm" afterDelete="list" />}
           </>
         }
       />

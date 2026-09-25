@@ -39,7 +39,7 @@ export async function listOrders(filters: OrderListFilters) {
       orderBy: { placedAt: "desc" },
       skip: (page - 1) * ADMIN_PAGE_SIZE,
       take: ADMIN_PAGE_SIZE,
-      include: { user: { select: { firstName: true, lastName: true } }, store: { select: { name: true, slug: true, ownerId: true } }, _count: { select: { items: true } } },
+      include: { user: { select: { firstName: true, lastName: true } }, store: { select: { name: true, slug: true, ownerId: true, deletedAt: true } }, _count: { select: { items: true } } },
     }),
     db.order.groupBy({ by: ["status"], _count: { _all: true } }),
   ]);
@@ -56,7 +56,7 @@ export async function getAdminOrder(id: string) {
       payments: { orderBy: { createdAt: "desc" }, include: { transactions: { orderBy: { createdAt: "desc" } } } },
       shipments: { orderBy: { createdAt: "desc" } },
       couponRedemption: { include: { coupon: { select: { code: true, type: true, value: true } } } },
-      store: { select: { id: true, slug: true, name: true, ownerId: true, logo: { select: { url: true, width: true, height: true } }, owner: { select: { id: true, email: true, firstName: true, lastName: true } } } },
+      store: { select: { id: true, slug: true, name: true, ownerId: true, deletedAt: true, logo: { select: { url: true, width: true, height: true } }, owner: { select: { id: true, email: true, firstName: true, lastName: true } } } },
       walletEntries: { orderBy: { createdAt: "asc" }, select: { id: true, type: true, amountCents: true, status: true, createdAt: true, description: true } },
     },
   });

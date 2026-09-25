@@ -14,7 +14,7 @@ import { env } from "@/server/env";
 import { isDomainError } from "@/server/errors";
 import { availablePaymentMethods, type PaymentMethodOption } from "@/server/payments/registry";
 import { getRequestMeta } from "@/server/request";
-import { rateLimit, retryAfterMessage } from "@/server/security/rate-limit";
+import { rateLimitByIp, retryAfterMessage } from "@/server/security/rate-limit";
 import { placeOrderSchema, quoteSchema } from "./schemas";
 
 export type CheckoutQuote = {
@@ -70,7 +70,7 @@ export async function placeOrderAction(input: unknown): Promise<PlaceOrderAction
     return { ok: false, error: "Please check the highlighted fields.", fieldErrors };
   }
   const meta = await getRequestMeta();
-  const limit = await rateLimit("checkout", meta.ipAddress);
+  const limit = await rateLimitByIp("checkout", meta.ipAddress);
   if (!limit.success) return { ok: false, error: retryAfterMessage(limit.resetAt) };
 
   const store = await getCurrentStore();

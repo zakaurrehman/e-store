@@ -6,6 +6,7 @@ import { AdminPagination, Card, FilterLink, PageHeader, StatusBadge, Table, Tabl
 import { StoreMark } from "@/components/store/header/store-brand";
 import { Input } from "@/components/ui/field";
 import { Skeleton } from "@/components/ui/misc";
+import { DeleteStore } from "@/components/admin/stores/delete-store";
 import { listStoresForAdmin, STORES_PAGE_SIZE } from "@/features/admin/stores";
 import { setStoreStatusAction } from "@/features/stores/actions";
 import { storeUrl } from "@/lib/tenancy";
@@ -103,7 +104,7 @@ async function StoresTable({ searchParams }: PageProps<"/admin/stores">) {
                 <StatusBadge label={store.status === "ACTIVE" ? "Open" : store.status === "SUSPENDED" ? "Suspended" : "Pending"} tone={store.status === "ACTIVE" ? "success" : store.status === "SUSPENDED" ? "danger" : "warning"} />
               </Td>
               {canManage && (
-                <Td className="text-right">
+                <Td className="whitespace-nowrap text-right">
                   {store.owner &&
                     (store.status === "SUSPENDED" ? (
                       <ActionButton action={setStoreStatusAction.bind(null, store.id, "ACTIVE")} size="xs">
@@ -119,6 +120,7 @@ async function StoresTable({ searchParams }: PageProps<"/admin/stores">) {
                         Suspend
                       </ActionButton>
                     ))}
+                  {store.owner && <DeleteStore storeId={store.id} storeName={store.name} />}
                 </Td>
               )}
             </tr>

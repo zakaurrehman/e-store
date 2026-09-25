@@ -16,6 +16,8 @@ import { dispatchNotification, sendDeliveries } from "@/server/notifications";
 import { getRequestMeta } from "@/server/request";
 import { rateLimit, retryAfterMessage } from "@/server/security/rate-limit";
 import { assertStoreOwner } from "./guards";
+import { deleteStore, storeDeletionPreview, type StoreDeletionPreview } from "./deletion";
+import { noteRefusedInvitation, storeOpeningRefusal } from "./opening-guard";
 import { openStoreForNewOwner, openStoreForUser } from "./onboarding";
 import { storeCatalogTag, storeTag, STORES_TAG } from "./queries";
 import { openStoreSchema, openStoreSignedInSchema, storePricingSchema, storeProductPricingSchema, storeSettingsSchema } from "./schemas";
@@ -48,8 +50,10 @@ export async function checkStoreSlugAction(input: { name?: string; slug?: string
 
 export async function openStoreAction(_state: ActionState, formData: FormData): Promise<ActionState> {
   const meta = await getRequestMeta();
-  const limit = await rateLimit("register", meta.ipAddress);
-  if (!limit.success) return failure(retryAfterMessage(limit.resetAt));
+  // Store openings have limits of their own (see opening-guard): per network, apart from customer sign-ups,
+  // and loose enough that several real stores can be opened one after another.
+  const refusal = await storeOpeningRefusal(meta.ipAddress);
+  if (refusal) return failure(refusal.message, refusal.field ? { [refusal.field]: [refusal.message] } : undefined);
 
   const current = await getCurrentUser();
   // A product chosen in the catalogue before the visitor had a store is added as soon as the store exists.
@@ -85,6 +89,7 @@ export async function openStoreAction(_state: ActionState, formData: FormData): 
     }
     if (pending) await addProductsToStore(opened.storeId, [pending], { userId: opened.ownerId, asOwner: true }).catch(() => undefined);
   } catch (error) {
+    await noteRefusedInvitation(error, formData.get("referralCode"), meta.ipAddress);
     return handleActionError(error);
   }
   updateTag(STORES_TAG);
@@ -254,6 +259,34 @@ export async function setStoreStatusAction(storeId: string, status: "ACTIVE" | "
     updateTag(STORES_TAG);
     revalidatePath("/admin/stores");
     return success(status === "SUSPENDED" ? `${store.name} is suspended and no longer visible to shoppers.` : `${store.name} is open again.`);
+  } catch (error) {
+    return handleActionError(error);
+  }
+}
+
+/** What deleting a store would remove and keep, and what stops it — shown before anyone can confirm. */
+export async function storeDeletionPreviewAction(storeId: string): Promise<{ ok: true; preview: StoreDeletionPreview } | { ok: false; message: string }> {
+  try {
+    await assertPermission("stores.manage");
+    return { ok: true, preview: await storeDeletionPreview(String(storeId).slice(0, 40)) };
+  } catch (error) {
+    const state = handleActionError(error);
+    return { ok: false, message: state.status === "error" ? state.message : "Could not load the store." };
+  }
+}
+
+/** Deletes a store permanently. `confirmation` is the store's address as typed by the admin; the service checks it. */
+export async function deleteStoreAction(storeId: string, confirmation: string): Promise<ActionState> {
+  try {
+    const admin = await assertPermission("stores.manage");
+    const id = String(storeId).slice(0, 40);
+    const deleted = await deleteStore(id, String(confirmation ?? "").slice(0, 60), admin.id);
+    if (deleted.notifications.length) after(() => flushNotifications(deleted.notifications));
+    // Its storefront and shelf leave every cache, and it leaves every admin list.
+    refreshStore({ id, slug: deleted.slug });
+    updateTag(STORES_TAG);
+    for (const path of ["/admin/stores", `/admin/stores/${id}`, "/admin/orders", "/admin/payouts", "/admin/deposits", "/admin"]) revalidatePath(path);
+    return success(`${deleted.name} has been deleted. Its orders and money records are kept for the books.`);
   } catch (error) {
     return handleActionError(error);
   }

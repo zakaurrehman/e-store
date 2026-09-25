@@ -103,7 +103,7 @@ async function OrdersTable({ searchParams }: PageProps<"/admin/orders">) {
                   <Link href={`/admin/orders${buildQuery(base, { store: order.store.slug, page: null })}`} className="text-ink-800 hover:underline">
                     {order.store.name}
                   </Link>
-                  {!order.store.ownerId && <span className="block text-[0.75rem] text-ink-500">Platform store</span>}
+                  {order.store.deletedAt ? <span className="block text-[0.75rem] text-danger">Deleted store</span> : !order.store.ownerId && <span className="block text-[0.75rem] text-ink-500">Platform store</span>}
                 </Td>
                 <Td className="whitespace-nowrap text-ink-600">{dateTime.format(order.placedAt)}</Td>
                 <Td>

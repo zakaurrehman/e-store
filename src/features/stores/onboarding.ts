@@ -64,8 +64,11 @@ export async function openStoreForNewOwner(input: OpenStoreInput, meta: { ipAddr
 /** A signed-in customer opens a store; their account becomes a store-owner account. Staff keep their staff role. */
 export async function openStoreForUser(userId: string, input: { storeName: string; slug?: string; referralCode?: string | null }, meta: { ipAddress?: string } = {}) {
   const user = await db.user.findUniqueOrThrow({ where: { id: userId }, include: { role: true } });
-  // Staff open stores without an invitation; everyone else needs one while the platform is invite-only.
-  const needsCode = !user.role.isStaff && (await referralRequired()) && !(await db.referralRedemption.findFirst({ where: { userId }, select: { id: true } }));
+  // Staff open stores without an invitation; everyone else needs one while the platform is invite-only. An
+  // invitation already used counts only while its store exists: once staff delete a store, its former owner
+  // needs a new invitation to open another.
+  const usedInvitation = await db.referralRedemption.findFirst({ where: { userId, OR: [{ storeId: null }, { store: { deletedAt: null } }] }, select: { id: true } });
+  const needsCode = !user.role.isStaff && (await referralRequired()) && !usedInvitation;
   if (needsCode && !input.referralCode?.trim()) {
     throw new StoreError("REFERRAL_REQUIRED", "Zendropship stores are invitation-only. Enter the invitation code you were given.", {
       fieldErrors: { referralCode: ["Enter your invitation code."] },

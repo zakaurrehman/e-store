@@ -85,8 +85,9 @@ export function Dialog({ open, onClose, title, description, children, footer, va
         if (event.target === event.currentTarget) onClose();
       }}
       className={cn(
-        // text-left because a dialog opened from a right-aligned table cell inherits that alignment.
-        "flex-col overflow-hidden border-0 bg-surface p-0 text-left text-ink-950 shadow-pop backdrop:animate-fade-in open:flex",
+        // text-left and whitespace-normal because a dialog opened from a table cell inherits its alignment and
+        // its no-wrap, which would push long lines out of the dialog.
+        "flex-col overflow-hidden border-0 bg-surface p-0 text-left whitespace-normal text-ink-950 shadow-pop backdrop:animate-fade-in open:flex",
         variantClasses[variant],
         className,
       )}

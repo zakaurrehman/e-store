@@ -11,7 +11,7 @@ import { failure, handleActionError, success, zodFailure, type ActionState } fro
 import { writeAudit } from "@/server/audit";
 import { endSession, getCurrentUser, startSession } from "@/server/auth/session";
 import { getRequestMeta } from "@/server/request";
-import { rateLimit, resetRateLimit, retryAfterMessage } from "@/server/security/rate-limit";
+import { rateLimit, rateLimitByIp, resetRateLimit, retryAfterMessage } from "@/server/security/rate-limit";
 import { changePasswordSchema, forgotPasswordSchema, loginSchema, registerSchema, resetPasswordSchema, safeRedirectPath } from "./schemas";
 import { authenticate, changePassword, createToken, registerCustomer, requestPasswordReset, resetPasswordWithToken } from "./service";
 
@@ -29,7 +29,7 @@ export async function loginAction(_state: ActionState, formData: FormData): Prom
   const parsed = loginSchema.safeParse({ email: formData.get("email"), password: formData.get("password"), next: formData.get("next") ?? undefined });
   if (!parsed.success) return zodFailure(parsed.error);
   const meta = await getRequestMeta();
-  const [byIp, byAccount] = await Promise.all([rateLimit("login", `ip:${meta.ipAddress}`, { limit: 30, windowMs: 15 * 60_000 }), rateLimit("login", `email:${parsed.data.email}`)]);
+  const [byIp, byAccount] = await Promise.all([rateLimitByIp("login", meta.ipAddress, { prefix: "ip:", rule: { limit: 30, windowMs: 15 * 60_000 } }), rateLimit("login", `email:${parsed.data.email}`)]);
   if (!byIp.success || !byAccount.success) return failure(retryAfterMessage(byIp.success ? byAccount.resetAt : byIp.resetAt));
 
   let destination: string;
@@ -60,7 +60,7 @@ export async function registerAction(_state: ActionState, formData: FormData): P
   });
   if (!parsed.success) return zodFailure(parsed.error);
   const meta = await getRequestMeta();
-  const limit = await rateLimit("register", meta.ipAddress);
+  const limit = await rateLimitByIp("register", meta.ipAddress);
   if (!limit.success) return failure(retryAfterMessage(limit.resetAt));
 
   let destination: string;
@@ -90,7 +90,7 @@ export async function forgotPasswordAction(_state: ActionState, formData: FormDa
   const parsed = forgotPasswordSchema.safeParse({ email: formData.get("email") });
   if (!parsed.success) return zodFailure(parsed.error);
   const meta = await getRequestMeta();
-  const [byIp, byEmail] = await Promise.all([rateLimit("passwordReset", `ip:${meta.ipAddress}`, { limit: 20, windowMs: 60 * 60_000 }), rateLimit("passwordReset", `email:${parsed.data.email}`)]);
+  const [byIp, byEmail] = await Promise.all([rateLimitByIp("passwordReset", meta.ipAddress, { prefix: "ip:", rule: { limit: 20, windowMs: 60 * 60_000 } }), rateLimit("passwordReset", `email:${parsed.data.email}`)]);
   if (!byIp.success || !byEmail.success) return failure(retryAfterMessage(byIp.success ? byEmail.resetAt : byIp.resetAt));
   try {
     const result = await requestPasswordReset(parsed.data.email);

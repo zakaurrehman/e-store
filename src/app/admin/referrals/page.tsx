@@ -121,7 +121,9 @@ async function Referrals({ searchParams }: PageProps<"/admin/referrals">) {
                       <ul className="space-y-1">
                         {code.redemptions.map((redemption) => (
                           <li key={redemption.id} className="truncate">
-                            {redemption.store ? (
+                            {redemption.store?.deletedAt ? (
+                              <span className="font-medium text-ink-500">{redemption.store.name} (deleted)</span>
+                            ) : redemption.store ? (
                               <Link href={`/admin/stores?q=${redemption.store.slug}`} className="font-medium text-ink-950 hover:underline">
                                 {redemption.store.name}
                               </Link>
