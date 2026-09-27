@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { placeOrderSchema, validatedAddressSchema } from "@/features/checkout/schemas";
-import { fulfilmentHint, fulfilmentProgress, isFulfilmentComplete, nextFulfilmentStep } from "@/features/orders/progress";
-import { CANCELLABLE_STATUSES, CUSTOMER_STATUS_LABELS, NEXT_STATUSES, stepIndex, WAITING_FOR_ACCEPTANCE } from "@/features/orders/status";
+import { fulfilmentHint, fulfilmentProgress, isFulfilmentComplete, isTrackingFinal, nextFulfilmentStep, trackingStamp } from "@/features/orders/progress";
+import { CANCELLABLE_STATUSES, CUSTOMER_STATUS_LABELS, FULFILMENT_STEPS, NEXT_STATUSES, ORDER_STATUS_LABELS, stepIndex, WAITING_FOR_ACCEPTANCE } from "@/features/orders/status";
 import { generateReferralCode, isReferralCodeShape, normaliseReferralCode, referralCodeState } from "@/features/referrals/codes";
 import { formatPhone, isValidPhone, normalisePhone } from "@/lib/phone";
 
@@ -78,8 +78,57 @@ describe("order statuses", () => {
   });
 
   it("does not tell customers that a store is short of money", () => {
-    expect(CUSTOMER_STATUS_LABELS.AWAITING_FUNDS).toBe("Confirmed");
+    expect(CUSTOMER_STATUS_LABELS.AWAITING_FUNDS).toBe("Order placed");
     expect(stepIndex("AWAITING_FUNDS")).toBe(stepIndex("CONFIRMED"));
+  });
+});
+
+describe("the tracking timeline", () => {
+  it("runs Order placed → Accepted → Processing → Packed → Shipped → Out for delivery → Delivered, with no payment step", () => {
+    expect(FULFILMENT_STEPS.map((step) => step.label)).toEqual(["Order placed", "Accepted", "Processing", "Packed", "Shipped", "Out for delivery", "Delivered"]);
+    for (const step of FULFILMENT_STEPS) expect(`${step.label} ${step.description}`).not.toMatch(/payment|paid/i);
+  });
+
+  it("keeps an order at Order placed until it is accepted, however it is being paid for", () => {
+    // Waiting for an online payment, placed with cash on delivery, paid, or left waiting for funds: all "Order placed".
+    for (const status of ["PENDING", "CONFIRMED", "AWAITING_FUNDS"] as const) expect(stepIndex(status)).toBe(0);
+    expect(stepIndex("ACCEPTED")).toBe(1);
+    expect(stepIndex("DELIVERED")).toBe(FULFILMENT_STEPS.length - 1);
+    expect(stepIndex("CANCELLED")).toBe(-1);
+    // Nobody is told a placed order is confirmed or paid: only an unfinished online payment says so.
+    expect(CUSTOMER_STATUS_LABELS.CONFIRMED).toBe("Order placed");
+    expect(ORDER_STATUS_LABELS.CONFIRMED).toBe("Order placed");
+    expect(CUSTOMER_STATUS_LABELS.PENDING).toBe("Awaiting payment");
+    for (const label of Object.values(CUSTOMER_STATUS_LABELS)) expect(label).not.toMatch(/paid|payment confirmed/i);
+  });
+
+  it("shows a cash-on-delivery order that was just placed as placed, and nothing more", () => {
+    const placedAt = new Date("2026-09-26T17:17:00Z");
+    const stages = fulfilmentProgress({
+      status: "CONFIRMED",
+      placedAt,
+      events: [
+        { type: "CREATED", message: "Order placed (Cash on delivery)", data: null, createdAt: placedAt },
+        { type: "STATUS_CHANGED", message: "Waiting to be accepted — cash on delivery, nothing collected yet", data: { status: "CONFIRMED" }, createdAt: placedAt },
+      ],
+    });
+    expect(stages.filter((stage) => stage.done).map((stage) => stage.label)).toEqual(["Order placed"]);
+    expect(stages.find((stage) => stage.current)?.label).toBe("Order placed");
+    expect(stages.find((stage) => stage.current)?.at).toEqual(placedAt);
+  });
+
+  it("gives the live page a fingerprint that changes whenever the order moves, and stops checking once it is finished", () => {
+    const base = { status: "CONFIRMED", paymentStatus: "PENDING", updatedAt: new Date("2026-09-26T17:17:00Z"), events: [{ createdAt: new Date("2026-09-26T17:17:00Z") }] };
+    const stamp = trackingStamp(base);
+    expect(trackingStamp({ ...base })).toBe(stamp);
+    expect(trackingStamp({ ...base, status: "PROCESSING" })).not.toBe(stamp);
+    expect(trackingStamp({ ...base, paymentStatus: "PAID" })).not.toBe(stamp);
+    // Tracking added: a new history entry, even though the status is the same.
+    expect(trackingStamp({ ...base, events: [...base.events, { createdAt: new Date("2026-09-26T18:00:00Z") }] })).not.toBe(stamp);
+    expect(isTrackingFinal("DELIVERED")).toBe(true);
+    expect(isTrackingFinal("CANCELLED")).toBe(true);
+    expect(isTrackingFinal("CONFIRMED")).toBe(false);
+    expect(isTrackingFinal("SHIPPED")).toBe(false);
   });
 });
 
@@ -87,7 +136,7 @@ describe("the fulfilment queue", () => {
   const at = (iso: string) => new Date(iso);
   const events = [
     { type: "CREATED", message: "Order placed", data: null, createdAt: at("2026-09-20T10:00:00Z") },
-    { type: "STATUS_CHANGED", message: "Order confirmed", data: { status: "CONFIRMED" }, createdAt: at("2026-09-20T10:01:00Z") },
+    { type: "STATUS_CHANGED", message: "Waiting to be accepted — payment received", data: { status: "CONFIRMED" }, createdAt: at("2026-09-20T10:01:00Z") },
     { type: "STATUS_CHANGED", message: "Accepted by the store owner", data: { status: "ACCEPTED" }, createdAt: at("2026-09-20T10:02:00Z"), actor: { firstName: "Olu", lastName: "Owner" } },
     { type: "STATUS_CHANGED", message: "Status changed to Processing", data: { status: "PROCESSING" }, createdAt: at("2026-09-20T11:00:00Z"), actor: { firstName: "Noor", lastName: "Staff" } },
   ];
@@ -125,7 +174,7 @@ describe("the fulfilment queue", () => {
   it("builds the timeline from the order's own events, with who moved it", () => {
     const stages = fulfilmentProgress({ status: "PROCESSING", placedAt: at("2026-09-20T10:00:00Z"), deliveredAt: null, events });
     const done = stages.filter((stage) => stage.done);
-    expect(done.map((stage) => stage.status)).toEqual(["PENDING", "CONFIRMED", "ACCEPTED", "PROCESSING"]);
+    expect(done.map((stage) => stage.status)).toEqual(["PENDING", "ACCEPTED", "PROCESSING"]);
     expect(done.every((stage) => stage.at !== null)).toBe(true);
     expect(stages.find((stage) => stage.status === "PROCESSING")?.by).toBe("Noor Staff");
     expect(stages.find((stage) => stage.status === "ACCEPTED")?.by).toBe("Olu Owner");

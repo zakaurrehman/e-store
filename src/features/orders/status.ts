@@ -1,15 +1,19 @@
 import type { OrderStatus, PaymentStatus } from "@/generated/prisma/enums";
 
 /**
- * The order's life, in order. `PENDING` is "waiting for the customer's payment" and `CONFIRMED` is
- * "confirmed, waiting for the store owner to accept it" (cash on delivery is confirmed when placed).
- * `ACCEPTED` is the owner's decision, never automatic: the wholesale cost is set aside once and fulfilment
- * starts processing. `AWAITING_FUNDS` is only found on orders from before acceptance was the owner's call,
- * and waits for them the same way. Refunded and failed are payment states, kept on `paymentStatus`.
+ * The order's life, in order. `PENDING` is "waiting for the customer's online payment" and `CONFIRMED` is
+ * "placed, waiting for the store owner to accept it" (cash on delivery is confirmed when placed, with
+ * nothing collected). `ACCEPTED` is the owner's decision, never automatic: the wholesale cost is set aside
+ * once and fulfilment starts processing. `AWAITING_FUNDS` is only found on orders from before acceptance was
+ * the owner's call, and waits for them the same way.
+ *
+ * These are the fulfilment stages everyone follows — customer, owner and staff. Payment is not one of them:
+ * whether the money has been collected lives on `paymentStatus`, the Payment records and the order's
+ * history, and is shown as the payment status, never as a step of the journey. So an order waiting for its
+ * owner is simply "Order placed", however it is being paid for.
  */
 export const FULFILMENT_STEPS: Array<{ status: OrderStatus; label: string; description: string }> = [
   { status: "PENDING", label: "Order placed", description: "We've received your order." },
-  { status: "CONFIRMED", label: "Payment confirmed", description: "Your payment has been verified." },
   { status: "ACCEPTED", label: "Accepted", description: "Your order is with our fulfilment team." },
   { status: "PROCESSING", label: "Processing", description: "We're picking your items." },
   { status: "PACKED", label: "Packed", description: "Your order is packed and ready for the courier." },
@@ -21,7 +25,7 @@ export const FULFILMENT_STEPS: Array<{ status: OrderStatus; label: string; descr
 /** Staff and owner wording. */
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   PENDING: "Awaiting payment",
-  CONFIRMED: "Confirmed",
+  CONFIRMED: "Order placed",
   AWAITING_FUNDS: "Awaiting funds",
   ACCEPTED: "Accepted",
   PROCESSING: "Processing",
@@ -35,7 +39,7 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
 /** What the customer is told. Funding is between the store and Zendropship, so it is not their business. */
 export const CUSTOMER_STATUS_LABELS: Record<OrderStatus, string> = {
   ...ORDER_STATUS_LABELS,
-  AWAITING_FUNDS: "Confirmed",
+  AWAITING_FUNDS: "Order placed",
   ACCEPTED: "Preparing your order",
 };
 
@@ -75,9 +79,13 @@ export const CANCELLABLE_STATUSES: OrderStatus[] = ["PENDING", "CONFIRMED", "AWA
 /** Orders fulfilment is working on right now. */
 export const OPEN_STATUSES: OrderStatus[] = ["CONFIRMED", "AWAITING_FUNDS", "ACCEPTED", "PROCESSING", "PACKED", "SHIPPED", "OUT_FOR_DELIVERY"];
 
+/**
+ * Where on the fulfilment stages an order is (-1 once cancelled). Until the store owner accepts it, an order
+ * is at "Order placed" — waiting for an online payment, placed with cash on delivery, or paid: none of those
+ * is a fulfilment step. Waiting for funds is invisible to the customer the same way.
+ */
 export function stepIndex(status: OrderStatus) {
-  // Waiting for funds is invisible to the customer: their order is confirmed and being prepared.
-  const shown = status === "AWAITING_FUNDS" ? "CONFIRMED" : status;
+  const shown = status === "CONFIRMED" || status === "AWAITING_FUNDS" ? "PENDING" : status;
   return FULFILMENT_STEPS.findIndex((step) => step.status === shown);
 }
 

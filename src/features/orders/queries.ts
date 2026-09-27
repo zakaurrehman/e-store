@@ -4,6 +4,7 @@ import { isAddressSnapshot, type AddressSnapshot } from "@/lib/address";
 import { db } from "@/server/db";
 import { hmacSha256, safeEqual } from "@/server/security/crypto";
 import { normaliseOrderNumber } from "./numbers";
+import { trackingStamp } from "./progress";
 
 export const orderDetailInclude = {
   items: { orderBy: { id: "asc" as const } },
@@ -37,6 +38,30 @@ export async function getOrderByAccessToken(number: string, token: string | null
   const expected = hmacSha256(`order-access:${order.number}:${order.email.toLowerCase()}`);
   if (!safeEqual(expected, token)) return null;
   return present(order);
+}
+
+/**
+ * The tracking page's fingerprint of an order (see trackingStamp), for the customer who placed it — signed
+ * in, or holding the order's access token — and null for anyone else. One small read, so the page can check
+ * for changes without re-rendering.
+ */
+export async function readTrackingStamp(number: string, viewer: { userId: string | null; token: string | null }) {
+  const order = await db.order.findUnique({
+    where: { number: normaliseOrderNumber(number) },
+    select: {
+      number: true,
+      email: true,
+      userId: true,
+      status: true,
+      paymentStatus: true,
+      updatedAt: true,
+      events: { where: { isInternal: false }, orderBy: { createdAt: "desc" }, take: 1, select: { createdAt: true } },
+    },
+  });
+  if (!order) return null;
+  const ownsViaSession = !!viewer.userId && order.userId === viewer.userId;
+  const ownsViaToken = !!viewer.token && safeEqual(hmacSha256(`order-access:${order.number}:${order.email.toLowerCase()}`), viewer.token);
+  return ownsViaSession || ownsViaToken ? trackingStamp(order) : null;
 }
 
 /** Guest lookup by order number + email (used by /track-order). Returns the access token on success. */

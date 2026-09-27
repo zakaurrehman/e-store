@@ -3,6 +3,12 @@ import sharp from "sharp";
 import { ADMIN_STATE, balanceFigure, chooseDepositMethod, orderNumberOn, pathOf, PLATFORM_URL, SHIPPING, storeUrlFor, STORE_URL, toast, TRC20_ADDRESS, trc20TxId, unique, waitForMail } from "./helpers";
 import { clearRateLimits } from "./rate-limits";
 
+/** The stages every order goes through, as the customer, the owner and staff see them. Payment is not one of them. */
+const JOURNEY = ["Order placed", "Accepted", "Processing", "Packed", "Shipped", "Out for delivery", "Delivered"];
+/** The stages on a customer's order page, and the one the order is at. */
+const stagesOn = (page: Page) => page.locator("section", { has: page.getByRole("heading", { name: "Tracking", exact: true }) }).locator("ol > li");
+const currentStage = (page: Page) => stagesOn(page).and(page.locator('[aria-current="step"]'));
+
 /**
  * The whole business, end to end (see the brief's section 24): staff invite an owner, the owner opens and
  * brands a store, stocks and prices it, customers buy, and every order waits for the owner to accept it —
@@ -34,6 +40,9 @@ test.describe.serial("dropshipping platform", () => {
   /** What the owner should have available once the cash-on-delivery order is delivered: the deposit back plus its profit. */
   let availableAfterCod = 0;
   const depositTxId = trc20TxId(`deposit-${stamp}`);
+  /** The cash-on-delivery customer's tracking page, left open while the store and Zendropship move the order on. */
+  let tracking: Page;
+  let trackingContext: BrowserContext;
 
   test.beforeAll(async ({ browser }) => {
     await clearRateLimits();
@@ -44,6 +53,7 @@ test.describe.serial("dropshipping platform", () => {
 
   test.afterAll(async () => {
     await adminContext.close();
+    await trackingContext?.close();
   });
 
   test("1. staff create an invitation code", async () => {
@@ -330,7 +340,16 @@ test.describe.serial("dropshipping platform", () => {
     fundedOrderUrl = page.url();
     // The customer is never told the store is short of money.
     await expect(page.getByText("Awaiting funds")).toHaveCount(0);
-    await shopper.close();
+    // Nor that a payment was confirmed — nothing has been collected. The order is placed, and that is all it says.
+    await expect(currentStage(page)).toContainText("Order placed");
+    await expect(page.getByText("Payment confirmed")).toHaveCount(0);
+    await expect(page.getByText(/payment has been verified/i)).toHaveCount(0);
+    await expect(page.getByText("To pay on delivery")).toBeVisible();
+    await expect(page.getByText("Amount paid")).toHaveCount(0);
+    // The customer keeps the page open while the store deals with the order.
+    tracking = page;
+    trackingContext = shopper;
+    await tracking.evaluate(() => ((window as unknown as { stillOpen: boolean }).stillOpen = true));
 
     // No cash has been collected and the owner has nothing available: Accept is blocked, and says why.
     await owner.goto(`/dashboard/orders/${fundedOrderNumber}`);
@@ -397,6 +416,14 @@ test.describe.serial("dropshipping platform", () => {
     await confirm.getByRole("button", { name: "Accept order" }).click();
     await expect(toast(owner, new RegExp(`Order ${fundedOrderNumber} accepted`))).toBeVisible();
 
+    // The customer's open page follows by itself, without a reload, as soon as they look at it again:
+    // accepted and processing, each with its time — and still no payment step.
+    await tracking.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(currentStage(tracking)).toContainText("Processing");
+    await expect(stagesOn(tracking).filter({ hasText: "Accepted" })).toContainText(/\d{1,2}:\d{2}/);
+    await expect(tracking.getByText("Payment confirmed")).toHaveCount(0);
+    expect(await tracking.evaluate(() => (window as unknown as { stillOpen?: boolean }).stillOpen)).toBe(true);
+
     // Exactly one charge — the order's wholesale cost, set aside from the balance the deposit filled — however
     // often the page is refreshed.
     for (let refresh = 0; refresh < 2; refresh += 1) {
@@ -439,9 +466,11 @@ test.describe.serial("dropshipping platform", () => {
     // The order is finished: the tracker shows every stage with its time and who moved it, and nothing is left to do.
     await expect(admin.getByText("Fulfilment complete")).toBeVisible();
     const tracker = admin.locator("section").filter({ has: admin.getByRole("heading", { name: "Fulfilment", exact: true }) }).first();
-    for (const stage of ["Order placed", "Payment confirmed", "Accepted", "Processing", "Packed", "Shipped", "Out for delivery", "Delivered"]) {
+    for (const stage of JOURNEY) {
       await expect(tracker.getByText(stage).first()).toBeVisible();
     }
+    // Payment is not a stage: it is the payment status beside the order number.
+    await expect(tracker.getByText("Payment confirmed")).toHaveCount(0);
     await expect(tracker.getByText("Store Owner").first()).toBeVisible();
     await expect(admin.getByRole("button", { name: "Mark delivered" })).toHaveCount(0);
     await admin.goto(`/admin/orders?q=${fundedOrderNumber}`);
@@ -465,7 +494,15 @@ test.describe.serial("dropshipping platform", () => {
     expect(await balanceFigure(owner, "Available to withdraw")).toBe(availableAfterCod);
     expect(await balanceFigure(owner, "Held until delivery")).toBe(0);
 
-    // 22. The customer's own tracking page shows it delivered.
+    // 22. The customer's page, still open, caught up on its own — every stage in order, delivered, no payment step.
+    await tracking.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(currentStage(tracking)).toContainText("Delivered");
+    await expect(stagesOn(tracking)).toHaveText(JOURNEY.map((stage) => new RegExp(`^${stage}`)));
+    await expect(tracking.getByText("Payment confirmed")).toHaveCount(0);
+    expect(await tracking.evaluate(() => (window as unknown as { stillOpen?: boolean }).stillOpen)).toBe(true);
+    await trackingContext.close();
+
+    // And opened afresh, the customer's own tracking page shows it delivered.
     const customer = await owner.context().browser()!.newContext();
     const page = await customer.newPage();
     await page.goto(fundedOrderUrl);

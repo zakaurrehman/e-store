@@ -175,7 +175,7 @@ test.describe.serial("what staff do", () => {
     // store, so accepting is staff's to do (in an owner's store it is the owner's alone).
     const row0 = admin.locator("tbody tr", { hasText: orderNumber });
     await admin.goto(`/admin/orders?q=${orderNumber}`);
-    await expect(row0).toContainText("Confirmed");
+    await expect(row0).toContainText("Order placed");
     await expect(row0).toContainText("Next: Accepted");
 
     // From there the ladder runs to delivered, one step at a time. Each button is the one visible at this

@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { addItem, createGuestCart } from "@/features/cart/service";
-import { fulfilmentProgress, isFulfilmentComplete, nextFulfilmentStep } from "@/features/orders/progress";
+import { fulfilmentProgress, isFulfilmentComplete, isTrackingFinal, nextFulfilmentStep, trackingStamp } from "@/features/orders/progress";
+import { getOrderByAccessToken, readTrackingStamp } from "@/features/orders/queries";
 import { acceptOrder, cancelOrder, placeOrder, processWebhook, updateOrderStatus } from "@/features/orders/service";
+import { CUSTOMER_STATUS_LABELS } from "@/features/orders/status";
 import { openStoreForNewOwner } from "@/features/stores/onboarding";
 import { getStoreOrder, listStoreOrders } from "@/features/stores/dashboard";
 import { addProductsToStore } from "@/features/stores/service";
 import { confirmDeposit, fulfilmentShortfallCents, getAvailableCents, getBalanceCents, recordDeposit } from "@/features/wallet/service";
-import { OrderStatus, WalletEntryType } from "@/generated/prisma/enums";
+import { OrderStatus, PaymentStatus, WalletEntryType } from "@/generated/prisma/enums";
 import { db } from "@/server/db";
 import { isDomainError } from "@/server/errors";
+import { orderAccessToken } from "@/server/notifications";
 import { createProduct, invitation, orderContext, orderInput, sandboxGateway } from "./helpers";
 
 let sequence = 0;
@@ -117,10 +120,11 @@ describe("fulfilment workflow", () => {
     expect(isFulfilmentComplete(finished.status)).toBe(true);
     expect(nextFulfilmentStep(finished.status, ownerStore)).toBeNull();
 
-    // Every stage is done, timed and attributed: confirmation to the system, acceptance to the owner, the rest to staff.
-    expect(stages.map((stage) => stage.status)).toEqual(["PENDING", "CONFIRMED", "ACCEPTED", "PROCESSING", "PACKED", "SHIPPED", "OUT_FOR_DELIVERY", "DELIVERED"]);
+    // Every stage is done, timed and attributed: placing to nobody, acceptance to the owner, the rest to staff.
+    // Payment is not a stage of the journey — it is the payment status.
+    expect(stages.map((stage) => stage.status)).toEqual(["PENDING", "ACCEPTED", "PROCESSING", "PACKED", "SHIPPED", "OUT_FOR_DELIVERY", "DELIVERED"]);
     expect(stages.every((stage) => stage.done && stage.at !== null)).toBe(true);
-    expect(stages.find((stage) => stage.status === "CONFIRMED")?.by).toBeNull();
+    expect(stages.find((stage) => stage.status === "PENDING")?.by).toBeNull();
     expect(stages.find((stage) => stage.status === "ACCEPTED")?.by).toBe("Fifi Owner");
     expect(stages.find((stage) => stage.status === "PACKED")?.by).toBe("Fern Staff");
     expect(stages.find((stage) => stage.status === "DELIVERED")?.by).toBe("Fern Staff");
@@ -231,7 +235,103 @@ describe("fulfilment workflow", () => {
     // The owner sees the same stages staff do, with the same times.
     const owned = await getStoreOrder(mine.store.id, order.number);
     const stages = fulfilmentProgress({ status: owned!.status, placedAt: owned!.placedAt, deliveredAt: owned!.deliveredAt, events: owned!.events });
-    expect(stages.filter((stage) => stage.done).map((stage) => stage.status)).toEqual(["PENDING", "CONFIRMED", "ACCEPTED", "PROCESSING"]);
+    expect(stages.filter((stage) => stage.done).map((stage) => stage.status)).toEqual(["PENDING", "ACCEPTED", "PROCESSING"]);
     expect(stages.find((stage) => stage.status === "PROCESSING")?.at).toBeInstanceOf(Date);
+  });
+});
+
+/**
+ * What the customer's tracking page shows for an order, read the way the page reads it: through the order's
+ * access token, as the customer's copy (their history only), with the timeline built from the same stages.
+ */
+async function customerTracking(number: string, token: string, storeId: string) {
+  const order = await getOrderByAccessToken(number, token, storeId);
+  expect(order).not.toBeNull();
+  const stages = fulfilmentProgress(order!);
+  const reached = stages.filter((stage) => stage.done).map((stage) => stage.label);
+  // Whatever stage the order is at, nothing on the timeline says the payment was confirmed.
+  for (const stage of stages) expect(`${stage.label} ${stage.description}`).not.toMatch(/payment|paid/i);
+  return { order: order!, reached, current: stages.find((stage) => stage.current)?.label ?? null, badge: CUSTOMER_STATUS_LABELS[order!.status], stamp: await readTrackingStamp(number, { userId: null, token }) };
+}
+
+const JOURNEY = ["Order placed", "Accepted", "Processing", "Packed", "Shipped", "Out for delivery", "Delivered"];
+
+describe("the customer's tracking timeline", () => {
+  it("follows a brand-new cash-on-delivery order from placement to delivered, and never says the payment was confirmed", async () => {
+    const { user, store, variant } = await storeWithProduct();
+    await fund(store, user.id, 3000);
+    const admin = await staff();
+    const placed = await codOrder(store, variant.id);
+    const token = orderAccessToken(placed);
+
+    // Just placed: nothing has been collected, and the timeline says only that the order was placed.
+    const start = await customerTracking(placed.number, token, store.id);
+    expect(start.order.paymentStatus).toBe(PaymentStatus.PENDING);
+    expect(start.order.paidAt).toBeNull();
+    expect(fulfilmentProgress(start.order).map((stage) => stage.label)).toEqual(JOURNEY);
+    expect(start.reached).toEqual(["Order placed"]);
+    expect(start.current).toBe("Order placed");
+    expect(start.badge).toBe("Order placed");
+    // The page's live check sees the same order the page was rendered with — and nobody else's.
+    expect(start.stamp).toBe(trackingStamp(start.order));
+    expect(await readTrackingStamp(placed.number, { userId: null, token: "not-the-token" })).toBeNull();
+    expect(await readTrackingStamp(placed.number, { userId: user.id, token: null })).toBeNull();
+
+    // The owner accepts: Accepted, and straight into Processing.
+    await ownerAccepts(placed.id);
+    const accepted = await customerTracking(placed.number, token, store.id);
+    expect(accepted.reached).toEqual(["Order placed", "Accepted", "Processing"]);
+    expect(accepted.current).toBe("Processing");
+    expect(accepted.stamp).not.toBe(start.stamp);
+
+    // Each step staff take shows up on the customer's page, one stage at a time, and changes what the page checks.
+    let previous = accepted.stamp;
+    for (const [status, label] of [
+      [OrderStatus.PACKED, "Packed"],
+      [OrderStatus.SHIPPED, "Shipped"],
+      [OrderStatus.OUT_FOR_DELIVERY, "Out for delivery"],
+      [OrderStatus.DELIVERED, "Delivered"],
+    ] as const) {
+      await updateOrderStatus(placed.id, status, admin.id);
+      const now = await customerTracking(placed.number, token, store.id);
+      expect(now.current).toBe(label);
+      expect(now.reached).toEqual(JOURNEY.slice(0, JOURNEY.indexOf(label) + 1));
+      expect(now.stamp).not.toBe(previous);
+      previous = now.stamp;
+    }
+    const delivered = await customerTracking(placed.number, token, store.id);
+    expect(delivered.reached).toEqual(JOURNEY);
+    expect(isTrackingFinal(delivered.order.status)).toBe(true);
+  });
+
+  it("keeps a card order at Order placed until the owner accepts it: paying is not a stage", async () => {
+    const { store, variant } = await storeWithProduct(16800, 9240);
+    const { cart } = await createGuestCart(store.id);
+    await addItem(cart.id, variant.id, 1);
+    const outcome = await placeOrder(await orderInput({ paymentProvider: "sandbox" }), orderContext(cart.id));
+    const placed = await db.order.findUniqueOrThrow({ where: { id: outcome.result.orderId } });
+    const token = orderAccessToken(placed);
+
+    const unpaid = await customerTracking(placed.number, token, store.id);
+    expect(unpaid.order.status).toBe(OrderStatus.PENDING);
+    expect(unpaid.reached).toEqual(["Order placed"]);
+    expect(unpaid.badge).toBe("Awaiting payment");
+
+    // The payment arrives: it is recorded as the payment status, and the timeline stays where it was.
+    const payment = await db.payment.findFirstOrThrow({ where: { orderId: placed.id } });
+    await processWebhook(
+      "sandbox",
+      await sandboxGateway().buildWebhookRequest({ id: `evt_${payment.id}`, type: "succeeded", providerReference: payment.providerReference!, amountCents: payment.amountCents, currency: "USD" }),
+    );
+    const paid = await customerTracking(placed.number, token, store.id);
+    expect(paid.order.paymentStatus).toBe(PaymentStatus.PAID);
+    expect(paid.order.status).toBe(OrderStatus.CONFIRMED);
+    expect(paid.reached).toEqual(["Order placed"]);
+    expect(paid.badge).toBe("Order placed");
+    expect(paid.stamp).not.toBe(unpaid.stamp);
+
+    // Only the owner's Accept moves it on.
+    await ownerAccepts(placed.id);
+    expect((await customerTracking(placed.number, token, store.id)).reached).toEqual(["Order placed", "Accepted", "Processing"]);
   });
 });

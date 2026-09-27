@@ -26,9 +26,10 @@ export function OrderActions({ order, tracking, can }: Props) {
   const [nextStatus, setNextStatus] = useState<OrderStatus | "">("");
   const [statusNote, setStatusNote] = useState("");
   const [cancelReason, setCancelReason] = useState("");
-  // The usual next step gets its own button; the dialog is for the valid jumps that skip a stage.
+  // The usual next step gets its own button; the dialog is for the valid jumps that skip a stage. Accepting
+  // has its own button, and an order waiting for its payment moves on by recording the payment, not by a status.
   const next = nextFulfilmentStep(order.status, { ownerAccepts: order.ownerAccepts });
-  const otherOptions = NEXT_STATUSES[order.status].filter((status) => status !== "ACCEPTED" && status !== next?.status);
+  const otherOptions = NEXT_STATUSES[order.status].filter((status) => status !== "ACCEPTED" && status !== "CONFIRMED" && status !== next?.status);
   const cancellable = CANCELLABLE_STATUSES.includes(order.status);
 
   return (
@@ -60,7 +61,7 @@ export function OrderActions({ order, tracking, can }: Props) {
           confirm={{
             title: order.status === "PENDING" ? `Confirm payment for order ${order.number}?` : "Mark this order as paid?",
             description:
-              "Use this only when payment was received outside the store, such as cash on delivery or a bank transfer. The sale is recorded and fulfilment takes the order straight away if the balance covers the wholesale cost.",
+              "Use this only when payment was received outside the store, such as cash on delivery or a bank transfer. The payment and the sale are recorded; the order still waits for the store owner to accept it.",
             confirmLabel: order.status === "PENDING" ? "Confirm payment" : "Mark as paid",
           }}
         >

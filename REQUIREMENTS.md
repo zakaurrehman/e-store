@@ -122,8 +122,10 @@ ImportRecord, RecentlyViewed, WebhookEvent, IdempotencyKey, RateLimitBucket.
    → payment method → review → place order (idempotency key) → hosted/embedded payment →
    webhook confirms → confirmation page + email.
 6. **After purchase:** account order list → order detail → tracking timeline
-   (Placed → Payment confirmed → Processing → Packed → Shipped → Out for delivery →
-   Delivered) → review purchased products (verified badge). Guests use `/track-order`.
+   (Order placed → Accepted → Processing → Packed → Shipped → Out for delivery →
+   Delivered — payment is shown as the payment status, never as a stage, and an order stays at
+   *Order placed* until its store owner accepts it; the page follows the order without a reload)
+   → review purchased products (verified badge). Guests use `/track-order`.
 7. **Account:** register → verify email → login → forgot/reset password → profile, addresses,
    wishlist, notifications, security (change password, sign out other sessions).
 
@@ -210,7 +212,7 @@ full order lifecycle, and an internal support inbox.
 | Deposits | Recorded by the owner (bank transfer or crypto, with reference and optional screenshot); **credited only when staff confirm** the money arrived. Declined deposits credit nothing and keep the reason. |
 | Withdrawals | Requested → Approved → Being sent → Paid, or Declined (amount returned). The amount leaves the available balance on request, so it cannot be spent twice. Payouts are sent by staff by hand; **automatic payouts (Stripe Connect) are not built**. |
 | Invitations | Store opening is invite-only while the setting is on (default on). Codes are random (`ZD-` + 8 characters, 40 bits), single-use unless staff choose more uses, can expire and be disabled, and record who used them and the store they opened. Codes are free — never sold. |
-| Order statuses | Awaiting payment → Confirmed → Accepted → Processing → Packed → Shipped → Out for delivery → Delivered, plus Cancelled. The owner's Accept records Accepted and moves the order into Processing in one step; staff take each step after that. (Awaiting funds is only found on older orders, which wait for the owner's Accept like Confirmed ones.) Refunded and failed are **payment** states, kept on the payment status rather than duplicated as order statuses. Only forward transitions are allowed; accepting is never a plain status change — it always goes through the owner's Accept and the funding check. The order's event log is its timeline. |
+| Order statuses | Awaiting payment → Order placed → Accepted → Processing → Packed → Shipped → Out for delivery → Delivered, plus Cancelled. The owner's Accept records Accepted and moves the order into Processing in one step; staff take each step after that. (Awaiting funds is only found on older orders, which wait for the owner's Accept like placed ones.) The tracking timeline everyone sees is *Order placed → Accepted → Processing → Packed → Shipped → Out for delivery → Delivered*: an order waiting for an online payment, placed with cash on delivery, or paid is at *Order placed* until it is accepted, because payment is never a fulfilment stage. Refunded and failed are **payment** states, kept on the payment status rather than duplicated as order statuses. Only forward transitions are allowed; accepting is never a plain status change — it always goes through the owner's Accept and the funding check. The order's event log is its timeline. |
 | Support | Conversations, not a contact form: customers write from the store (signed-in customers follow the thread in their account; guests get email). A store's customers reach its owner; everything is visible to Zendropship staff, who can reply, assign, add internal notes and resolve. |
 | Phone numbers | Validated with libphonenumber against the delivery country and stored in E.164. Format validation is **not** proof of ownership; one-time-code verification needs an SMS provider, which is not configured. |
 

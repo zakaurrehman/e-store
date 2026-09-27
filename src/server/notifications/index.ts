@@ -195,7 +195,7 @@ async function plan(event: NotificationEvent): Promise<Planned[]> {
       return [
         {
           inApp: order.userId
-            ? { audience: NotificationAudience.CUSTOMER, userId: order.userId, type: event.type, title: `Order ${order.number} confirmed`, body: "We're preparing your order.", href: `/account/orders/${order.number}` }
+            ? { audience: NotificationAudience.CUSTOMER, userId: order.userId, type: event.type, title: `Order ${order.number} placed`, body: paid ? "We've received your order and your payment." : "We've received your order.", href: `/account/orders/${order.number}` }
             : undefined,
           emails: [{ to: order.email, template: event.type, rendered: templates.orderConfirmationEmail(brand, { order: data, orderUrl: url, paid }) }],
         },

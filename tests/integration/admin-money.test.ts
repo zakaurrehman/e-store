@@ -57,7 +57,7 @@ describe("confirming the payment on an order that is still waiting for it", () =
     const after = await db.order.findUniqueOrThrow({ where: { id: order.id }, include: { events: true } });
     expect(after.paymentStatus).toBe(PaymentStatus.PAID);
     expect(after.paidAt).not.toBeNull();
-    // Confirmed, with the step on its timeline — not accepted: that stays the owner's decision.
+    // Confirmed, with the step in its history — not accepted: that stays the owner's decision.
     expect(after.status).toBe(OrderStatus.CONFIRMED);
     expect(after.acceptedAt).toBeNull();
     expect(after.events.some((event) => event.message.includes("Marked as paid"))).toBe(true);

@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { Alert, EmptyState, Skeleton } from "@/components/ui/misc";
 import { getCustomerOverview } from "@/features/orders/queries";
-import { ORDER_STATUS_LABELS, statusTone } from "@/features/orders/status";
+import { CUSTOMER_STATUS_LABELS, statusTone } from "@/features/orders/status";
 import { storeFromParams } from "@/features/stores/route";
 import { requireUser } from "@/server/auth/guards";
 import { formatMoney } from "@/utils/money";
@@ -63,7 +63,7 @@ async function Overview({ params, searchParams }: PageProps<"/s/[store]/account"
                       {dateFormat.format(order.placedAt)} · {formatMoney(order.totalCents, order.currency)}
                     </p>
                   </div>
-                  <Badge tone={statusTone(order.status)}>{ORDER_STATUS_LABELS[order.status]}</Badge>
+                  <Badge tone={statusTone(order.status)}>{CUSTOMER_STATUS_LABELS[order.status]}</Badge>
                 </Link>
               </li>
             ))}

@@ -72,7 +72,7 @@ test.describe.serial("admin operations", () => {
     // Paid, and still waiting: a payment never accepts an order by itself.
     await page.goto(`/admin/orders?q=${orderNumber}`);
     const row = page.locator("tbody tr", { hasText: orderNumber });
-    await expect(row).toContainText("Confirmed");
+    await expect(row).toContainText("Order placed");
     await expect(row).toContainText("Next: Accepted");
     await page.getByRole("link", { name: orderNumber }).click();
     await page.waitForURL(/\/admin\/orders\/[a-z0-9]+$/);

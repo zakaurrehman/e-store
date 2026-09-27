@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { EmptyState, Skeleton } from "@/components/ui/misc";
 import { listCustomerOrders } from "@/features/orders/queries";
-import { ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, paymentTone, statusTone } from "@/features/orders/status";
+import { CUSTOMER_STATUS_LABELS, PAYMENT_STATUS_LABELS, paymentTone, statusTone } from "@/features/orders/status";
 import { storeFromParams } from "@/features/stores/route";
 import { requireUser } from "@/server/auth/guards";
 import { formatMoney } from "@/utils/money";
@@ -33,7 +33,7 @@ async function OrdersList({ params, searchParams }: PageProps<"/s/[store]/accoun
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge tone={paymentTone(order.paymentStatus)}>{PAYMENT_STATUS_LABELS[order.paymentStatus]}</Badge>
-                  <Badge tone={statusTone(order.status)}>{ORDER_STATUS_LABELS[order.status]}</Badge>
+                  <Badge tone={statusTone(order.status)}>{CUSTOMER_STATUS_LABELS[order.status]}</Badge>
                 </div>
               </div>
               <div className="mt-4 flex items-center gap-4">

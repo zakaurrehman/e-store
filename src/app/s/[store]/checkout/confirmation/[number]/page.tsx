@@ -29,6 +29,9 @@ async function ConfirmationContent({ params, searchParams }: PageProps<"/s/[stor
 
   const paymentNotice = query.payment === "cancelled" ? "cancelled" : query.failed === "1" || order.paymentStatus === "FAILED" ? "failed" : null;
   const confirmed = order.status !== "PENDING" && order.status !== "CANCELLED";
+  // Only money that has actually been collected is called paid; cash on delivery is paid to the courier.
+  const paid = order.paymentStatus === "PAID" || order.paymentStatus === "PARTIALLY_REFUNDED" || order.paymentStatus === "REFUNDED";
+  const amountLabel = paid ? "Amount paid" : order.paymentProvider === "cod" ? "To pay on delivery" : "Order total";
   const trackHref = user ? `/account/orders/${order.number}` : `/orders/${order.number}${token ? `?token=${token}` : ""}`;
 
   return (
@@ -43,7 +46,7 @@ async function ConfirmationContent({ params, searchParams }: PageProps<"/s/[stor
         </p>
         <dl className="mt-6 flex flex-wrap gap-x-10 gap-y-3 rounded-lg border border-line bg-canvas px-5 py-4">
           <div>
-            <dt className="text-2xs font-semibold uppercase tracking-[0.12em] text-ink-500">Amount paid</dt>
+            <dt className="text-2xs font-semibold uppercase tracking-[0.12em] text-ink-500">{amountLabel}</dt>
             <dd className="tabular mt-0.5 text-lg font-semibold text-ink-950">{formatMoney(order.totalCents, order.currency)}</dd>
           </div>
           <div>

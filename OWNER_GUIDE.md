@@ -53,11 +53,11 @@ When a customer checks out in your store:
 
 Once you accept, Zendropship does the rest — you never forward, pack or ship anything.
 
-**Orders** shows each order's status, the tracking number once shipped, and what you earn. An order moves through: *Awaiting payment → Confirmed → Accepted → Processing → Packed → Shipped → Out for delivery → Delivered*. Each order page shows those stages with the time each one happened, and a **Timeline** of everything that has been done to it. You always see the same history Zendropship does, as soon as you refresh. A cancelled order stops there and goes no further.
+**Orders** shows each order's status, the tracking number once shipped, and what you earn. An order's stages are *Order placed → Accepted → Processing → Packed → Shipped → Out for delivery → Delivered* — the same ones your customer follows on their order page, which updates by itself as the order moves. Payment is not a stage: whether the customer has paid is shown as the order's payment status (a card order still being paid for shows *Awaiting payment*; cash on delivery shows *Pending* until Zendropship records the cash as collected). Each order page shows the stages with the time each one happened, and a **Timeline** of everything that has been done to it, payments included. You always see the same history Zendropship does, as soon as you refresh. A cancelled order stops there and goes no further.
 
 ### Accepting an order
 
-A new order — paid by card, or cash on delivery — is **Confirmed** and waits for you. It is never accepted automatically: not when the customer pays, not when a deposit arrives. **Orders** shows how many are waiting (the *To accept* filter lists them), and each one has an **Accept** button, in the list and on the order page.
+A new order — paid by card, or cash on delivery — is **Order placed** and waits for you. It is never accepted automatically: not when the customer pays, not when a deposit arrives. **Orders** shows how many are waiting (the *To accept* filter lists them), and each one has an **Accept** button, in the list and on the order page.
 
 Press **Accept**, check what the confirmation says will be set aside, and confirm. The order is accepted and goes straight into **Processing**; Zendropship takes every step after that (packed, shipped, out for delivery, delivered). Pressing Accept twice, refreshing or retrying never accepts it twice or takes money twice.
 
@@ -74,7 +74,7 @@ What the order earns you — the sale, less the wholesale cost and Zendropship's
 
 For example: you have $5,000 available and a cash-on-delivery order costs $300 wholesale. When you accept it, $300 is set aside and you have $4,700 available. When it is delivered, the $300 comes back with your profit on top.
 
-Your customer never hears about any of this — to them the order is simply confirmed. (Orders from before accepting was your decision may show as *Awaiting funds*; they wait for your Accept in exactly the same way.)
+Your customer never hears about any of this — to them the order is simply placed until you accept it. (Orders from before accepting was your decision may show as *Awaiting funds*; they wait for your Accept in exactly the same way.)
 
 ## Reviews
 

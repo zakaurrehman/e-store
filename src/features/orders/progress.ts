@@ -20,7 +20,7 @@ export type FulfilmentStage = {
   description: string;
   /** When the order reached this stage (null when it has not, or for old orders with no event). */
   at: Date | null;
-  /** Who moved it — the staff member or store owner, or null for the system (payment confirmations). */
+  /** Who moved it — the staff member or store owner, or null for the order being placed. */
   by: string | null;
   done: boolean;
   current: boolean;
@@ -29,8 +29,9 @@ export type FulfilmentStage = {
 const statusOf = (event: ProgressEvent) => (event.data as { status?: string } | null)?.status;
 
 /**
- * Every stage of the journey with its timestamp. `PENDING` is the moment the order was placed; the rest
- * come from the status-change events. Cancelled orders stop where they were cancelled.
+ * Every stage of the journey with its timestamp. `PENDING` is the moment the order was placed, and the
+ * order stays there until it is accepted (payment is not a stage — see FULFILMENT_STEPS); the rest come
+ * from the status-change events. Cancelled orders show no stage as reached.
  */
 export function fulfilmentProgress(order: { status: OrderStatus; placedAt: Date; deliveredAt?: Date | null; events: ProgressEvent[] }): FulfilmentStage[] {
   const reached = order.status === "CANCELLED" ? -1 : stepIndex(order.status);
@@ -53,6 +54,19 @@ export function fulfilmentProgress(order: { status: OrderStatus; placedAt: Date;
 
 /** True once the order has been delivered: fulfilment is finished and nothing else is expected. */
 export const isFulfilmentComplete = (status: OrderStatus) => status === "DELIVERED";
+
+/**
+ * A fingerprint of everything the customer's tracking page shows: the status, the payment status and the
+ * latest entry of the order's customer-visible history (a stage reached, tracking added, a payment). The
+ * page is rendered with it and re-rendered when the server's copy changes — see OrderPulse.
+ */
+export function trackingStamp(order: { status: string; paymentStatus: string; updatedAt: Date; events: Array<{ createdAt: Date }> }) {
+  const latest = order.events.reduce((max, event) => Math.max(max, event.createdAt.getTime()), 0);
+  return `${order.status}|${order.paymentStatus}|${order.updatedAt.getTime()}|${latest}`;
+}
+
+/** Nothing more happens to a delivered or cancelled order, so its tracking page stops checking for changes. */
+export const isTrackingFinal = (status: OrderStatus) => status === "DELIVERED" || status === "CANCELLED";
 
 export type NextStep = {
   status: OrderStatus;

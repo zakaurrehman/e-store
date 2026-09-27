@@ -213,7 +213,7 @@ export async function placeOrder(
       }
 
       await addEvent(tx, created.id, OrderEventType.CREATED, `Order placed (${provider.label})`, { data: { ip: context.ipAddress } });
-      if (isOffline) await addEvent(tx, created.id, OrderEventType.STATUS_CHANGED, "Order confirmed — payment on delivery", { data: { status: OrderStatus.CONFIRMED } });
+      if (isOffline) await addEvent(tx, created.id, OrderEventType.STATUS_CHANGED, "Waiting to be accepted — cash on delivery, nothing collected yet", { data: { status: OrderStatus.CONFIRMED } });
 
       if (context.userId && input.saveAddress && !input.shippingAddressId) {
         const count = await tx.address.count({ where: { userId: context.userId, deletedAt: null } });
@@ -415,7 +415,7 @@ export async function applyPaymentEvent(providerKey: string, event: PaymentEvent
           data: { paymentStatus: PaymentStatus.PAID, paidAt: new Date(), status: order.status === OrderStatus.PENDING ? OrderStatus.CONFIRMED : order.status },
         });
         await addEvent(tx, order.id, OrderEventType.PAYMENT, `Payment confirmed via ${providerKey}`, { data: { transactionId: event.transactionId } });
-        if (order.status === OrderStatus.PENDING) await addEvent(tx, order.id, OrderEventType.STATUS_CHANGED, "Order confirmed", { data: { status: OrderStatus.CONFIRMED } });
+        if (order.status === OrderStatus.PENDING) await addEvent(tx, order.id, OrderEventType.STATUS_CHANGED, "Waiting to be accepted — payment received", { data: { status: OrderStatus.CONFIRMED } });
       });
       const items = await db.orderItem.findMany({ where: { orderId: order.id }, select: { productId: true, variantId: true } });
       await recomputeProductSales(items.map((item) => item.productId).filter(Boolean) as string[]);
@@ -547,7 +547,7 @@ export async function markPaidManually(orderId: string, actorId: string, note?: 
     await tx.paymentTransaction.create({ data: { paymentId: payment.id, type: TransactionType.CHARGE, status: TransactionStatus.SUCCEEDED, amountCents: order.totalCents, reason: note ?? "Marked as paid by staff", actorId } });
     await tx.order.update({ where: { id: orderId }, data: { paymentStatus: PaymentStatus.PAID, paidAt: new Date(), status: order.status === OrderStatus.PENDING ? OrderStatus.CONFIRMED : order.status } });
     await addEvent(tx, orderId, OrderEventType.PAYMENT, `Marked as paid${note ? ` — ${note}` : ""}`, { actorId });
-    if (order.status === OrderStatus.PENDING) await addEvent(tx, orderId, OrderEventType.STATUS_CHANGED, "Order confirmed", { data: { status: OrderStatus.CONFIRMED }, actorId });
+    if (order.status === OrderStatus.PENDING) await addEvent(tx, orderId, OrderEventType.STATUS_CHANGED, "Waiting to be accepted — payment received", { data: { status: OrderStatus.CONFIRMED }, actorId });
   });
   await writeAudit({ actorId, action: "order.mark_paid", entityType: "Order", entityId: orderId, summary: `Order ${order.number} marked as paid` });
   const items = await db.orderItem.findMany({ where: { orderId }, select: { productId: true } });

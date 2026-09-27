@@ -4,11 +4,13 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { Alert } from "@/components/ui/misc";
+import { isTrackingFinal, trackingStamp } from "@/features/orders/progress";
 import type { CustomerOrder } from "@/features/orders/queries";
 import { CUSTOMER_STATUS_LABELS, FULFILMENT_STEPS, PAYMENT_STATUS_LABELS, paymentTone, statusTone, stepIndex } from "@/features/orders/status";
 import { formatAddressLines } from "@/lib/address";
 import { cn } from "@/utils/cn";
 import { formatMoney } from "@/utils/money";
+import { OrderPulse } from "./order-pulse";
 import { RetryPaymentButton } from "./retry-payment";
 
 const dateFormat = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" });
@@ -32,7 +34,7 @@ export function OrderTimeline({ order }: { order: Pick<CustomerOrder, "status" |
         const active = index === current;
         const stamp = index === 0 ? order.placedAt : step.status === "DELIVERED" ? order.deliveredAt : order.events.find((event) => (event.data as { status?: string } | null)?.status === step.status)?.createdAt;
         return (
-          <li key={step.status} className="relative flex gap-4 pb-6 last:pb-0">
+          <li key={step.status} className="relative flex gap-4 pb-6 last:pb-0" aria-current={active ? "step" : undefined}>
             {index < FULFILMENT_STEPS.length - 1 && <span className={cn("absolute left-[0.8125rem] top-7 h-[calc(100%-1rem)] w-px", reached && index < current ? "bg-ink-950" : "bg-line")} aria-hidden />}
             <span className={cn("relative z-10 flex size-7 shrink-0 items-center justify-center rounded-full border", reached ? "border-ink-950 bg-ink-950 text-white" : "border-line-strong bg-surface text-ink-300", active && "ring-4 ring-ink-950/10")}>
               {reached ? <Check className="size-3.5" strokeWidth={3} /> : <span className="size-1.5 rounded-full bg-current" />}
@@ -72,6 +74,8 @@ export function OrderView({ order, accessToken, paymentNotice }: { order: Custom
           </Alert>
         )}
         {order.paymentStatus === "PROCESSING" && !paymentNotice && <meta httpEquiv="refresh" content="20" />}
+        {/* The timeline follows the order as the store and Zendropship move it on, without a manual refresh. */}
+        {!isTrackingFinal(order.status) && <OrderPulse number={order.number} token={accessToken} stamp={trackingStamp(order)} />}
 
         <section className="rounded-lg border border-line p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
