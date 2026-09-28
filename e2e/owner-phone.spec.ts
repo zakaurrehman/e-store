@@ -4,6 +4,7 @@ import { clearRateLimits } from "./rate-limits";
 
 // A phone, emulated in the suite's own browser: touch, a 390px screen and a mobile user agent.
 const { defaultBrowserType: _browser, ...iPhone } = devices["iPhone 13"];
+const { defaultBrowserType: _small, ...iPhoneSE } = devices["iPhone SE"];
 
 /**
  * A store owner on their phone. The profile page puts the store, the money and the ways to get help in
@@ -115,6 +116,59 @@ test.describe.serial("the owner's profile and customer service on a phone", () =
     await expect(withdraw.getByLabel("Your TRC20 wallet address")).toBeVisible();
     await expect(withdraw.getByText("PayPal")).toHaveCount(0);
     await phone.keyboard.press("Escape");
+  });
+
+  test("on a small phone the deposit form fits what can be seen — toolbar or keyboard — with Close and Record deposit always in reach", async ({ browser }) => {
+    // The smallest iPhone still in use: 320 × 568.
+    const small = await browser.newContext({ ...iPhoneSE, baseURL: PLATFORM_URL });
+    const page = await small.newPage();
+    const screen = iPhoneSE.viewport;
+    await page.goto("/login?next=/dashboard/profile");
+    await page.locator("#field-email").fill(ownerEmail);
+    await page.locator("#login-password").fill(password);
+    await page.getByRole("button", { name: "Sign in" }).tap();
+    await page.waitForURL((url) => url.pathname === "/dashboard/profile");
+    await page.locator("main").getByRole("button", { name: "Deposit" }).tap();
+    const deposit = page.getByRole("dialog").filter({ visible: true });
+    const record = deposit.getByRole("button", { name: "Record deposit" });
+    const close = deposit.getByRole("button", { name: "Close" });
+    await expect(record).toBeVisible();
+
+    // Nothing hidden; Chrome on iPhone's toolbar over the bottom; the keyboard up while the amount is typed.
+    for (const [hidden, typing] of [
+      [0, false],
+      [110, false],
+      [300, true],
+    ] as Array<[number, boolean]>) {
+      if (typing) await deposit.getByLabel("Amount transferred (USD)").focus();
+      await page.evaluate((px) => {
+        const viewport = window.visualViewport!;
+        Object.defineProperty(viewport, "height", { configurable: true, get: () => window.innerHeight - px });
+        Object.defineProperty(viewport, "offsetTop", { configurable: true, get: () => 0 });
+        viewport.dispatchEvent(new Event("resize"));
+      }, hidden);
+      const visibleBottom = screen.height - hidden;
+      await expect.poll(async () => {
+        const box = await deposit.boundingBox();
+        return box ? Math.round(box.y + box.height) : Infinity;
+      }).toBeLessThanOrEqual(visibleBottom + 1);
+
+      // Close and Record deposit are on screen and can be tapped — nothing covers them.
+      for (const control of [close, record]) {
+        const box = (await control.boundingBox())!;
+        expect(box.y).toBeGreaterThanOrEqual(0);
+        expect(box.y + box.height).toBeLessThanOrEqual(visibleBottom + 1);
+        await control.tap({ trial: true });
+      }
+      // Every field scrolls into view above the pinned buttons.
+      const floor = await record.evaluate((button) => button.parentElement!.getBoundingClientRect().top);
+      for (const field of [deposit.getByLabel("Amount transferred (USD)"), deposit.getByLabel("Transaction id (TxID)"), deposit.getByRole("button", { name: "Upload screenshot" }), deposit.getByLabel("Note")]) {
+        await field.evaluate((element) => element.scrollIntoView({ block: "nearest" }));
+        const box = (await field.boundingBox())!;
+        expect(box.y + box.height).toBeLessThanOrEqual(floor + 1);
+      }
+    }
+    await small.close();
   });
 
   test("the Customer Service button opens a chat that works on a phone, and Zendropship's reply arrives without a refresh", async () => {

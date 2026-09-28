@@ -33,6 +33,7 @@ Set these on the host for **both the build and runtime**. `.env.example` documen
 | `PAYPAL_MODE`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID` | When PayPal is enabled (`PAYPAL_MODE=live` for real payments) |
 | `CRON_SECRET` | Required in production |
 | `RATE_LIMIT_DRIVER` | `postgres` (shared across instances) |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Optional — staff phone alerts work without them (a key pair is generated once and kept in the database). Set both keys (`npx web-push generate-vapid-keys`) to manage them yourself; changing them later means every device has to turn alerts on again. `VAPID_SUBJECT` is a `mailto:` or `https:` contact and defaults to `APP_URL`. |
 | `DATABASE_POOL_MAX` | Optional. Connections per server instance — 2 on Vercel and 10 elsewhere by default. Serverless runs many instances at once against a database that allows only a limited number of connections in total (Prisma Postgres' direct connection allows 45), so raise it only on a single long-running server. "Too many connections" errors on dynamic pages mean this is set too high for the plan. |
 | `SEED_DEMO_DATA` | `false` (demo data is refused in production anyway) |
 

@@ -2,6 +2,8 @@ import { Inbox, Search } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
+import { PushAlerts } from "@/components/admin/push-alerts";
+import { ClearConversationAlerts } from "@/components/admin/staff-alerts";
 import { AssignSelect, ConversationStatusButton, StaffReplyForm } from "@/components/admin/support/support-thread";
 import { AdminPagination, buildQuery, Card, dateTime, FilterLink, PageHeader, StatusBadge } from "@/components/admin/ui";
 import { Input } from "@/components/ui/field";
@@ -10,6 +12,7 @@ import { SupportPulse } from "@/components/support/support-pulse";
 import { ContactStatus } from "@/generated/prisma/enums";
 import { getSupportConversation, listSupportConversations, parseSupportStatus, staffMembers, SUPPORT_PAGE_SIZE, SUPPORT_STATUS_LABELS, SUPPORT_STATUS_TONES, supportPulseStamp } from "@/features/support/queries";
 import { markConversationReadAction } from "@/features/support/actions";
+import { markConversationAlertsRead } from "@/features/admin/alerts";
 import { can, requirePagePermission } from "@/server/auth/guards";
 import { cn } from "@/utils/cn";
 import { formatMoney } from "@/utils/money";
@@ -39,8 +42,9 @@ async function Messages({ searchParams }: PageProps<"/admin/messages">) {
     selectedId ? getSupportConversation(selectedId) : null,
     staffMembers(),
   ]);
-  // Opening a conversation is what marks it read.
+  // Opening a conversation is what marks it read — the thread, and the alerts that announced it.
   if (selected?.unreadForStaff) await markConversationReadAction(selected.id);
+  if (selected) await markConversationAlertsRead(selected.id);
 
   const base = query as Record<string, string | string[] | undefined>;
   const canReply = can(user, "messages.view");
@@ -61,11 +65,13 @@ async function Messages({ searchParams }: PageProps<"/admin/messages">) {
   return (
     <>
       <SupportPulse stamp={pulse} />
+      {selected && <ClearConversationAlerts conversationId={selected.id} />}
       <PageHeader
         title="Support inbox"
         description="Every conversation with customers and store owners. Replies are emailed and appear in the customer's account."
         actions={inbox.unread > 0 ? <StatusBadge label={`${inbox.unread} unread`} tone="warning" /> : undefined}
       />
+      <PushAlerts compact />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {SCOPES.map((option) => (
@@ -82,10 +88,10 @@ async function Messages({ searchParams }: PageProps<"/admin/messages">) {
             {SUPPORT_STATUS_LABELS[value]} <span className="tabular ml-1.5 opacity-60">{inbox.counts[value] ?? 0}</span>
           </FilterLink>
         ))}
-        <form className="ml-auto flex items-center gap-2" action="/admin/messages">
+        <form className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto" action="/admin/messages">
           {scope !== "all" && <input type="hidden" name="scope" value={scope} />}
           {status && <input type="hidden" name="status" value={status} />}
-          <Input name="q" defaultValue={q} placeholder="Search subject, customer, order…" className="h-9 w-56 text-[0.875rem]" aria-label="Search conversations" />
+          <Input name="q" defaultValue={q} placeholder="Search subject, customer, order…" className="h-9 min-w-0 flex-1 text-[0.875rem] sm:w-56 sm:flex-none" aria-label="Search conversations" />
           <button type="submit" className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-line-strong px-3 text-[0.875rem] hover:border-ink-400">
             <Search className="size-3.5" aria-hidden /> Search
           </button>
@@ -102,7 +108,7 @@ async function Messages({ searchParams }: PageProps<"/admin/messages">) {
                 <li key={conversation.id}>
                   <Link href={`/admin/messages${buildQuery(base, { id: conversation.id })}`} className={cn("block px-5 py-3.5 hover:bg-canvas/60", selectedId === conversation.id && "bg-iris-50")}>
                     <div className="flex items-center justify-between gap-2">
-                      <span className={cn("truncate text-sm", conversation.unreadForStaff ? "font-semibold" : "font-medium")}>
+                      <span className={cn("min-w-0 truncate text-sm", conversation.unreadForStaff ? "font-semibold" : "font-medium")}>
                         {conversation.unreadForStaff && <span className="mr-1.5 inline-block size-1.5 rounded-full bg-iris-600" aria-label="Unread" />}
                         {conversation.subject}
                       </span>

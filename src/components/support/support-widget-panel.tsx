@@ -210,39 +210,8 @@ export function SupportWidgetPanel({ config, initialUnread = 0 }: { config: Supp
     };
   }, [open, baseline, session?.signedIn, load]);
 
-  // On a phone the panel is fitted to the part of the screen that can actually be seen. Where a page's bottom
-  // edge sits is not reliable there — Chrome on iPhone puts it under its own toolbar, and the on-screen
-  // keyboard covers it without the page shrinking — so the panel is placed from the top of the visible area
-  // (the visual viewport) and sized to it. The message box and Send stay on screen, keyboard or not.
-  const [visible, setVisible] = useState<{ top: number; height: number } | null>(null);
-  useEffect(() => {
-    const viewport = window.visualViewport;
-    if (!open || !viewport) return;
-    const phone = window.matchMedia("(max-width: 639.98px)");
-    const follow = () => setVisible(phone.matches ? { top: Math.round(viewport.offsetTop), height: Math.round(viewport.height) } : null);
-    follow();
-    viewport.addEventListener("resize", follow);
-    viewport.addEventListener("scroll", follow);
-    phone.addEventListener("change", follow);
-    return () => {
-      viewport.removeEventListener("resize", follow);
-      viewport.removeEventListener("scroll", follow);
-      phone.removeEventListener("change", follow);
-    };
-  }, [open]);
-  // A strip of the page stays visible above the sheet (tap it to close), except when space is short.
-  const gap = visible ? Math.min(56, Math.round(visible.height * 0.08)) : 0;
-  const fitted = visible ? { marginTop: visible.top + gap, height: visible.height - gap, maxHeight: visible.height - gap } : undefined;
-  // When the visible area changes — the keyboard opening, usually — bring the field being typed in back into
-  // view, with its Send button under it so the message can go without scrolling.
-  const visibleHeight = visible?.height;
-  useEffect(() => {
-    if (!visibleHeight) return;
-    const active = document.activeElement;
-    if (!(active instanceof HTMLElement) || !active.closest("dialog") || !active.matches("input, textarea, select")) return;
-    active.closest("form")?.querySelector<HTMLElement>('button[type="submit"]')?.scrollIntoView({ block: "nearest" });
-    active.scrollIntoView({ block: "nearest" });
-  }, [visibleHeight]);
+  // On a phone the Dialog fits the panel to the part of the screen that can actually be seen, and brings the
+  // message box back into view when the keyboard opens (see useVisibleArea in the Dialog).
 
   const thread = threadId ? session?.threads.find((row) => row.id === threadId) : undefined;
   const unread = session ? session.threads.filter((row) => row.unread).length : initialUnread;
@@ -266,7 +235,6 @@ export function SupportWidgetPanel({ config, initialUnread = 0 }: { config: Supp
     setThreadId(null);
     setComposing(false);
     setSession(null);
-    setVisible(null);
   };
 
   // Checkout is a single-minded flow: nothing floats over the pay button.
@@ -302,7 +270,6 @@ export function SupportWidgetPanel({ config, initialUnread = 0 }: { config: Supp
         title={thread ? thread.subject : "Customer service"}
         description={thread ? STATUS_LABELS[thread.status] : `${config.answeredBy} · we usually reply within one business day`}
         className="sm:shadow-pop"
-        style={fitted}
       >
         {loading && !session ? (
           <div className="space-y-3">

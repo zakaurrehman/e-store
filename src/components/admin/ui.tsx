@@ -36,7 +36,9 @@ export function PageHeader({ title, description, actions, breadcrumb }: { title:
 
 export function Card({ title, description, actions, children, className, padded = true }: { title?: ReactNode; description?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; padded?: boolean }) {
   return (
-    <section className={cn("rounded-lg border border-line bg-surface", className)}>
+    // min-w-0: a card in a grid or a row can be narrower than its widest content (a chart, a long line), so
+    // the content fits the space there is instead of pushing the page wider than a phone's screen.
+    <section className={cn("min-w-0 rounded-lg border border-line bg-surface", className)}>
       {(title || actions) && (
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-3.5">
           <div>
@@ -71,7 +73,9 @@ export function StatTile({ label, value, hint, tone, href }: { label: string; va
 
 export function Table({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={cn("overflow-x-auto", className)}>
+    // relative: a screen-reader-only label in a header cell is absolutely positioned, and without a positioned
+    // ancestor here it escapes the scroll box and stretches the whole page past a phone's screen.
+    <div className={cn("relative overflow-x-auto", className)}>
       <table className="w-full min-w-[40rem] text-sm">{children}</table>
     </div>
   );

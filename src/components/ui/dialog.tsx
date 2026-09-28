@@ -1,7 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
-import { useEffect, useId, useRef, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { cn } from "@/utils/cn";
 
 type DialogVariant = "center" | "right" | "left" | "bottom" | "corner";
@@ -29,25 +29,96 @@ const variantClasses: Record<DialogVariant, string> = {
   bottom:
     "mx-0 mb-0 mt-auto w-full max-w-none max-h-[90dvh] rounded-t-xl animate-slide-in-up sm:m-auto sm:w-[min(calc(100vw-2rem),36rem)] sm:rounded-lg sm:animate-rise-in",
   // A tall sheet on a phone; a panel in the bottom-right corner, where its launcher is, from small screens up.
-  // On a phone it hangs from the top of the screen rather than resting on the bottom: phone browsers disagree
-  // about where the bottom of the page is (Chrome on iPhone puts it under its own toolbar), and a sheet
-  // standing on that edge can end up with its message box off screen. Its owner can refine the placement
-  // with the visible area (see the support widget). Once it is only a corner of the screen it stops dimming
-  // the page behind it, so it stays out of the way.
+  // On a phone it hangs from the top of the visible area rather than resting on the bottom (see
+  // useVisibleArea). Once it is only a corner of the screen it stops dimming the page behind it, so it stays
+  // out of the way.
   corner:
     "mx-0 mb-0 mt-[8svh] h-[92svh] max-h-[92svh] w-full max-w-none rounded-t-xl animate-slide-in-up " +
     "sm:mb-4 sm:mr-4 sm:ml-auto sm:mt-auto sm:h-auto sm:w-[23.5rem] sm:max-h-[min(80dvh,38rem)] sm:rounded-lg sm:animate-rise-in " +
     "sm:[&::backdrop]:bg-transparent sm:[&::backdrop]:[backdrop-filter:none]",
 };
 
+type VisibleArea = { top: number; height: number };
+
+/**
+ * The part of a phone's screen that can actually be seen while the dialog is open (null on larger screens).
+ * A phone browser's idea of where the page ends is not where the screen ends: Chrome on iPhone draws its
+ * toolbar over the bottom of the page, and the on-screen keyboard covers it without the page shrinking.
+ * A dialog placed against the page can have its lower half — fields, and the button that sends the form —
+ * underneath either, where no amount of scrolling brings it out. The visual viewport is what is really on
+ * screen, so dialogs on a phone are placed and sized against it.
+ */
+function useVisibleArea(open: boolean) {
+  const [area, setArea] = useState<VisibleArea | null>(null);
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!open || !viewport) return;
+    const phone = window.matchMedia("(max-width: 639.98px)");
+    const follow = () => setArea(phone.matches ? { top: Math.round(viewport.offsetTop), height: Math.round(viewport.height) } : null);
+    follow();
+    viewport.addEventListener("resize", follow);
+    viewport.addEventListener("scroll", follow);
+    phone.addEventListener("change", follow);
+    return () => {
+      viewport.removeEventListener("resize", follow);
+      viewport.removeEventListener("scroll", follow);
+      phone.removeEventListener("change", follow);
+    };
+  }, [open]);
+  return open ? area : null;
+}
+
+/**
+ * Where each kind of dialog goes within the visible area on a phone. Nothing is measured: `translate` moves
+ * a dialog by its own height, and it composes with the entrance animations, which use `transform`.
+ */
+function placeInVisibleArea(variant: DialogVariant, area: VisibleArea): CSSProperties {
+  const edge = { bottom: "auto", marginTop: 0, marginBottom: 0 } satisfies CSSProperties;
+  switch (variant) {
+    case "center":
+      // Centred in what can be seen, with a margin above and below.
+      return { ...edge, top: area.top + area.height / 2, translate: "0 -50%", maxHeight: area.height - 24 };
+    case "bottom":
+      // Resting on the bottom of what can be seen — the top of the keyboard, when it is open.
+      return { ...edge, top: area.top + area.height, translate: "0 -100%", maxHeight: area.height - Math.min(56, Math.round(area.height * 0.08)) };
+    case "left":
+    case "right":
+      return { ...edge, top: area.top, height: area.height, maxHeight: area.height };
+    case "corner": {
+      // A strip of the page stays visible above the sheet (tap it to close), except when space is short.
+      const gap = Math.min(56, Math.round(area.height * 0.08));
+      return { marginTop: area.top + gap, height: area.height - gap, maxHeight: area.height - gap };
+    }
+  }
+}
+
 /**
  * Accessible modal built on the native <dialog> element: focus is trapped and restored by the browser,
  * Escape closes it, and the page behind is inert. Used for modals, side drawers and mobile bottom sheets.
+ * On a phone every kind is fitted to the visible part of the screen (see useVisibleArea), and the field being
+ * typed in is brought back into view when the keyboard opens.
  */
 export function Dialog({ open, onClose, title, description, children, footer, variant = "center", hideTitle, className, bodyClassName, style }: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const descriptionId = useId();
+  const area = useVisibleArea(open);
+  const fitted = area ? { ...placeInVisibleArea(variant, area), ...style } : style;
+  // With the keyboard open on a small phone there is little room left: the header shrinks to one line and
+  // the description is left to screen readers, so the field being typed in keeps the space.
+  const compact = !!area && area.height < 440;
+
+  // When the visible area changes — the keyboard opening, usually — bring the field being typed in back into
+  // view, with the form's submit button as close as it will come, so the form can be sent without a hunt.
+  const visibleHeight = area?.height;
+  useEffect(() => {
+    const dialog = ref.current;
+    if (!visibleHeight || !dialog) return;
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement) || !dialog.contains(active) || !active.matches("input, textarea, select")) return;
+    active.closest("form")?.querySelector<HTMLElement>('button[type="submit"]')?.scrollIntoView({ block: "nearest" });
+    active.scrollIntoView({ block: "nearest" });
+  }, [visibleHeight]);
 
   useEffect(() => {
     const dialog = ref.current;
@@ -66,7 +137,7 @@ export function Dialog({ open, onClose, title, description, children, footer, va
   return (
     <dialog
       ref={ref}
-      style={style}
+      style={fitted}
       aria-labelledby={titleId}
       aria-describedby={description ? descriptionId : undefined}
       // React propagates close/cancel through the component tree even though the native events don't bubble,
@@ -92,13 +163,13 @@ export function Dialog({ open, onClose, title, description, children, footer, va
         className,
       )}
     >
-      <div className={cn("flex shrink-0 items-start justify-between gap-4 px-5 pt-5 sm:px-6", hideTitle ? "pb-0" : "pb-4")}>
-        <div className={cn(hideTitle && "sr-only")}>
-          <h2 id={titleId} className="text-lg font-semibold tracking-[-0.01em]">
+      <div className={cn("flex shrink-0 items-start justify-between gap-4 px-5 sm:px-6", compact ? "pt-3" : "pt-5", hideTitle ? "pb-0" : compact ? "pb-2" : "pb-4")}>
+        <div className={cn("min-w-0", hideTitle && "sr-only")}>
+          <h2 id={titleId} className={cn("font-semibold tracking-[-0.01em]", compact ? "truncate text-base" : "text-lg")}>
             {title}
           </h2>
           {description && (
-            <p id={descriptionId} className="mt-1 text-sm text-ink-500">
+            <p id={descriptionId} className={cn("mt-1 text-sm text-ink-500", compact && "sr-only")}>
               {description}
             </p>
           )}

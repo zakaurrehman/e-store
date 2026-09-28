@@ -63,7 +63,7 @@ async function Profile() {
         <div className="min-w-0">
           <p className="truncate text-lg font-semibold tracking-[-0.01em] text-ink-950">{store.name}</p>
           <p className="truncate text-[0.875rem] text-ink-600">{user.email}</p>
-          <a href={address} target="_blank" rel="noopener noreferrer" className="truncate text-[0.8125rem] text-iris-700 hover:underline">
+          <a href={address} target="_blank" rel="noopener noreferrer" className="block truncate text-[0.8125rem] text-iris-700 hover:underline">
             {address.replace(/^https?:\/\//, "")}
           </a>
         </div>

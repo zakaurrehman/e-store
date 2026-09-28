@@ -2,7 +2,7 @@ import { Search } from "lucide-react";
 import type { Metadata } from "next";
 import Image from "next/image";
 import { Suspense } from "react";
-import { AdminPagination, Card, PageHeader, Table, TableEmpty, Td, Th } from "@/components/admin/ui";
+import { AdminPagination, Card, PageHeader, Table, Td, Th } from "@/components/admin/ui";
 import { ProductPriceEditor, RemoveProductButton, VisibilityToggle } from "@/components/dashboard/controls";
 import { ButtonLink } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
@@ -18,6 +18,19 @@ import { formatMoney } from "@/utils/money";
 export const metadata: Metadata = { title: "Products" };
 
 const PAGE_SIZE = 25;
+
+function EmptyShelf({ searched }: { searched: boolean }) {
+  if (searched) return <p className="px-5 py-14 text-center text-[0.9375rem] text-ink-500">No products in your store match that search.</p>;
+  return (
+    <div className="px-5 py-20 text-center">
+      <p className="text-[0.9375rem] font-medium text-ink-950">Your store has no products yet</p>
+      <p className="mt-1 text-sm text-ink-500">Add products from the catalogue and they appear in your store immediately.</p>
+      <ButtonLink href="/catalog" size="sm" className="mt-4">
+        Browse the catalogue
+      </ButtonLink>
+    </div>
+  );
+}
 
 async function ProductsTable({ searchParams }: PageProps<"/dashboard/products">) {
   const [{ store }, query] = await Promise.all([requireStoreOwner("/dashboard/products"), searchParams]);
@@ -40,72 +53,62 @@ async function ProductsTable({ searchParams }: PageProps<"/dashboard/products">)
         </button>
       </form>
       <Card padded={false}>
-        <Table>
-          <thead>
-            <tr>
-              <Th>Product</Th>
-              <Th className="text-right">You pay</Th>
-              <Th className="text-right">Sells for</Th>
-              <Th className="text-right">You earn</Th>
-              <Th>Price rule</Th>
-              <Th>Stock</Th>
-              <Th>Live</Th>
-              <Th className="w-10">
-                <span className="sr-only">Remove</span>
-              </Th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.rows.length === 0 && (
-              <TableEmpty colSpan={8}>
-                {q ? (
-                  "No products in your store match that search."
-                ) : (
-                  <div className="py-6">
-                    <p className="text-[0.9375rem] font-medium text-ink-950">Your store has no products yet</p>
-                    <p className="mt-1 text-sm text-ink-500">Add products from the catalogue and they appear in your store immediately.</p>
-                    <ButtonLink href="/catalog" size="sm" className="mt-4">
-                      Browse the catalogue
-                    </ButtonLink>
-                  </div>
-                )}
-              </TableEmpty>
-            )}
-            {data.rows.map((row) => (
-              <tr key={row.productId} className={cn(!row.isActive && "bg-canvas/60")}>
-                <Td>
-                  <div className="flex items-center gap-3">
-                    <div className="relative size-12 shrink-0 overflow-hidden rounded-sm bg-canvas">{row.imageUrl && <Image src={row.imageUrl} alt="" fill sizes="48px" className="object-cover" />}</div>
-                    <div className="min-w-0">
-                      <a href={`${url}/p/${row.slug}`} target="_blank" rel="noopener noreferrer" className="line-clamp-2 font-medium text-ink-950 hover:underline">
-                        {row.name}
-                      </a>
-                      {row.brand && <p className="text-[0.8125rem] text-ink-500">{row.brand}</p>}
-                    </div>
-                  </div>
-                </Td>
-                <Td className="tabular text-right">{formatMoney(row.costCents)}</Td>
-                <Td className="tabular text-right font-medium">
-                  {row.maxPriceCents > row.priceCents && <span className="font-normal text-ink-500">from </span>}
-                  {formatMoney(row.priceCents)}
-                </Td>
-                <Td className={cn("tabular text-right font-medium", row.marginCents > 0 ? "text-success" : "text-danger")}>{formatMoney(row.marginCents)}</Td>
-                <Td>
-                  <ProductPriceEditor row={row} storeRule={rule} commission={commission} />
-                </Td>
-                <Td className="text-[0.8125rem]">
-                  {!row.sellable ? <span className="text-danger">Withdrawn by supplier</span> : row.inStock ? <span className="text-ink-600">{row.stock} available</span> : <span className="text-warning">Out of stock</span>}
-                </Td>
-                <Td>
-                  <VisibilityToggle productId={row.productId} isActive={row.isActive} disabled={!row.sellable} />
-                </Td>
-                <Td>
-                  <RemoveProductButton productId={row.productId} productName={row.name} />
-                </Td>
+        {/* Nothing to list: the message stands on its own rather than inside a table wider than a phone. */}
+        {data.rows.length === 0 ? (
+          <EmptyShelf searched={!!q} />
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>Product</Th>
+                <Th className="text-right">You pay</Th>
+                <Th className="text-right">Sells for</Th>
+                <Th className="text-right">You earn</Th>
+                <Th>Price rule</Th>
+                <Th>Stock</Th>
+                <Th>Live</Th>
+                <Th className="w-10">
+                  <span className="sr-only">Remove</span>
+                </Th>
               </tr>
-            ))}
-          </tbody>
-        </Table>
+            </thead>
+            <tbody>
+              {data.rows.map((row) => (
+                <tr key={row.productId} className={cn(!row.isActive && "bg-canvas/60")}>
+                  <Td>
+                    <div className="flex items-center gap-3">
+                      <div className="relative size-12 shrink-0 overflow-hidden rounded-sm bg-canvas">{row.imageUrl && <Image src={row.imageUrl} alt="" fill sizes="48px" className="object-cover" />}</div>
+                      <div className="min-w-0">
+                        <a href={`${url}/p/${row.slug}`} target="_blank" rel="noopener noreferrer" className="line-clamp-2 font-medium text-ink-950 hover:underline">
+                          {row.name}
+                        </a>
+                        {row.brand && <p className="text-[0.8125rem] text-ink-500">{row.brand}</p>}
+                      </div>
+                    </div>
+                  </Td>
+                  <Td className="tabular text-right">{formatMoney(row.costCents)}</Td>
+                  <Td className="tabular text-right font-medium">
+                    {row.maxPriceCents > row.priceCents && <span className="font-normal text-ink-500">from </span>}
+                    {formatMoney(row.priceCents)}
+                  </Td>
+                  <Td className={cn("tabular text-right font-medium", row.marginCents > 0 ? "text-success" : "text-danger")}>{formatMoney(row.marginCents)}</Td>
+                  <Td>
+                    <ProductPriceEditor row={row} storeRule={rule} commission={commission} />
+                  </Td>
+                  <Td className="text-[0.8125rem]">
+                    {!row.sellable ? <span className="text-danger">Withdrawn by supplier</span> : row.inStock ? <span className="text-ink-600">{row.stock} available</span> : <span className="text-warning">Out of stock</span>}
+                  </Td>
+                  <Td>
+                    <VisibilityToggle productId={row.productId} isActive={row.isActive} disabled={!row.sellable} />
+                  </Td>
+                  <Td>
+                    <RemoveProductButton productId={row.productId} productName={row.name} />
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
       </Card>
       <AdminPagination basePath="/dashboard/products" query={query} page={data.page} pageCount={data.pageCount} total={data.total} pageSize={PAGE_SIZE} />
     </>

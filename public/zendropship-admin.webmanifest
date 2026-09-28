@@ -1,0 +1,16 @@
+{
+  "name": "Zendropship Admin",
+  "short_name": "ZD Admin",
+  "description": "Zendropship's admin panel, with alerts for new customer messages.",
+  "id": "/admin",
+  "start_url": "/admin",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    { "src": "/zendropship-admin-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/zendropship-admin-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/zendropship-admin-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

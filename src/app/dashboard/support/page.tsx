@@ -55,9 +55,9 @@ async function Inbox({ searchParams }: PageProps<"/dashboard/support">) {
             {SUPPORT_STATUS_LABELS[value]} <span className="tabular ml-1.5 opacity-60">{data.counts[value] ?? 0}</span>
           </FilterLink>
         ))}
-        <form className="ml-auto flex items-center gap-2" action="/dashboard/support">
+        <form className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto" action="/dashboard/support">
           {status && <input type="hidden" name="status" value={status} />}
-          <Input name="q" defaultValue={q} placeholder="Search name, subject, order…" className="h-9 w-56 text-[0.875rem]" aria-label="Search messages" />
+          <Input name="q" defaultValue={q} placeholder="Search name, subject, order…" className="h-9 min-w-0 flex-1 text-[0.875rem] sm:w-56 sm:flex-none" aria-label="Search messages" />
           <button type="submit" className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-line-strong px-3 text-[0.875rem] hover:border-ink-400">
             <Search className="size-3.5" aria-hidden /> Search
           </button>

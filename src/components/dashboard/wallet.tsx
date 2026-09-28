@@ -43,6 +43,21 @@ function useDialogAction(action: (state: ActionState, formData: FormData) => Pro
   return { state, formRef, onSubmit, pending };
 }
 
+/** Room under a field scrolled into view, so it never ends up behind the pinned buttons (DialogActions). */
+const PINNED_ACTIONS_ROOM = "max-sm:scroll-pb-20";
+
+/**
+ * A form's buttons. On a phone they stay pinned to the bottom of the dialog while the form scrolls under them,
+ * so the button that sends it is on screen whichever field is being typed in — keyboard open or not.
+ */
+function DialogActions({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="sticky -bottom-5 z-10 -mx-5 -mb-5 flex justify-end gap-2 border-t border-line bg-surface px-5 py-2.5 sm:static sm:m-0 sm:border-0 sm:bg-transparent sm:p-0">
+      {children}
+    </div>
+  );
+}
+
 /** Details for owners: where Zendropship receives money, set by staff in Settings → Owner deposits. */
 export type DepositDetails = { bankDetails: string; trc20Address: string; cryptoNetwork: string; cryptoAddress: string; instructions: string };
 
@@ -94,7 +109,7 @@ export function WithdrawDialog({ balanceCents, minimumCents, disabled }: { balan
       <Button size="sm" onClick={() => setOpen(true)} disabled={disabled} className="gap-1.5">
         <ArrowUpFromLine className="size-4" aria-hidden /> Withdraw
       </Button>
-      <Dialog open={open} onClose={() => setOpen(false)} title="Withdraw your balance" description={`${available} available`}>
+      <Dialog open={open} onClose={() => setOpen(false)} title="Withdraw your balance" description={`${available} available`} bodyClassName={PINNED_ACTIONS_ROOM}>
         <form
           ref={formRef}
           onSubmit={(event) => {
@@ -143,14 +158,14 @@ export function WithdrawDialog({ balanceCents, minimumCents, disabled }: { balan
           </p>
           <SupportLink href="/dashboard/support/tickets/new?subject=Question%20about%20a%20withdrawal">Need help with a withdrawal? Ask Zendropship</SupportLink>
           {state.status === "error" && <FormMessage state={state} />}
-          <div className="flex justify-end gap-2">
+          <DialogActions>
             <Button variant="ghost" onClick={() => setOpen(false)}>
               Cancel
             </Button>
             <Button type="submit" loading={pending} aria-label={pending ? "Requesting…" : undefined}>
               Request withdrawal
             </Button>
-          </div>
+          </DialogActions>
         </form>
       </Dialog>
     </>
@@ -186,7 +201,7 @@ export function DepositDialog({ minimumCents, supportEmail, details }: { minimum
       <Button variant="secondary" size="sm" onClick={() => setOpen(true)} className="gap-1.5">
         <ArrowDownToLine className="size-4" aria-hidden /> Deposit
       </Button>
-      <Dialog open={open} onClose={() => setOpen(false)} title="Add funds to your balance" description="Tell us about a transfer you have made">
+      <Dialog open={open} onClose={() => setOpen(false)} title="Add funds to your balance" description="Tell us about a transfer you have made" bodyClassName={PINNED_ACTIONS_ROOM}>
         <form ref={formRef} onSubmit={onSubmit} className="space-y-5">
           <p className="rounded-sm bg-canvas px-3 py-2.5 text-[0.8125rem] leading-relaxed text-ink-600">
             {details.instructions || "Send the money to Zendropship first, then record it here. Your balance changes only once we confirm the transfer arrived — nothing is credited automatically."}
@@ -288,14 +303,14 @@ export function DepositDialog({ minimumCents, supportEmail, details }: { minimum
           <TextField name="note" label="Note" optional maxLength={300} error={fieldError(state, "note")} />
           <SupportLink href="/dashboard/support/tickets/new?subject=Where%20do%20I%20send%20my%20deposit%3F">Not sure where to send the money? Ask Zendropship</SupportLink>
           {state.status === "error" && <FormMessage state={state} />}
-          <div className="flex justify-end gap-2">
+          <DialogActions>
             <Button variant="ghost" onClick={() => setOpen(false)}>
               Cancel
             </Button>
             <Button type="submit" loading={pending} aria-label={pending ? "Recording…" : undefined}>
               Record deposit
             </Button>
-          </div>
+          </DialogActions>
         </form>
       </Dialog>
     </>

@@ -157,7 +157,42 @@ async function staffRecipients(permission: Permission) {
 type Planned = {
   inApp?: { audience: NotificationAudience; userId: string | null; type: string; title: string; body: string; href?: string; data?: Prisma.InputJsonValue };
   emails?: Array<{ to: string; template: string; rendered: RenderedEmail; replyTo?: string }>;
+  /** An alert on every device where a staff member with this permission turned alerts on (see web-push.ts). */
+  push?: { permission: Permission; title: string; body: string; href: string; tag: string };
 };
+
+/** The devices where staff who hold a permission turned alerts on. */
+async function staffDevices(permission: Permission) {
+  return db.pushSubscription.findMany({
+    where: { user: { status: "ACTIVE", deletedAt: null, role: { isStaff: true, permissions: { some: { permission: { key: permission } } } } } },
+    select: { id: true },
+  });
+}
+
+type SupportMessageForAlert = { id: string; name: string; subject: string; store: { name: string } | null };
+
+/**
+ * Zendropship staff hear about every message a customer writes — a new conversation or a reply, to
+ * Zendropship or in any store (an owner answers their own store's, and is told as well) — in the admin's
+ * notifications and as an alert on each device they turned alerts on. One alert per message; alerts about the
+ * same conversation share a tag, so a phone shows the latest one instead of a pile. It opens the conversation.
+ */
+function staffSupportAlert(message: SupportMessageForAlert, kind: "new" | "reply", text: string, type: string): Planned {
+  const title = kind === "new" ? `New message from ${message.name}` : `New reply from ${message.name}`;
+  const where = message.store?.name ?? "Zendropship";
+  const preview = text.replace(/\s+/g, " ").trim();
+  const href = `/admin/messages?id=${message.id}`;
+  return {
+    inApp: { audience: NotificationAudience.STAFF, userId: null, type, title, body: `${message.subject} · ${where}`, href, data: { conversationId: message.id } },
+    push: {
+      permission: "messages.view",
+      title: `${title} · ${where}`,
+      body: `${message.subject} — ${preview.length > 140 ? `${preview.slice(0, 139)}…` : preview}`,
+      href,
+      tag: `support-${message.id}`,
+    },
+  };
+}
 
 async function plan(event: NotificationEvent): Promise<Planned[]> {
   const platformBrand = await getBrand();
@@ -382,9 +417,11 @@ async function plan(event: NotificationEvent): Promise<Planned[]> {
     case "contact.received": {
       const message = await db.contactMessage.findUniqueOrThrow({ where: { id: event.messageId }, include: { store: { select: storeForEmailSelect } } });
       const owner = message.store?.ownerId ? await db.user.findUnique({ where: { id: message.store.ownerId }, select: { id: true, email: true, deletedAt: true } }) : null;
-      // A message written in an owner's store is that owner's to answer; everything else reaches Zendropship staff.
+      // A message written in an owner's store is that owner's to answer, and they are told; staff are always alerted.
+      const staffAlert = staffSupportAlert(message, "new", message.message, event.type);
       if (owner && !owner.deletedAt) {
         return [
+          staffAlert,
           {
             inApp: { audience: NotificationAudience.CUSTOMER, userId: owner.id, type: event.type, title: `Message from ${message.name}`, body: message.subject, href: `/dashboard/support?id=${message.id}` },
             emails: [
@@ -403,22 +440,20 @@ async function plan(event: NotificationEvent): Promise<Planned[]> {
           },
         ];
       }
-      return [
-        {
-          inApp: { audience: NotificationAudience.STAFF, userId: null, type: event.type, title: `Message from ${message.name}`, body: message.subject, href: `/admin/messages/${message.id}` },
-        },
-      ];
+      return [staffAlert];
     }
 
     case "support.customer-replied": {
       const message = await db.contactMessage.findUniqueOrThrow({ where: { id: event.messageId }, include: { store: { select: storeForEmailSelect } } });
       const reply = await db.contactReply.findUniqueOrThrow({ where: { id: event.replyId } });
       const lines = [`${message.name} (${message.email}) wrote back about "${message.subject}"`, reply.body.slice(0, 300)];
-      // A reply in a store's conversation is the owner's to answer; on the platform site it is Zendropship's.
-      if (message.storeId) {
-        const target = await storeOwner(message.storeId);
-        if (!target) return [];
+      const staffAlert = staffSupportAlert(message, "reply", reply.body, "support.customer-replied");
+      // A reply in an owner's store is the owner's to answer; on the platform site, or in a store with no owner,
+      // it is Zendropship's.
+      const target = message.storeId ? await storeOwner(message.storeId) : null;
+      if (target) {
         return [
+          staffAlert,
           {
             inApp: { audience: NotificationAudience.CUSTOMER, userId: target.owner.id, type: "support.customer-replied", title: `New reply from ${message.name}`, body: message.subject, href: `/dashboard/support?id=${message.id}` },
             emails: [
@@ -435,7 +470,7 @@ async function plan(event: NotificationEvent): Promise<Planned[]> {
       const staff = await staffRecipients("messages.view");
       return [
         {
-          inApp: { audience: NotificationAudience.STAFF, userId: null, type: "support.customer-replied", title: `New reply from ${message.name}`, body: message.subject, href: `/admin/messages?id=${message.id}` },
+          ...staffAlert,
           emails: staff.map((member) => ({
             to: member.email,
             template: "staff.support-reply",
@@ -646,6 +681,22 @@ export async function dispatchNotification(event: NotificationEvent): Promise<st
       });
       deliveryIds.push(delivery.id);
     }
+    if (item.push) {
+      const { permission, ...alert } = item.push;
+      for (const device of await staffDevices(permission)) {
+        const delivery = await db.notificationDelivery.create({
+          data: {
+            notificationId: notification?.id,
+            channel: NotificationChannel.PUSH,
+            recipient: device.id,
+            template: event.type,
+            subject: alert.title,
+            payload: alert satisfies Prisma.InputJsonValue,
+          },
+        });
+        deliveryIds.push(delivery.id);
+      }
+    }
   }
   return deliveryIds;
 }
@@ -660,7 +711,7 @@ export async function sendDeliveries(ids: string[]) {
     if (claimed.count === 0) continue;
     const delivery = await db.notificationDelivery.findUniqueOrThrow({ where: { id } });
     try {
-      const payload = delivery.payload as { html?: string; text?: string; body?: string; title?: string; href?: string; replyTo?: string };
+      const payload = delivery.payload as { html?: string; text?: string; body?: string; title?: string; href?: string; tag?: string; replyTo?: string };
       let providerMessageId: string | null = null;
       if (delivery.channel === NotificationChannel.EMAIL) {
         const result = await getEmailProvider().send({
@@ -680,12 +731,12 @@ export async function sendDeliveries(ids: string[]) {
         }
         providerMessageId = (await provider.send({ to: delivery.recipient, body: payload.body ?? payload.text ?? "" })).id;
       } else if (delivery.channel === NotificationChannel.PUSH) {
-        const provider = getPushProvider();
-        if (!provider) {
-          await db.notificationDelivery.update({ where: { id }, data: { status: DeliveryStatus.SKIPPED, lastError: "No push provider configured" } });
+        const result = await getPushProvider().send({ to: delivery.recipient, title: payload.title ?? delivery.subject ?? "", body: payload.body ?? "", href: payload.href, tag: payload.tag });
+        if (result.skipped) {
+          await db.notificationDelivery.update({ where: { id }, data: { status: DeliveryStatus.SKIPPED, lastError: result.skipped } });
           continue;
         }
-        providerMessageId = (await provider.send({ to: delivery.recipient, title: payload.title ?? delivery.subject ?? "", body: payload.body ?? "", href: payload.href })).id;
+        providerMessageId = result.id;
       }
       await db.notificationDelivery.update({
         where: { id },

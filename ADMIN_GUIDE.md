@@ -19,7 +19,7 @@ Managers cannot delete or import products, refund or cancel orders, change custo
 | Section | Purpose | Permission |
 | --- | --- | --- |
 | Dashboard / Analytics | Revenue, orders, customers, top products and categories, low stock, recent orders; 7 / 30 / 90-day and 12-month ranges; each chart has a table view | `dashboard.view` / `analytics.view` |
-| Notifications | New orders, payment failures, low stock, new reviews and messages | any staff |
+| Notifications | New orders, payment failures, low stock, new reviews and every customer message; **Alerts on this device** turns on phone alerts for customer messages | any staff (alerts: `messages.view`) |
 | Stores | Every store with its owner, products, orders and sales; suspend and reopen. Opening a store shows the owner's account, the store, its wallet ledger, deposits, orders and history on one page | `stores.view`, `stores.manage` |
 | Deposits | Deposit requests from owners: who sent what, the proof they attached, and approve-and-credit or reject | `stores.view`, `stores.manage` |
 | Withdrawals | Owners' balances and the withdrawals waiting to be sent | `stores.view`, `stores.manage` |
@@ -157,6 +157,18 @@ Limits are enforced when the order is placed. Deleting a coupon stops the code w
 - **Disable account** signs the customer out everywhere and blocks sign-in; order history is kept.
 - **Reset access** ends their sessions and emails a password-reset link; they can't sign in until they set a new password.
 - **Support inbox** holds every conversation: messages to Zendropship (including owners' own questions), messages in owners' stores, and anything written from the **Customer Service** button that floats in the corner of the platform site, every storefront and the owner dashboard — all of it the same kind of conversation, answered the same way. Filter by where it came from (*To Zendropship*, *In owners' stores*, *Assigned to me*) and by status, and search by subject, customer, order number or store. A dot marks unread conversations; opening one marks it read. The inbox keeps itself current: while it is open it checks every few seconds and shows a new message or reply as it arrives, without a reload — and so do the owner's and the customer's screens on the other side. A tab in the background stops checking and catches up the moment it is looked at again.
+
+**Knowing when a customer writes in — on your phone too.** Every message a customer writes — a new conversation or a reply, to Zendropship or in any store — reaches staff:
+
+- **Unread badges.** *Support inbox* in the menu shows how many conversations have something unread, and *Notifications* how many notifications. On a phone, where the menu is folded away, an inbox button in the top-right corner shows the same count from every admin page. The counts keep themselves current: the panel checks every 20 seconds while it is open and the moment you come back to it.
+- **On screen.** A message that arrives while the admin panel is open is announced once — *New message from …* with the subject — and **Open conversation** takes you straight to it.
+- **Alerts on this device.** Under **Notifications → Alerts on this device**, **Turn on alerts** asks your browser's permission, and from then on your phone (or computer) shows an alert for every customer message even with the admin panel closed. Tap it to open that conversation. Several messages in one conversation show as one alert with the latest message, not a pile, and a phone that was off gets the latest one when it comes back. **Send a test alert** checks it works; **Turn off** stops it on that device only. Each person turns it on for each of their devices.
+  - **iPhone and iPad** (iOS 16.4 or later): alerts only work from the Home Screen. In Safari, tap **Share → Add to Home Screen**, open **ZD Admin** from your Home Screen, sign in and turn alerts on there.
+  - **Android**: Chrome shows alerts directly — no installation needed.
+  - If the browser blocked notifications for the site, the card says so; allow them in the browser's site settings and turn alerts on again.
+- **Read when you read it.** Opening a conversation marks its notifications read, lowers the counts, and clears its alert from your phone. An alert is never sent twice for the same message.
+
+Messages in an owner's store are still the owner's to answer — they are told as well — but you see them too.
 - Open a conversation to see the customer, whether they have an account, the store and the order it is about (linked only if the order really is theirs). **Assign** it to a colleague, **reply** — the customer gets it by email and, if signed in, in their account — or tick **Internal note** to leave a note only staff can see. A customer writing back reopens the conversation.
 - When an owner asks about a deposit or a withdrawal, the payment is shown above the thread — amount, method, status and reference — so it can be checked without leaving the inbox. Replies land in the owner's dashboard under **Customer service → Your questions to Zendropship**, marked as new, and go out by email; internal notes are never shown to them.
 

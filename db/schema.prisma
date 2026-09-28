@@ -103,6 +103,7 @@ model User {
   reviews             Review[]
   storeReviews        StoreReview[]
   notifications       Notification[]
+  pushSubscriptions   PushSubscription[]
   recentlyViewed      RecentlyViewed[]
   searchHistory       SearchHistory[]
   auditLogs           AuditLog[]
@@ -1238,6 +1239,23 @@ model Notification {
 
   @@index([userId, readAt, createdAt])
   @@index([audience, createdAt])
+}
+
+/// A browser that asked to be alerted on this device (Web Push). The endpoint and keys come from the browser's
+/// push service; a push to an endpoint the service no longer knows removes the row. Deliveries to it go
+/// through the outbox (NotificationDelivery, channel PUSH, recipient = this id).
+model PushSubscription {
+  id         String   @id @default(cuid())
+  userId     String
+  endpoint   String   @unique
+  p256dh     String
+  auth       String
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 /// Outbox for external channels (email/SMS/push). Failed deliveries are retried by the jobs runner.

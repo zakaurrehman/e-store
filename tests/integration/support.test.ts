@@ -126,7 +126,7 @@ describe("support conversations", () => {
     const erin = await customer("erin");
     const conversation = await openConversation({ storeId: store.id, userId: erin.id, name: "Erin", email: erin.email, subject: "Sizes", message: "Does the jacket run small or large?" });
     const { reply } = await addReply(conversation.id, "Also, do you ship to Canada?", { kind: "customer", userId: erin.id });
-    const ownerMail = await db.notificationDelivery.findMany({ where: { id: { in: await dispatchNotification({ type: "support.customer-replied", messageId: conversation.id, replyId: reply.id }) } } });
+    const ownerMail = await db.notificationDelivery.findMany({ where: { channel: "EMAIL", id: { in: await dispatchNotification({ type: "support.customer-replied", messageId: conversation.id, replyId: reply.id }) } } });
     expect(ownerMail.map((mail) => mail.recipient)).toEqual([owner.email]);
 
     await staff();

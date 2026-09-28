@@ -2,10 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { ActionButton } from "@/components/admin/forms";
+import { PushAlerts } from "@/components/admin/push-alerts";
 import { Card, dateTime, PageHeader } from "@/components/admin/ui";
 import { Skeleton } from "@/components/ui/misc";
 import { markStaffNotificationsReadAction } from "@/features/admin/messages";
-import { requireStaff } from "@/server/auth/guards";
+import { can, requireStaff } from "@/server/auth/guards";
 import { db } from "@/server/db";
 import { cn } from "@/utils/cn";
 
@@ -18,6 +19,11 @@ async function Notifications() {
   return (
     <>
       <PageHeader title="Notifications" description={unread ? `${unread} unread` : "You're all caught up"} actions={unread > 0 ? <ActionButton action={markStaffNotificationsReadAction}>Mark all as read</ActionButton> : undefined} />
+      {can(user, "messages.view") && (
+        <div className="mb-6">
+          <PushAlerts />
+        </div>
+      )}
       <Card padded={false}>
         {notifications.length === 0 ? (
           <p className="px-5 py-14 text-center text-[0.9375rem] text-ink-500">New orders, payment failures, low stock, reviews and messages will appear here.</p>
@@ -28,7 +34,10 @@ async function Notifications() {
                 <>
                   <span className={cn("mt-2 size-2 shrink-0 rounded-full", notification.readAt ? "bg-transparent" : "bg-iris-500")} aria-hidden />
                   <span className="min-w-0 flex-1">
-                    <span className={cn("block text-sm", notification.readAt ? "text-ink-800" : "font-semibold text-ink-950")}>{notification.title}</span>
+                    <span className={cn("block text-sm", notification.readAt ? "text-ink-800" : "font-semibold text-ink-950")}>
+                      {!notification.readAt && <span className="sr-only">Unread: </span>}
+                      {notification.title}
+                    </span>
                     <span className="block text-[0.8125rem] text-ink-600">{notification.body}</span>
                     <span className="block text-[0.75rem] text-ink-400">{dateTime.format(notification.createdAt)}</span>
                   </span>

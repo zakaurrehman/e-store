@@ -66,6 +66,13 @@ const fields = z.object({
 
   CRON_SECRET: optionalString,
   RATE_LIMIT_DRIVER: option(["postgres", "memory"], "postgres"),
+
+  // Web Push (staff alerts on their phones). Optional: without them a key pair is generated once and kept in
+  // the database. Set both to use your own (`npx web-push generate-vapid-keys`).
+  VAPID_PUBLIC_KEY: optionalString,
+  VAPID_PRIVATE_KEY: optionalString,
+  // Who push services contact about these alerts: a mailto: or https: URL. Defaults to the site's address.
+  VAPID_SUBJECT: optionalString,
 });
 
 type FieldValues = z.infer<typeof fields>;
@@ -112,6 +119,7 @@ function crossFieldIssues(env: Partial<FieldValues>): Issue[] {
   if (process.env.VERCEL && env.STORAGE_DRIVER === "local") {
     require(false, "STORAGE_DRIVER", "Vercel's filesystem is read-only — set STORAGE_DRIVER=blob (Vercel Blob) or s3");
   }
+  require(!!env.VAPID_PUBLIC_KEY === !!env.VAPID_PRIVATE_KEY, env.VAPID_PUBLIC_KEY ? "VAPID_PRIVATE_KEY" : "VAPID_PUBLIC_KEY", "set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY together (or neither)");
   if (env.EMAIL_DRIVER === "smtp") require(!!env.SMTP_HOST, "SMTP_HOST", "required when EMAIL_DRIVER=smtp");
   if (env.EMAIL_DRIVER === "resend") require(!!env.RESEND_API_KEY, "RESEND_API_KEY", "required when EMAIL_DRIVER=resend");
   if (env.NODE_ENV === "production") {

@@ -32,9 +32,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { LogoMark } from "@/components/brand/logo";
+import type { StaffAlerts } from "@/features/admin/alerts";
 import { logoutAction } from "@/features/auth/actions";
 import type { Permission } from "@/lib/permissions";
 import { cn } from "@/utils/cn";
+import { IncomingMessage, useStaffAlerts } from "./staff-alerts";
 
 type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string; strokeWidth?: number }>; permission?: Permission; exact?: boolean };
 type NavGroup = { title: string; items: NavItem[] };
@@ -91,8 +93,10 @@ const GROUPS: NavGroup[] = [
   },
 ];
 
-export function AdminNav({ permissions, user, unread }: { permissions: string[]; user: { name: string; role: string }; unread: number }) {
+export function AdminNav({ permissions, user, alerts: initialAlerts }: { permissions: string[]; user: { name: string; role: string }; alerts: StaffAlerts }) {
   const pathname = usePathname();
+  const { alerts, incoming, dismiss } = useStaffAlerts(initialAlerts);
+  const unreadFor = (href: string) => (href === "/admin/notifications" ? alerts.notifications : href === "/admin/messages" ? alerts.support : 0);
   const [open, setOpen] = useState(false);
   // Close the drawer on navigation — adjusted during render rather than in an effect.
   const [lastPathname, setLastPathname] = useState(pathname);
@@ -127,12 +131,19 @@ export function AdminNav({ permissions, user, unread }: { permissions: string[];
                   const settingsOverlap = item.href === "/admin/settings" && pathname.startsWith("/admin/settings/");
                   const contentOverlap = item.href === "/admin/content" && pathname.startsWith("/admin/content/pages");
                   const isActive = active && !settingsOverlap && !contentOverlap;
+                  const unread = unreadFor(item.href);
                   return (
                     <li key={item.href}>
                       <Link href={item.href} aria-current={isActive ? "page" : undefined} className={cn("flex items-center gap-2.5 rounded-sm px-2 py-[0.3125rem] text-[0.875rem] transition-colors", isActive ? "bg-ink-950 text-white" : "text-ink-700 hover:bg-canvas hover:text-ink-950")}>
                         <item.icon className="size-4" strokeWidth={1.7} />
                         <span className="flex-1">{item.label}</span>
-                        {item.href === "/admin/notifications" && unread > 0 && <span className={cn("tabular rounded-full px-1.5 text-[0.6875rem] font-semibold", isActive ? "bg-white/20" : "bg-ink-950 text-white")}>{unread}</span>}
+                        {unread > 0 && (
+                          <span className={cn("tabular rounded-full px-1.5 text-[0.6875rem] font-semibold", isActive ? "bg-white/20" : item.href === "/admin/messages" ? "bg-iris-600 text-white" : "bg-ink-950 text-white")}>
+                            <span className="sr-only">, </span>
+                            {unread}
+                            <span className="sr-only"> unread</span>
+                          </span>
+                        )}
                       </Link>
                     </li>
                   );
@@ -166,9 +177,25 @@ export function AdminNav({ permissions, user, unread }: { permissions: string[];
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className="fixed left-3 top-3 z-30 inline-flex size-10 items-center justify-center rounded-sm bg-surface shadow-hairline lg:hidden" aria-label="Open admin menu">
+      <button type="button" onClick={() => setOpen(true)} className="fixed left-3 top-3 z-30 inline-flex size-10 items-center justify-center rounded-sm bg-surface shadow-hairline lg:hidden" aria-label={alerts.notifications > 0 ? `Open admin menu, ${alerts.notifications} unread notifications` : "Open admin menu"}>
         <Menu className="size-5" />
+        {alerts.notifications > 0 && <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-iris-600" aria-hidden />}
       </button>
+      {/* On a phone the menu is folded away, so the inbox and what is waiting in it stay one tap from anywhere. */}
+      {granted.has("messages.view") && (
+        <Link
+          href="/admin/messages"
+          className={cn(
+            "fixed right-3 top-3 z-30 inline-flex h-10 items-center gap-2 rounded-sm px-3 text-sm font-medium shadow-hairline lg:hidden",
+            alerts.support > 0 ? "bg-iris-600 text-white" : "bg-surface text-ink-800",
+          )}
+          aria-label={alerts.support > 0 ? `Support inbox, ${alerts.support} unread` : "Support inbox"}
+        >
+          <Inbox className="size-4" strokeWidth={1.8} aria-hidden />
+          {alerts.support > 0 ? <span className="tabular">{alerts.support}</span> : <span>Inbox</span>}
+        </Link>
+      )}
+      {incoming && <IncomingMessage alert={incoming} onDismiss={dismiss} />}
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-60 border-r border-line bg-surface lg:block">{content}</aside>
       {open && (
         <div className="fixed inset-0 z-50 lg:hidden">
