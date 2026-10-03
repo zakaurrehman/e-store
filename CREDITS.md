@@ -2,12 +2,12 @@
 
 ## Photography
 
-The demo catalogue, category tiles and banners use 84 photographs from [Unsplash](https://unsplash.com), used under the [Unsplash License](https://unsplash.com/license). Images were downloaded by the seed, re-encoded to WebP and audited so that no third-party logos or trademarks are visible.
+The demo catalogue, category tiles and banners use 106 photographs from [Unsplash](https://unsplash.com), used under the [Unsplash License](https://unsplash.com/license). Images were downloaded by the seed, re-encoded to WebP and audited so that no third-party logos or trademarks are visible.
 
 The seed records each image by its Unsplash photo ID (stored as the asset credit, visible in **Admin → Media library**). Photographer names were not recorded; open an image URL below to find its photographer on Unsplash. Replace the demo photography with your own before launch.
 
 <details>
-<summary>Unsplash images used by the seed (84)</summary>
+<summary>Unsplash images used by the seed (106)</summary>
 
 - https://images.unsplash.com/photo-1473966968600-fa801b869a1a
 - https://images.unsplash.com/photo-1484704849700-f032a568e944
@@ -94,6 +94,30 @@ The seed records each image by its Unsplash photo ID (stored as the asset credit
 - https://images.unsplash.com/photo-1627123424574-724758594e93
 - https://images.unsplash.com/photo-1630019852942-f89202989a59
 
+
+<!-- Second drop (bags, accessories, watches, jewellery) — added by db:seed:extra -->
+- https://images.unsplash.com/photo-1584917865442-de89df76afd3
+- https://images.unsplash.com/photo-1591561954557-26941169b49e
+- https://images.unsplash.com/photo-1598532163257-ae3c6b2524b6
+- https://images.unsplash.com/photo-1590874103328-eac38a683ce7
+- https://images.unsplash.com/photo-1605733513597-a8f8341084e6
+- https://images.unsplash.com/photo-1680039211156-66c721b87625
+- https://images.unsplash.com/photo-1577733975197-3b950ca5cabe
+- https://images.unsplash.com/photo-1628483211662-9bcc692c46dc
+- https://images.unsplash.com/photo-1614260938313-a7fc1a7ad0d2
+- https://images.unsplash.com/photo-1620109176813-e91290f6c795
+- https://images.unsplash.com/photo-1572635196237-14b3f281503f
+- https://images.unsplash.com/photo-1584036553516-bf83210aa16c
+- https://images.unsplash.com/photo-1523170335258-f5ed11844a49
+- https://images.unsplash.com/photo-1620625515032-6ed0c1790c75
+- https://images.unsplash.com/photo-1587925358603-c2eea5305bbc
+- https://images.unsplash.com/photo-1542496658-e33a6d0d50f6
+- https://images.unsplash.com/photo-1579586337278-3befd40fd17a
+- https://images.unsplash.com/photo-1601121141461-9d6647bca1ed
+- https://images.unsplash.com/photo-1611107683227-e9060eccd846
+- https://images.unsplash.com/photo-1651160670627-2896ddf7822f
+- https://images.unsplash.com/photo-1603974372039-adc49044b6bd
+- https://images.unsplash.com/photo-1605100804567-1ffe942b5cd6
 </details>
 
 ## Typefaces
